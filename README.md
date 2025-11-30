@@ -1,36 +1,51 @@
 # Screen Recorder
 
-A high-performance screen, window, and region recording application built with Tauri. Record and share anything in a variety of formats — completely free, no cloud account required.
+A high-performance screen, window, and region recording application built with Tauri. Record and share anything — completely free, no cloud account required.
 
-## Features
+> **Status**: Early Alpha — Windows only. Core recording functionality works, but many planned features are not yet implemented.
 
-- **Multiple Capture Modes**: Record your entire screen, specific windows, or custom regions
-- **High Performance**: Native Rust backend ensures minimal resource usage and smooth recording
-- **Multiple Output Formats**: Export to MP4, WebM, MKV, GIF, Animated PNG, WebP, and more
+## Current Features
+
+- **Window Recording**: Capture any application window using Windows.Graphics.Capture API
+- **Region Recording**: Select and record a custom region of your screen
+- **MP4 Output**: H.264 encoded video via FFmpeg
+- **High Performance**: Native Rust backend with efficient frame pipeline
 - **No Cloud Required**: All processing happens locally — your recordings stay on your machine
 - **Free & Open Source**: No subscriptions, no accounts, no limits
 
-### Supported Output Formats
+### Output
 
-| Category | Formats |
-|----------|---------|
-| Video | MP4 (H.264/H.265), WebM (VP9), MKV, AVI, MOV |
-| Animated Image | GIF, Animated PNG (APNG), Animated WebP |
-| Image Sequence | PNG, JPEG |
+- **Format**: MP4 (H.264)
+- **Frame Rate**: 30 fps (fixed)
+- **Location**: User's Videos folder
+- **Filename**: `recording_YYYY-MM-DD_HHMMSS.mp4`
 
-See [docs/requirements.md](docs/requirements.md) for full specifications.
+### Planned Features
+
+See [docs/requirements.md](docs/requirements.md) for the full roadmap, including:
+
+- Full screen capture
+- Pause/Resume recording
+- Audio capture (system + microphone)
+- Additional output formats (WebM, GIF, APNG, WebP)
+- Configurable quality and frame rate
+- Global hotkeys
+- macOS and Linux support
 
 ## Tech Stack
 
 - **Frontend**: Vanilla TypeScript, HTML, CSS
 - **Backend**: Rust + Tauri v2
+- **Capture**: [windows-capture](https://crates.io/crates/windows-capture) (Windows.Graphics.Capture API)
+- **Encoding**: [ffmpeg-sidecar](https://crates.io/crates/ffmpeg-sidecar) (auto-downloads FFmpeg)
 - **Build**: Vite
 
 ## Prerequisites
 
 - [Node.js](https://nodejs.org/) (v18+)
+- [pnpm](https://pnpm.io/)
 - [Rust](https://www.rust-lang.org/tools/install)
-- [Tauri Prerequisites](https://tauri.app/v1/guides/getting-started/prerequisites)
+- [Tauri Prerequisites](https://tauri.app/v2/start/prerequisites/) (Windows: WebView2, VS Build Tools)
 
 ## Development Setup
 
@@ -56,10 +71,15 @@ pnpm tauri build
 ```
 screen-recorder/
 ├── src/                    # Frontend TypeScript/HTML/CSS
+│   ├── main.ts             # Main application logic
+│   ├── selection-overlay.ts # Region selection UI
+│   └── styles.css          # App styles (dark mode support)
 ├── src-tauri/              # Rust backend
-│   ├── src/                # Rust source code
-│   ├── Cargo.toml          # Rust dependencies
-│   └── tauri.conf.json     # Tauri configuration
+│   └── src/
+│       ├── lib.rs          # Tauri commands
+│       ├── state.rs        # Recording state management
+│       ├── capture/        # Window/region capture modules
+│       └── encoder/        # FFmpeg encoding
 ├── docs/                   # Documentation
 │   └── requirements.md     # Full project requirements
 ├── openspec/               # Project specifications
