@@ -61,9 +61,28 @@ impl GraphicsCaptureApiHandler for CaptureHandler {
         let mut buffer = frame.buffer()?;
         let width = buffer.width();
         let height = buffer.height();
+        let raw_data = buffer.as_raw_buffer();
 
-        // Copy pixel data (BGRA format)
-        let data = buffer.as_raw_buffer().to_vec();
+        // Calculate stride (bytes per row in the buffer) - may include padding for GPU alignment
+        let buffer_stride = raw_data.len() / height as usize;
+        let expected_stride = (width as usize) * 4; // BGRA = 4 bytes per pixel
+
+        // Copy pixel data, handling stride padding if present
+        let data = if buffer_stride == expected_stride {
+            // No padding, copy directly
+            raw_data.to_vec()
+        } else {
+            // Buffer has stride padding - extract only the actual pixel data row by row
+            let mut output = Vec::with_capacity(expected_stride * height as usize);
+            for row in 0..height as usize {
+                let src_start = row * buffer_stride;
+                let src_end = src_start + expected_stride;
+                if src_end <= raw_data.len() {
+                    output.extend_from_slice(&raw_data[src_start..src_end]);
+                }
+            }
+            output
+        };
 
         let captured_frame = CapturedFrame {
             width,

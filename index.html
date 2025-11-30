@@ -16,6 +16,7 @@
         <div class="mode-toggle">
           <button id="mode-window-btn" type="button" class="mode-btn active">Window</button>
           <button id="mode-region-btn" type="button" class="mode-btn">Region</button>
+          <button id="mode-display-btn" type="button" class="mode-btn">Display</button>
         </div>
       </section>
 
@@ -38,6 +39,16 @@
             <p class="region-placeholder">No region selected</p>
           </div>
           <button id="select-region-btn" type="button">Select Region</button>
+        </div>
+      </section>
+
+      <section id="display-selection" class="display-selection hidden">
+        <div class="section-header">
+          <h2>Select Display</h2>
+          <button id="refresh-displays-btn" type="button" title="Refresh display list">Refresh</button>
+        </div>
+        <div id="display-list" class="display-list">
+          <p class="loading">Loading displays...</p>
         </div>
       </section>
 

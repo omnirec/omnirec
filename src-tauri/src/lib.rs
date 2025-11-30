@@ -2,6 +2,8 @@
 
 mod capture;
 mod encoder;
+#[cfg(windows)]
+mod highlight;
 mod state;
 
 use capture::{list_monitors, list_windows, CaptureRegion, MonitorInfo, WindowInfo};
@@ -96,6 +98,36 @@ async fn start_region_recording(
     manager.start_region_recording(region).await
 }
 
+/// Start recording an entire display.
+#[tauri::command]
+async fn start_display_recording(
+    monitor_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    if !state.ffmpeg_ready {
+        return Err("FFmpeg is not available. Please restart the application.".to_string());
+    }
+
+    // Find the monitor to get its dimensions
+    let monitors = list_monitors();
+    let monitor = monitors
+        .iter()
+        .find(|m| m.id == monitor_id)
+        .ok_or_else(|| format!("Monitor not found: {}", monitor_id))?;
+
+    // Create a region covering the entire monitor (x=0, y=0 relative to monitor)
+    let region = CaptureRegion {
+        monitor_id,
+        x: 0,
+        y: 0,
+        width: monitor.width,
+        height: monitor.height,
+    };
+
+    let manager = state.recording_manager.lock().await;
+    manager.start_region_recording(region).await
+}
+
 /// Stop the current recording and save the file.
 #[tauri::command]
 async fn stop_recording(state: State<'_, AppState>) -> Result<RecordingResult, String> {
@@ -110,6 +142,37 @@ async fn get_elapsed_time(state: State<'_, AppState>) -> Result<u64, String> {
     Ok(manager.get_elapsed_seconds().await)
 }
 
+/// Show a highlight border on the specified monitor.
+#[tauri::command]
+async fn show_display_highlight(
+    monitor_id: String,
+) -> Result<(), String> {
+    // Find the monitor
+    let monitors = list_monitors();
+    let monitor = monitors
+        .iter()
+        .find(|m| m.id == monitor_id)
+        .ok_or_else(|| format!("Monitor not found: {}", monitor_id))?;
+
+    #[cfg(windows)]
+    {
+        highlight::show_highlight(
+            monitor.x,
+            monitor.y,
+            monitor.width as i32,
+            monitor.height as i32,
+        );
+    }
+
+    #[cfg(not(windows))]
+    {
+        // TODO: Implement for other platforms
+        eprintln!("Display highlight not implemented for this platform");
+    }
+
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -121,8 +184,10 @@ pub fn run() {
             get_recording_state,
             start_recording,
             start_region_recording,
+            start_display_recording,
             stop_recording,
             get_elapsed_time,
+            show_display_highlight,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

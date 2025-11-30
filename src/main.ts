@@ -29,7 +29,7 @@ interface CaptureRegion {
   height: number;
 }
 
-type CaptureMode = "window" | "region";
+type CaptureMode = "window" | "region" | "display";
 type RecordingState = "idle" | "recording" | "saving";
 
 interface RecordingResult {
@@ -43,11 +43,15 @@ let windowListEl: HTMLElement | null;
 let windowSelectionEl: HTMLElement | null;
 let regionSelectionEl: HTMLElement | null;
 let regionDisplayEl: HTMLElement | null;
+let displaySelectionEl: HTMLElement | null;
+let displayListEl: HTMLElement | null;
 let recordBtn: HTMLButtonElement | null;
 let refreshBtn: HTMLButtonElement | null;
+let refreshDisplaysBtn: HTMLButtonElement | null;
 let selectRegionBtn: HTMLButtonElement | null;
 let modeWindowBtn: HTMLButtonElement | null;
 let modeRegionBtn: HTMLButtonElement | null;
+let modeDisplayBtn: HTMLButtonElement | null;
 let timerEl: HTMLElement | null;
 let statusEl: HTMLElement | null;
 let resultEl: HTMLElement | null;
@@ -58,6 +62,7 @@ let openFolderBtn: HTMLButtonElement | null;
 let captureMode: CaptureMode = "window";
 let selectedWindow: WindowInfo | null = null;
 let selectedRegion: CaptureRegion | null = null;
+let selectedDisplay: MonitorInfo | null = null;
 let regionSelectorWindow: WebviewWindow | null = null;
 let currentState: RecordingState = "idle";
 let timerInterval: number | null = null;
@@ -69,11 +74,15 @@ window.addEventListener("DOMContentLoaded", () => {
   windowSelectionEl = document.querySelector("#window-selection");
   regionSelectionEl = document.querySelector("#region-selection");
   regionDisplayEl = document.querySelector("#region-display");
+  displaySelectionEl = document.querySelector("#display-selection");
+  displayListEl = document.querySelector("#display-list");
   recordBtn = document.querySelector("#record-btn");
   refreshBtn = document.querySelector("#refresh-btn");
+  refreshDisplaysBtn = document.querySelector("#refresh-displays-btn");
   selectRegionBtn = document.querySelector("#select-region-btn");
   modeWindowBtn = document.querySelector("#mode-window-btn");
   modeRegionBtn = document.querySelector("#mode-region-btn");
+  modeDisplayBtn = document.querySelector("#mode-display-btn");
   timerEl = document.querySelector("#timer");
   statusEl = document.querySelector("#status");
   resultEl = document.querySelector("#result");
@@ -82,11 +91,13 @@ window.addEventListener("DOMContentLoaded", () => {
 
   // Set up event listeners
   refreshBtn?.addEventListener("click", loadWindows);
+  refreshDisplaysBtn?.addEventListener("click", loadDisplays);
   recordBtn?.addEventListener("click", handleRecordClick);
   openFolderBtn?.addEventListener("click", handleOpenFolder);
   selectRegionBtn?.addEventListener("click", openRegionSelector);
   modeWindowBtn?.addEventListener("click", () => setCaptureMode("window"));
   modeRegionBtn?.addEventListener("click", () => setCaptureMode("region"));
+  modeDisplayBtn?.addEventListener("click", () => setCaptureMode("display"));
 
   // Listen for region updates from selector window (continuous updates as user moves/resizes)
   listen<CaptureRegion>("region-updated", (event) => {
@@ -119,21 +130,40 @@ function setCaptureMode(mode: CaptureMode): void {
   // Update button states
   modeWindowBtn?.classList.toggle("active", mode === "window");
   modeRegionBtn?.classList.toggle("active", mode === "region");
+  modeDisplayBtn?.classList.toggle("active", mode === "display");
 
   // Show/hide sections
   windowSelectionEl?.classList.toggle("hidden", mode !== "window");
   regionSelectionEl?.classList.toggle("hidden", mode !== "region");
+  displaySelectionEl?.classList.toggle("hidden", mode !== "display");
 
-  // Clear window selection when switching to region mode
-  if (mode === "region") {
+  // Clear window selection when switching away from window mode
+  if (mode !== "window") {
     selectedWindow = null;
     document.querySelectorAll(".window-item.selected").forEach((el) => {
       el.classList.remove("selected");
     });
   }
 
+  // Load displays when switching to display mode
+  if (mode === "display") {
+    loadDisplays();
+  }
+
   updateRecordButton();
-  setStatus(mode === "window" ? "Select a window to record" : "Select a region to record");
+
+  // Set appropriate status message
+  switch (mode) {
+    case "window":
+      setStatus("Select a window to record");
+      break;
+    case "region":
+      setStatus("Select a region to record");
+      break;
+    case "display":
+      setStatus("Select a display to record");
+      break;
+  }
 }
 
 // Update region display
@@ -292,6 +322,83 @@ function createWindowItem(win: WindowInfo): HTMLElement {
   return item;
 }
 
+// Load available displays
+async function loadDisplays(): Promise<void> {
+  if (!displayListEl) return;
+
+  displayListEl.innerHTML = '<p class="loading">Loading displays...</p>';
+  selectedDisplay = null;
+  updateRecordButton();
+
+  try {
+    const displays = await invoke<MonitorInfo[]>("get_monitors");
+
+    if (displays.length === 0) {
+      displayListEl.innerHTML = '<p class="empty">No displays found</p>';
+      return;
+    }
+
+    displayListEl.innerHTML = "";
+    for (const display of displays) {
+      const item = createDisplayItem(display);
+      displayListEl.appendChild(item);
+    }
+  } catch (error) {
+    displayListEl.innerHTML = `<p class="error">Error loading displays: ${error}</p>`;
+    setStatus(`Error: ${error}`, true);
+  }
+}
+
+// Create a display list item element
+function createDisplayItem(display: MonitorInfo): HTMLElement {
+  const item = document.createElement("div");
+  item.className = "display-item";
+  item.dataset.id = display.id;
+
+  const primaryBadge = display.is_primary
+    ? '<span class="display-item__primary">Primary</span>'
+    : "";
+
+  item.innerHTML = `
+    <div class="display-item__name">${escapeHtml(display.name)}${primaryBadge}</div>
+    <div class="display-item__resolution">${display.width} x ${display.height}</div>
+  `;
+
+  item.addEventListener("click", () => selectDisplayItem(display, item));
+
+  return item;
+}
+
+// Select a display for recording
+function selectDisplayItem(display: MonitorInfo, element: HTMLElement): void {
+  if (currentState !== "idle") return;
+
+  // Remove selection from previous
+  document.querySelectorAll(".display-item.selected").forEach((el) => {
+    el.classList.remove("selected");
+  });
+
+  // Select new
+  element.classList.add("selected");
+  selectedDisplay = display;
+  updateRecordButton();
+  setStatus(`Selected: ${display.name} (${display.width} x ${display.height})`);
+
+  // Show highlight overlay on the selected display
+  showDisplayHighlight(display);
+}
+
+// Show a brief highlight border on a display to help identify it
+async function showDisplayHighlight(display: MonitorInfo): Promise<void> {
+  try {
+    await invoke("show_display_highlight", {
+      monitorId: display.id,
+    });
+  } catch (error) {
+    console.error("Error showing display highlight:", error);
+  }
+}
+
 // Select a window for recording
 function selectWindow(win: WindowInfo, element: HTMLElement): void {
   if (currentState !== "idle") return;
@@ -329,6 +436,11 @@ async function startRecording(): Promise<void> {
     return;
   }
 
+  if (captureMode === "display" && !selectedDisplay) {
+    setStatus("Please select a display first", true);
+    return;
+  }
+
   setStatus("Starting recording...");
   disableSelection(true);
 
@@ -343,6 +455,11 @@ async function startRecording(): Promise<void> {
         y: Math.round(selectedRegion.y),
         width: Math.round(selectedRegion.width),
         height: Math.round(selectedRegion.height),
+      });
+    } else if (captureMode === "display" && selectedDisplay) {
+      console.log("Starting display recording with:", selectedDisplay);
+      await invoke("start_display_recording", {
+        monitorId: selectedDisplay.id,
       });
     }
 
@@ -392,8 +509,10 @@ function updateRecordButton(): void {
       recordBtn.textContent = "Record";
       if (captureMode === "window") {
         recordBtn.disabled = !selectedWindow;
-      } else {
+      } else if (captureMode === "region") {
         recordBtn.disabled = !selectedRegion;
+      } else if (captureMode === "display") {
+        recordBtn.disabled = !selectedDisplay;
       }
       break;
     case "recording":
@@ -439,6 +558,9 @@ function disableSelection(disabled: boolean): void {
   if (refreshBtn) {
     refreshBtn.disabled = disabled;
   }
+  if (refreshDisplaysBtn) {
+    refreshDisplaysBtn.disabled = disabled;
+  }
   if (selectRegionBtn) {
     selectRegionBtn.disabled = disabled;
   }
@@ -448,8 +570,19 @@ function disableSelection(disabled: boolean): void {
   if (modeRegionBtn) {
     modeRegionBtn.disabled = disabled;
   }
+  if (modeDisplayBtn) {
+    modeDisplayBtn.disabled = disabled;
+  }
 
   document.querySelectorAll(".window-item").forEach((el) => {
+    if (disabled) {
+      el.classList.add("disabled");
+    } else {
+      el.classList.remove("disabled");
+    }
+  });
+
+  document.querySelectorAll(".display-item").forEach((el) => {
     if (disabled) {
       el.classList.add("disabled");
     } else {

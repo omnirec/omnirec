@@ -16,6 +16,7 @@ export default defineConfig(async () => ({
       input: {
         main: resolve(__dirname, "index.html"),
         "selection-overlay": resolve(__dirname, "selection-overlay.html"),
+        "display-highlight": resolve(__dirname, "display-highlight.html"),
       },
     },
   },
