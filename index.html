@@ -12,13 +12,32 @@
     <main class="container">
       <h1>Screen Recorder</h1>
 
-      <section class="window-selection">
+      <section class="mode-selection">
+        <div class="mode-toggle">
+          <button id="mode-window-btn" type="button" class="mode-btn active">Window</button>
+          <button id="mode-region-btn" type="button" class="mode-btn">Region</button>
+        </div>
+      </section>
+
+      <section id="window-selection" class="window-selection">
         <div class="section-header">
           <h2>Select Window</h2>
           <button id="refresh-btn" type="button" title="Refresh window list">Refresh</button>
         </div>
         <div id="window-list" class="window-list">
           <p class="loading">Loading windows...</p>
+        </div>
+      </section>
+
+      <section id="region-selection" class="region-selection hidden">
+        <div class="section-header">
+          <h2>Select Region</h2>
+        </div>
+        <div class="region-info">
+          <div id="region-display" class="region-display">
+            <p class="region-placeholder">No region selected</p>
+          </div>
+          <button id="select-region-btn" type="button">Select Region</button>
         </div>
       </section>
 

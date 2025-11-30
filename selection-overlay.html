@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="/src/selection-overlay.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Region Selection</title>
+    <script type="module" src="/src/selection-overlay.ts" defer></script>
+  </head>
+
+  <body>
+    <!-- Selection border (rendered outside recording area) -->
+    <div id="border-top" class="border"></div>
+    <div id="border-right" class="border"></div>
+    <div id="border-bottom" class="border"></div>
+    <div id="border-left" class="border"></div>
+
+    <!-- Resize handles -->
+    <div class="handle handle-nw" data-handle="nw"></div>
+    <div class="handle handle-n" data-handle="n"></div>
+    <div class="handle handle-ne" data-handle="ne"></div>
+    <div class="handle handle-e" data-handle="e"></div>
+    <div class="handle handle-se" data-handle="se"></div>
+    <div class="handle handle-s" data-handle="s"></div>
+    <div class="handle handle-sw" data-handle="sw"></div>
+    <div class="handle handle-w" data-handle="w"></div>
+
+    <!-- Dimension display -->
+    <div id="dimensions"></div>
+
+    <!-- Drag area (center of window) -->
+    <div id="drag-area"></div>
+  </body>
+</html>

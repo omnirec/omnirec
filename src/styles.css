@@ -51,6 +51,113 @@ section {
   margin-bottom: 12px;
 }
 
+.hidden {
+  display: none !important;
+}
+
+/* Mode toggle */
+.mode-selection {
+  margin-bottom: 16px;
+}
+
+.mode-toggle {
+  display: flex;
+  justify-content: center;
+  gap: 0;
+  background: #e0e0e0;
+  border-radius: 8px;
+  padding: 4px;
+}
+
+.mode-btn {
+  flex: 1;
+  max-width: 150px;
+  border-radius: 6px;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  color: #666;
+  padding: 0.5em 1em;
+  transition: all 0.2s;
+}
+
+.mode-btn:hover:not(:disabled):not(.active) {
+  background: rgba(255, 255, 255, 0.5);
+  border: none;
+}
+
+.mode-btn.active {
+  background: #fff;
+  color: #0f0f0f;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.mode-btn:disabled {
+  opacity: 0.5;
+}
+
+/* Region selection */
+.region-selection {
+  margin-bottom: 24px;
+}
+
+.region-info {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+}
+
+.region-display {
+  width: 100%;
+  min-height: 80px;
+  border: 2px dashed #ccc;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fafafa;
+}
+
+.region-display.has-selection {
+  border-style: solid;
+  border-color: #2196f3;
+  background: #e3f2fd;
+}
+
+.region-placeholder {
+  color: #999;
+  margin: 0;
+}
+
+.region-details {
+  text-align: center;
+  margin: 0;
+}
+
+.region-details__dimensions {
+  font-size: 1.2em;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 4px;
+}
+
+.region-details__monitor {
+  font-size: 0.85em;
+  color: #666;
+}
+
+#select-region-btn {
+  background-color: #2196f3;
+  color: white;
+  border-color: #1976d2;
+}
+
+#select-region-btn:hover:not(:disabled) {
+  background-color: #1976d2;
+  border-color: #1565c0;
+}
+
 /* Window list */
 .window-list {
   border: 1px solid #ddd;
@@ -248,6 +355,45 @@ button:disabled {
   :root {
     color: #f6f6f6;
     background-color: #1a1a1a;
+  }
+
+  .mode-toggle {
+    background: #333;
+  }
+
+  .mode-btn {
+    color: #aaa;
+  }
+
+  .mode-btn:hover:not(:disabled):not(.active) {
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  .mode-btn.active {
+    background: #444;
+    color: #f6f6f6;
+  }
+
+  .region-display {
+    background: #2a2a2a;
+    border-color: #444;
+  }
+
+  .region-display.has-selection {
+    background: #1e3a5f;
+    border-color: #64b5f6;
+  }
+
+  .region-placeholder {
+    color: #666;
+  }
+
+  .region-details__dimensions {
+    color: #f6f6f6;
+  }
+
+  .region-details__monitor {
+    color: #aaa;
   }
 
   .window-list {

@@ -4,7 +4,7 @@ mod capture;
 mod encoder;
 mod state;
 
-use capture::{list_windows, WindowInfo};
+use capture::{list_monitors, list_windows, CaptureRegion, MonitorInfo, WindowInfo};
 use encoder::ensure_ffmpeg_blocking;
 use state::{RecordingManager, RecordingResult, RecordingState};
 use std::sync::Arc;
@@ -44,6 +44,12 @@ fn get_windows() -> Vec<WindowInfo> {
     list_windows()
 }
 
+/// Get list of available monitors.
+#[tauri::command]
+fn get_monitors() -> Vec<MonitorInfo> {
+    list_monitors()
+}
+
 /// Get current recording state.
 #[tauri::command]
 async fn get_recording_state(state: State<'_, AppState>) -> Result<RecordingState, String> {
@@ -62,6 +68,32 @@ async fn start_recording(
     }
     let manager = state.recording_manager.lock().await;
     manager.start_recording(window_handle).await
+}
+
+/// Start recording a screen region.
+#[tauri::command]
+async fn start_region_recording(
+    monitor_id: String,
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    if !state.ffmpeg_ready {
+        return Err("FFmpeg is not available. Please restart the application.".to_string());
+    }
+
+    let region = CaptureRegion {
+        monitor_id,
+        x,
+        y,
+        width,
+        height,
+    };
+
+    let manager = state.recording_manager.lock().await;
+    manager.start_region_recording(region).await
 }
 
 /// Stop the current recording and save the file.
@@ -85,8 +117,10 @@ pub fn run() {
         .manage(AppState::new())
         .invoke_handler(tauri::generate_handler![
             get_windows,
+            get_monitors,
             get_recording_state,
             start_recording,
+            start_region_recording,
             stop_recording,
             get_elapsed_time,
         ])

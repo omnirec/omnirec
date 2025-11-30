@@ -1,6 +1,7 @@
 //! Recording state management.
 
 use crate::capture::recorder::start_capture;
+use crate::capture::region_recorder::{start_region_capture, CaptureRegion};
 use crate::encoder::encode_frames;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -75,6 +76,31 @@ impl RecordingManager {
         // Start capture
         let (frame_rx, stop_flag) = start_capture(window_handle)?;
 
+        self.start_encoding(frame_rx, stop_flag).await
+    }
+
+    /// Start recording a screen region.
+    pub async fn start_region_recording(&self, region: CaptureRegion) -> Result<(), String> {
+        // Check current state
+        {
+            let state = self.state.read().await;
+            if *state != RecordingState::Idle {
+                return Err("Already recording or saving".to_string());
+            }
+        }
+
+        // Start region capture
+        let (frame_rx, stop_flag) = start_region_capture(region)?;
+
+        self.start_encoding(frame_rx, stop_flag).await
+    }
+
+    /// Common encoding startup logic.
+    async fn start_encoding(
+        &self,
+        frame_rx: tokio::sync::mpsc::Receiver<crate::capture::recorder::CapturedFrame>,
+        stop_flag: Arc<AtomicBool>,
+    ) -> Result<(), String> {
         // Store stop flag
         {
             let mut flag = self.stop_flag.lock().await;

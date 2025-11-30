@@ -22,8 +22,17 @@ pub struct VideoEncoder {
 
 impl VideoEncoder {
     /// Create a new encoder with the given frame dimensions.
+    /// Dimensions will be rounded down to even numbers for codec compatibility.
     pub fn new(width: u32, height: u32) -> Result<Self, String> {
         let output_path = generate_output_path()?;
+
+        // Ensure dimensions are even (required by many codecs including h264)
+        let width = width & !1;
+        let height = height & !1;
+
+        if width == 0 || height == 0 {
+            return Err(format!("Invalid dimensions: {}x{}", width, height));
+        }
 
         Ok(Self {
             stdin: None,
@@ -77,34 +86,34 @@ impl VideoEncoder {
 
     /// Write a frame to the encoder.
     pub fn write_frame(&mut self, frame: &CapturedFrame) -> Result<(), String> {
-        // Skip frames with mismatched dimensions
-        if frame.width != self.width || frame.height != self.height {
+        // Handle frames that may be slightly larger than encoder dimensions
+        // (can happen due to even-dimension rounding)
+        if frame.width < self.width || frame.height < self.height {
             eprintln!(
-                "Skipping frame: dimensions {}x{} don't match encoder {}x{}",
+                "Skipping frame: dimensions {}x{} smaller than encoder {}x{}",
                 frame.width, frame.height, self.width, self.height
             );
             return Ok(());
         }
 
         if let Some(ref mut stdin) = self.stdin {
-            // Handle stride: the buffer may have padding at the end of each row
-            // We need to extract exactly width * 4 bytes per row
-            let row_bytes = (self.width * 4) as usize;
-            let buffer_row_bytes = frame.data.len() / self.height as usize;
-
-            if buffer_row_bytes == row_bytes {
-                // No stride padding, write directly
+            // If frame is larger than encoder dimensions, crop it
+            if frame.width == self.width && frame.height == self.height {
+                // Exact match, write directly
                 stdin
                     .write_all(&frame.data)
                     .map_err(|e| format!("Failed to write frame: {}", e))?;
             } else {
-                // Has stride padding, need to strip it row by row
+                // Need to crop - extract only the rows/columns we need
+                let src_row_bytes = (frame.width * 4) as usize;
+                let dst_row_bytes = (self.width * 4) as usize;
+                
                 for y in 0..self.height as usize {
-                    let row_start = y * buffer_row_bytes;
-                    let row_end = row_start + row_bytes;
-                    if row_end <= frame.data.len() {
+                    let src_start = y * src_row_bytes;
+                    let src_end = src_start + dst_row_bytes;
+                    if src_end <= frame.data.len() {
                         stdin
-                            .write_all(&frame.data[row_start..row_end])
+                            .write_all(&frame.data[src_start..src_end])
                             .map_err(|e| format!("Failed to write frame row: {}", e))?;
                     }
                 }
@@ -120,12 +129,27 @@ impl VideoEncoder {
 
         // Wait for FFmpeg to finish
         if let Some(mut child) = self.child.take() {
-            let output = child
+            // Read stderr for error messages
+            let stderr_output = if let Some(mut stderr) = child.stderr.take() {
+                use std::io::Read;
+                let mut output = String::new();
+                let _ = stderr.read_to_string(&mut output);
+                output
+            } else {
+                String::new()
+            };
+
+            let status = child
                 .wait()
                 .map_err(|e| format!("FFmpeg process error: {}", e))?;
 
-            if !output.success() {
-                return Err(format!("FFmpeg encoding failed with exit code: {:?}", output.code()));
+            if !status.success() {
+                let error_msg = if stderr_output.is_empty() {
+                    format!("FFmpeg encoding failed with exit code: {:?}", status.code())
+                } else {
+                    format!("FFmpeg failed: {}", stderr_output.lines().last().unwrap_or(&stderr_output))
+                };
+                return Err(error_msg);
             }
         }
 
@@ -146,7 +170,13 @@ fn generate_output_path() -> Result<PathBuf, String> {
     Ok(videos_dir.join(filename))
 }
 
+/// Target frame rate for output video
+const TARGET_FPS: u32 = 30;
+/// Frame interval in milliseconds
+const FRAME_INTERVAL_MS: u64 = 1000 / TARGET_FPS as u64;
+
 /// Encoding task that receives frames from a channel and encodes them.
+/// Maintains consistent frame rate by duplicating frames when needed.
 pub async fn encode_frames(
     mut frame_rx: mpsc::Receiver<CapturedFrame>,
     stop_flag: Arc<AtomicBool>,
@@ -157,10 +187,7 @@ pub async fn encode_frames(
         .await
         .ok_or("No frames received")?;
 
-    println!(
-        "Starting encoder with dimensions {}x{}, frame data size: {}",
-        first_frame.width, first_frame.height, first_frame.data.len()
-    );
+
 
     let mut encoder = VideoEncoder::new(first_frame.width, first_frame.height)?;
     encoder.start()?;
@@ -168,18 +195,51 @@ pub async fn encode_frames(
     // Write first frame
     encoder.write_frame(&first_frame)?;
 
-    let mut frame_count = 1u64;
+    let mut frames_written = 1u64;
+    let start_time = std::time::Instant::now();
+    let mut last_frame = first_frame;
+    let mut next_frame_time = start_time + std::time::Duration::from_millis(FRAME_INTERVAL_MS);
 
-    // Process remaining frames
-    while let Some(frame) = frame_rx.recv().await {
+    // Process frames with timing
+    loop {
+        let now = std::time::Instant::now();
+        
+        // Check stop flag
         if stop_flag.load(Ordering::Relaxed) {
             break;
         }
-        encoder.write_frame(&frame)?;
-        frame_count += 1;
+
+        // Try to receive a new frame (non-blocking)
+        match frame_rx.try_recv() {
+            Ok(frame) => {
+                last_frame = frame;
+            }
+            Err(mpsc::error::TryRecvError::Empty) => {
+                // No new frame available, we'll duplicate the last one if needed
+            }
+            Err(mpsc::error::TryRecvError::Disconnected) => {
+                break;
+            }
+        }
+
+        // Write frame(s) to maintain target FPS
+        while next_frame_time <= now {
+            encoder.write_frame(&last_frame)?;
+            frames_written += 1;
+            next_frame_time += std::time::Duration::from_millis(FRAME_INTERVAL_MS);
+        }
+
+
+
+        // Sleep until next frame time (with some margin for processing)
+        let sleep_duration = next_frame_time.saturating_duration_since(std::time::Instant::now());
+        if !sleep_duration.is_zero() {
+            tokio::time::sleep(sleep_duration.min(std::time::Duration::from_millis(10))).await;
+        }
     }
 
-    println!("Encoded {} frames total", frame_count);
+    let elapsed = start_time.elapsed().as_secs_f64();
+    println!("Recording complete: {:.1}s, {} frames", elapsed, frames_written);
 
     // Finalize
     encoder.finish()

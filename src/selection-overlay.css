@@ -1,0 +1,144 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+}
+
+/* Border thickness - rendered at edges of window */
+:root {
+  --border-width: 3px;
+}
+
+/* Border segments - positioned at edges */
+.border {
+  position: fixed;
+  background: #2196f3;
+  pointer-events: none;
+}
+
+#border-top {
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--border-width);
+}
+
+#border-bottom {
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: var(--border-width);
+}
+
+#border-left {
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: var(--border-width);
+}
+
+#border-right {
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: var(--border-width);
+}
+
+/* Drag area - fills the center, used for moving the window */
+#drag-area {
+  position: fixed;
+  top: var(--border-width);
+  left: var(--border-width);
+  right: var(--border-width);
+  bottom: var(--border-width);
+  cursor: move;
+  /* Transparent but captures mouse events */
+  background: transparent;
+}
+
+/* Resize handles */
+.handle {
+  position: fixed;
+  width: 14px;
+  height: 14px;
+  background: #2196f3;
+  border: 2px solid #fff;
+  border-radius: 2px;
+  z-index: 10;
+}
+
+.handle-nw {
+  top: -7px;
+  left: -7px;
+  cursor: nw-resize;
+}
+
+.handle-n {
+  top: -7px;
+  left: 50%;
+  transform: translateX(-50%);
+  cursor: n-resize;
+}
+
+.handle-ne {
+  top: -7px;
+  right: -7px;
+  cursor: ne-resize;
+}
+
+.handle-e {
+  top: 50%;
+  right: -7px;
+  transform: translateY(-50%);
+  cursor: e-resize;
+}
+
+.handle-se {
+  bottom: -7px;
+  right: -7px;
+  cursor: se-resize;
+}
+
+.handle-s {
+  bottom: -7px;
+  left: 50%;
+  transform: translateX(-50%);
+  cursor: s-resize;
+}
+
+.handle-sw {
+  bottom: -7px;
+  left: -7px;
+  cursor: sw-resize;
+}
+
+.handle-w {
+  top: 50%;
+  left: -7px;
+  transform: translateY(-50%);
+  cursor: w-resize;
+}
+
+/* Dimension display */
+#dimensions {
+  position: fixed;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.8);
+  color: #fff;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 20;
+}
