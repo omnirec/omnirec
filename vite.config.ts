@@ -15,7 +15,7 @@ export default defineConfig(async () => ({
     rollupOptions: {
       input: {
         main: resolve(__dirname, "index.html"),
-        "selection-overlay": resolve(__dirname, "selection-overlay.html"),
+        "selection-overlay": resolve(__dirname, "src/selection-overlay.html"),
         "display-highlight": resolve(__dirname, "display-highlight.html"),
       },
     },
