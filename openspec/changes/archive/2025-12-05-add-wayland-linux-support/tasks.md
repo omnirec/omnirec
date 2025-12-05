@@ -78,8 +78,8 @@ Old files removed (no longer needed):
 - [x] 2.1.7 Handle stream errors and disconnection
 
 ### 2.2 Display Recording Integration
-- [ ] 2.2.1 Implement `start_display_capture()` for LinuxBackend
-- [ ] 2.2.2 Wire up selection → IPC → portal → PipeWire flow
+- [x] 2.2.1 Implement `start_display_capture()` for LinuxBackend
+- [x] 2.2.2 Wire up selection → IPC → portal → PipeWire flow
 - [ ] 2.2.3 Test full display recording on Hyprland
 - [ ] 2.2.4 Verify output video quality and framerate
 
@@ -93,9 +93,9 @@ Old files removed (no longer needed):
 ### 2.4 Window Capture Integration
 - [x] 2.4.1 Extend IPC protocol for window selection (done in 1.3)
 - [x] 2.4.2 Update picker to handle window source type
-- [ ] 2.4.3 Implement `start_window_capture()` for LinuxBackend
-- [ ] 2.4.4 Handle window resize during capture
-- [ ] 2.4.5 Handle window close during capture
+- [x] 2.4.3 Implement `start_window_capture()` for LinuxBackend
+- [x] 2.4.4 Handle window resize during capture
+- [x] 2.4.5 Handle window close during capture
 - [ ] 2.4.6 Test full window recording on Hyprland
 
 ## Phase 3: Region Capture
