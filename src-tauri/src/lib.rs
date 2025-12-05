@@ -152,17 +152,10 @@ async fn start_display_recording(
         .find(|m| m.id == monitor_id)
         .ok_or_else(|| format!("Monitor not found: {}", monitor_id))?;
 
-    // Create a region covering the entire monitor (x=0, y=0 relative to monitor)
-    let region = CaptureRegion {
-        monitor_id,
-        x: 0,
-        y: 0,
-        width: monitor.width,
-        height: monitor.height,
-    };
-
     let manager = state.recording_manager.lock().await;
-    manager.start_region_recording(region).await
+    manager
+        .start_display_recording(monitor_id, monitor.width, monitor.height)
+        .await
 }
 
 /// Stop the current recording and save the file.

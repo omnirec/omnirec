@@ -167,15 +167,24 @@ impl PortalClient {
             .map_err(|e| format!("Portal request failed: {}", e))?;
 
         // Get the first stream
-        let stream = streams
-            .streams()
+        let all_streams = streams.streams();
+        eprintln!("[Portal] Got {} streams from portal", all_streams.len());
+        
+        let stream = all_streams
             .first()
             .ok_or_else(|| "No streams returned from portal".to_string())?;
 
+        let node_id = stream.pipe_wire_node_id();
+        let source_type = stream.source_type();
+        let size = stream.size();
+        
+        eprintln!("[Portal] Stream info: node_id={}, source_type={:?}, size={:?}", 
+            node_id, source_type, size);
+
         Ok(ScreencastStream {
-            node_id: stream.pipe_wire_node_id(),
-            source_type: stream.source_type(),
-            size: stream.size(),
+            node_id,
+            source_type,
+            size,
         })
     }
 }

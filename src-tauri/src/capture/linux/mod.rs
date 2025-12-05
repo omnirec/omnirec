@@ -9,6 +9,7 @@
 //! portal requests based on the user's selection in the main app UI.
 
 pub mod ipc_server;
+pub mod pipewire_capture;
 pub mod portal_client;
 
 use crate::capture::error::{CaptureError, EnumerationError};
@@ -238,12 +239,43 @@ impl MonitorEnumerator for LinuxBackend {
 impl CaptureBackend for LinuxBackend {
     fn start_window_capture(
         &self,
-        _window_handle: isize,
+        window_handle: isize,
     ) -> Result<(FrameReceiver, StopHandle), CaptureError> {
-        // Phase 2: Implement PipeWire capture
-        Err(CaptureError::NotImplemented(
-            "Linux window capture will be implemented in Phase 2 (PipeWire integration)".to_string(),
-        ))
+        // Get window info to find the address
+        let windows = self.list_windows().map_err(|e| {
+            CaptureError::PlatformError(format!("Failed to list windows: {}", e))
+        })?;
+        
+        let window = windows.iter().find(|w| w.handle == window_handle).ok_or_else(|| {
+            CaptureError::TargetNotFound(format!("Window with handle {} not found", window_handle))
+        })?;
+        
+        // The window handle is the address converted to isize, convert back to hex string
+        let window_address = format!("0x{:x}", window_handle as usize);
+        
+        eprintln!("[Linux] Starting window capture for {} ({})", window.title, window_address);
+        
+        // Get IPC state
+        let ipc_state = get_ipc_state().ok_or_else(|| {
+            CaptureError::PlatformError("IPC server not initialized".to_string())
+        })?;
+        
+        // Use block_in_place to run async code from sync context within tokio runtime
+        let stream = tokio::task::block_in_place(|| {
+            let rt = tokio::runtime::Handle::current();
+            let portal_client = portal_client::PortalClient::new(ipc_state);
+            rt.block_on(portal_client.request_window_capture(&window_address))
+        }).map_err(|e| CaptureError::PlatformError(e))?;
+        
+        eprintln!("[Linux] Portal returned node ID {} for window capture", stream.node_id);
+        
+        // Get window dimensions from Hyprland
+        let (width, height) = stream.size.map(|(w, h)| (w as u32, h as u32))
+            .unwrap_or((1920, 1080)); // Fallback dimensions
+        
+        // Start PipeWire capture
+        pipewire_capture::start_pipewire_capture(stream.node_id, width, height)
+            .map_err(|e| CaptureError::PlatformError(e))
     }
 
     fn start_region_capture(
@@ -258,14 +290,35 @@ impl CaptureBackend for LinuxBackend {
 
     fn start_display_capture(
         &self,
-        _monitor_id: String,
-        _width: u32,
-        _height: u32,
+        monitor_id: String,
+        width: u32,
+        height: u32,
     ) -> Result<(FrameReceiver, StopHandle), CaptureError> {
-        // Phase 2: Implement PipeWire capture
-        Err(CaptureError::NotImplemented(
-            "Linux display capture will be implemented in Phase 2 (PipeWire integration)".to_string(),
-        ))
+        eprintln!("[Linux] Starting display capture for {} ({}x{})", monitor_id, width, height);
+        
+        // Get IPC state
+        let ipc_state = get_ipc_state().ok_or_else(|| {
+            CaptureError::PlatformError("IPC server not initialized".to_string())
+        })?;
+        
+        // Use block_in_place to run async code from sync context within tokio runtime
+        let monitor_id_clone = monitor_id.clone();
+        let stream = tokio::task::block_in_place(|| {
+            let rt = tokio::runtime::Handle::current();
+            let portal_client = portal_client::PortalClient::new(ipc_state);
+            rt.block_on(portal_client.request_monitor_capture(&monitor_id_clone))
+        }).map_err(|e| CaptureError::PlatformError(e))?;
+        
+        eprintln!("[Linux] Portal returned node ID {} for display capture", stream.node_id);
+        
+        // Use portal-reported dimensions if available, otherwise use provided ones
+        let (capture_width, capture_height) = stream.size
+            .map(|(w, h)| (w as u32, h as u32))
+            .unwrap_or((width, height));
+        
+        // Start PipeWire capture
+        pipewire_capture::start_pipewire_capture(stream.node_id, capture_width, capture_height)
+            .map_err(|e| CaptureError::PlatformError(e))
     }
 }
 

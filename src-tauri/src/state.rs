@@ -100,6 +100,30 @@ impl RecordingManager {
         self.start_encoding(frame_rx, stop_flag).await
     }
 
+    /// Start recording an entire display.
+    pub async fn start_display_recording(
+        &self,
+        monitor_id: String,
+        width: u32,
+        height: u32,
+    ) -> Result<(), String> {
+        // Check current state
+        {
+            let state = self.state.read().await;
+            if *state != RecordingState::Idle {
+                return Err("Already recording or saving".to_string());
+            }
+        }
+
+        // Start display capture using platform backend
+        let backend = get_backend();
+        let (frame_rx, stop_flag) = backend
+            .start_display_capture(monitor_id, width, height)
+            .map_err(|e| e.to_string())?;
+
+        self.start_encoding(frame_rx, stop_flag).await
+    }
+
     /// Common encoding startup logic.
     async fn start_encoding(
         &self,

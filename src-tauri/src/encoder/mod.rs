@@ -160,14 +160,28 @@ impl VideoEncoder {
 /// Generate a unique output filename in the user's Videos folder.
 fn generate_output_path() -> Result<PathBuf, String> {
     let user_dirs = UserDirs::new().ok_or("Could not determine user directories")?;
-    let videos_dir = user_dirs
+    
+    // Try Videos directory first, fall back to home directory
+    let output_dir = user_dirs
         .video_dir()
-        .ok_or("Could not find Videos directory")?;
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| {
+            let home = user_dirs.home_dir().to_path_buf();
+            let videos = home.join("Videos");
+            // Try to create Videos directory if it doesn't exist
+            if !videos.exists() {
+                if std::fs::create_dir_all(&videos).is_ok() {
+                    return videos;
+                }
+            }
+            // Fall back to home directory
+            home
+        });
 
     let timestamp = Local::now().format("%Y-%m-%d_%H%M%S");
     let filename = format!("recording_{}.mp4", timestamp);
 
-    Ok(videos_dir.join(filename))
+    Ok(output_dir.join(filename))
 }
 
 /// Target frame rate for output video
@@ -181,19 +195,42 @@ pub async fn encode_frames(
     mut frame_rx: mpsc::Receiver<CapturedFrame>,
     stop_flag: Arc<AtomicBool>,
 ) -> Result<PathBuf, String> {
+    eprintln!("[Encoder] encode_frames task started, waiting for first frame...");
+    
     // Wait for first frame to get dimensions
     let first_frame = frame_rx
         .recv()
         .await
-        .ok_or("No frames received")?;
+        .ok_or_else(|| {
+            eprintln!("[Encoder] recv() returned None - channel closed without frames");
+            "No frames received".to_string()
+        })?;
+    
+    eprintln!("[Encoder] Got first frame: {}x{}", first_frame.width, first_frame.height);
 
+    eprintln!("[Encoder] Creating VideoEncoder...");
+    let mut encoder = VideoEncoder::new(first_frame.width, first_frame.height)
+        .map_err(|e| {
+            eprintln!("[Encoder] Failed to create encoder: {}", e);
+            e
+        })?;
+    
+    eprintln!("[Encoder] Starting FFmpeg...");
+    encoder.start()
+        .map_err(|e| {
+            eprintln!("[Encoder] Failed to start FFmpeg: {}", e);
+            e
+        })?;
 
-
-    let mut encoder = VideoEncoder::new(first_frame.width, first_frame.height)?;
-    encoder.start()?;
-
+    eprintln!("[Encoder] Writing first frame...");
     // Write first frame
-    encoder.write_frame(&first_frame)?;
+    encoder.write_frame(&first_frame)
+        .map_err(|e| {
+            eprintln!("[Encoder] Failed to write first frame: {}", e);
+            e
+        })?;
+    
+    eprintln!("[Encoder] Encoder initialized, entering main loop...");
 
     let mut frames_written = 1u64;
     let start_time = std::time::Instant::now();
