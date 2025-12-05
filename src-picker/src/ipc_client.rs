@@ -1,13 +1,12 @@
 //! IPC client for communicating with the main screen-recorder app.
 //!
 //! Connects to the Unix socket server in the main app to query the current
-//! capture selection when portal requests arrive.
+//! capture selection when XDPH invokes us.
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
-use tracing::{debug, info, warn};
 
 /// IPC message sent from picker to main app.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -47,9 +46,8 @@ pub enum IpcResponse {
 }
 
 /// Get the IPC socket path.
-pub fn get_socket_path() -> PathBuf {
-    let runtime_dir = std::env::var("XDG_RUNTIME_DIR")
-        .unwrap_or_else(|_| "/tmp".to_string());
+fn get_socket_path() -> PathBuf {
+    let runtime_dir = std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| "/tmp".to_string());
     PathBuf::from(runtime_dir)
         .join("screen-recorder")
         .join("picker.sock")
@@ -58,47 +56,46 @@ pub fn get_socket_path() -> PathBuf {
 /// Query the main app for the current capture selection.
 pub async fn query_selection() -> Result<IpcResponse, String> {
     let socket_path = get_socket_path();
-    
-    debug!("Connecting to IPC socket at {:?}", socket_path);
-    
+
     // Connect to the Unix socket
-    let stream = match UnixStream::connect(&socket_path).await {
-        Ok(s) => s,
-        Err(e) => {
-            warn!("Failed to connect to main app IPC socket: {}", e);
-            return Err(format!("Main app not running or IPC socket unavailable: {}", e));
-        }
-    };
-    
-    info!("Connected to main app IPC socket");
-    
+    let stream = UnixStream::connect(&socket_path).await.map_err(|e| {
+        format!(
+            "Failed to connect to main app (is it running?): {} (path: {:?})",
+            e, socket_path
+        )
+    })?;
+
     let (reader, mut writer) = stream.into_split();
     let mut reader = BufReader::new(reader);
-    
+
     // Send query request
     let request = IpcRequest::QuerySelection;
-    let request_json = serde_json::to_string(&request)
-        .map_err(|e| format!("Failed to serialize request: {}", e))?;
-    
-    debug!("Sending IPC request: {}", request_json);
-    
-    writer.write_all(request_json.as_bytes()).await
+    let request_json =
+        serde_json::to_string(&request).map_err(|e| format!("Failed to serialize request: {}", e))?;
+
+    writer
+        .write_all(request_json.as_bytes())
+        .await
         .map_err(|e| format!("Failed to write to socket: {}", e))?;
-    writer.write_all(b"\n").await
+    writer
+        .write_all(b"\n")
+        .await
         .map_err(|e| format!("Failed to write newline: {}", e))?;
-    writer.flush().await
+    writer
+        .flush()
+        .await
         .map_err(|e| format!("Failed to flush socket: {}", e))?;
-    
+
     // Read response
     let mut response_line = String::new();
-    reader.read_line(&mut response_line).await
+    reader
+        .read_line(&mut response_line)
+        .await
         .map_err(|e| format!("Failed to read response: {}", e))?;
-    
-    debug!("Received IPC response: {}", response_line.trim());
-    
+
     let response: IpcResponse = serde_json::from_str(response_line.trim())
         .map_err(|e| format!("Failed to parse response: {}", e))?;
-    
+
     Ok(response)
 }
 
@@ -118,7 +115,11 @@ mod tests {
         let json = r#"{"type":"selection","source_type":"monitor","source_id":"DP-1"}"#;
         let response: IpcResponse = serde_json::from_str(json).unwrap();
         match response {
-            IpcResponse::Selection { source_type, source_id, geometry } => {
+            IpcResponse::Selection {
+                source_type,
+                source_id,
+                geometry,
+            } => {
                 assert_eq!(source_type, "monitor");
                 assert_eq!(source_id, "DP-1");
                 assert!(geometry.is_none());
@@ -132,7 +133,11 @@ mod tests {
         let json = r#"{"type":"selection","source_type":"region","source_id":"DP-1","geometry":{"x":100,"y":200,"width":800,"height":600}}"#;
         let response: IpcResponse = serde_json::from_str(json).unwrap();
         match response {
-            IpcResponse::Selection { source_type, source_id, geometry } => {
+            IpcResponse::Selection {
+                source_type,
+                source_id,
+                geometry,
+            } => {
                 assert_eq!(source_type, "region");
                 assert_eq!(source_id, "DP-1");
                 let geom = geometry.unwrap();
