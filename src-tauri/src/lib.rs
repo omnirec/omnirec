@@ -1,4 +1,4 @@
-//! Screen Recorder Tauri application.
+//! OmniRec Tauri application.
 
 mod capture;
 mod encoder;

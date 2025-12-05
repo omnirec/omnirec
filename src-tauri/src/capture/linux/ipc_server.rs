@@ -73,7 +73,7 @@ pub fn get_socket_path() -> PathBuf {
     let runtime_dir =
         std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| "/tmp".to_string());
     PathBuf::from(runtime_dir)
-        .join("screen-recorder")
+        .join("omnirec")
         .join("picker.sock")
 }
 

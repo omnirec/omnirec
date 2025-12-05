@@ -17,7 +17,7 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 
 <!-- OPENSPEC:END -->
 
-# Screen Recorder - AI Assistant Guidelines
+# OmniRec - AI Assistant Guidelines
 
 ## Project Overview
 

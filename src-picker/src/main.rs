@@ -1,8 +1,8 @@
-//! Screen Recorder Picker - Custom picker for xdg-desktop-portal-hyprland.
+//! OmniRec Picker - Custom picker for xdg-desktop-portal-hyprland.
 //!
 //! This is a headless picker that xdg-desktop-portal-hyprland invokes instead
 //! of the standard hyprland-share-picker. Instead of showing a UI, it queries
-//! the main screen-recorder app via IPC for the user's pre-selected capture
+//! the main omnirec app via IPC for the user's pre-selected capture
 //! target and outputs it to stdout in the format XDPH expects.
 //!
 //! # How it works
@@ -103,13 +103,13 @@ fn find_window_handle(windows: &[WindowEntry], hyprland_addr: u64) -> Option<u64
 #[tokio::main]
 async fn main() -> ExitCode {
     // Log that we were invoked (visible in journalctl)
-    eprintln!("[screen-recorder-picker] Picker invoked");
+    eprintln!("[omnirec-picker] Picker invoked");
 
     // Query the main app for the current selection
     let response = match query_selection().await {
         Ok(r) => r,
         Err(e) => {
-            eprintln!("[screen-recorder-picker] Failed to query main app: {}", e);
+            eprintln!("[omnirec-picker] Failed to query main app: {}", e);
             return ExitCode::FAILURE;
         }
     };
@@ -121,7 +121,7 @@ async fn main() -> ExitCode {
             geometry,
         } => {
             eprintln!(
-                "[screen-recorder-picker] Got selection: type={}, id={}",
+                "[omnirec-picker] Got selection: type={}, id={}",
                 source_type, source_id
             );
 
@@ -139,7 +139,7 @@ async fn main() -> ExitCode {
                     };
 
                     eprintln!(
-                        "[screen-recorder-picker] Looking for window with Hyprland addr: 0x{:x}",
+                        "[omnirec-picker] Looking for window with Hyprland addr: 0x{:x}",
                         hyprland_addr
                     );
 
@@ -148,12 +148,12 @@ async fn main() -> ExitCode {
                     let windows = parse_window_list(&window_list);
 
                     eprintln!(
-                        "[screen-recorder-picker] XDPH provided {} windows",
+                        "[omnirec-picker] XDPH provided {} windows",
                         windows.len()
                     );
                     for w in &windows {
                         eprintln!(
-                            "[screen-recorder-picker]   handle={}, addr=0x{:x}, class={}, title={}",
+                            "[omnirec-picker]   handle={}, addr=0x{:x}, class={}, title={}",
                             w.handle_id, w.window_addr, w.class, w.title
                         );
                     }
@@ -162,14 +162,14 @@ async fn main() -> ExitCode {
                     match find_window_handle(&windows, hyprland_addr) {
                         Some(handle) => {
                             eprintln!(
-                                "[screen-recorder-picker] Found XDPH handle: {}",
+                                "[omnirec-picker] Found XDPH handle: {}",
                                 handle
                             );
                             format!("[SELECTION]/window:{}", handle)
                         }
                         None => {
                             eprintln!(
-                                "[screen-recorder-picker] Window not found in XDPH list, trying direct address"
+                                "[omnirec-picker] Window not found in XDPH list, trying direct address"
                             );
                             // Fallback: try using the address directly (may not work)
                             format!("[SELECTION]/window:{}", hyprland_addr)
@@ -179,39 +179,39 @@ async fn main() -> ExitCode {
                 "region" => {
                     // Region format: screen@x,y,w,h
                     if let Some(geom) = geometry {
-                        eprintln!("[screen-recorder-picker] Region selection: {}@{},{},{},{}", 
+                        eprintln!("[omnirec-picker] Region selection: {}@{},{},{},{}", 
                             source_id, geom.x, geom.y, geom.width, geom.height);
                         format!(
                             "[SELECTION]/region:{}@{},{},{},{}",
                             source_id, geom.x, geom.y, geom.width, geom.height
                         )
                     } else {
-                        eprintln!("[screen-recorder-picker] Region selection missing geometry");
+                        eprintln!("[omnirec-picker] Region selection missing geometry");
                         return ExitCode::FAILURE;
                     }
                 }
                 _ => {
                     eprintln!(
-                        "[screen-recorder-picker] Unknown source type: {}",
+                        "[omnirec-picker] Unknown source type: {}",
                         source_type
                     );
                     return ExitCode::FAILURE;
                 }
             };
 
-            eprintln!("[screen-recorder-picker] Output: {}", output);
+            eprintln!("[omnirec-picker] Output: {}", output);
 
             // Output to stdout - this is what XDPH reads
             println!("{}", output);
             ExitCode::SUCCESS
         }
         IpcResponse::NoSelection => {
-            eprintln!("[screen-recorder-picker] No capture selection available in main app");
+            eprintln!("[omnirec-picker] No capture selection available in main app");
             // Output nothing - XDPH will cancel the request
             ExitCode::FAILURE
         }
         IpcResponse::Error { message } => {
-            eprintln!("[screen-recorder-picker] Error from main app: {}", message);
+            eprintln!("[omnirec-picker] Error from main app: {}", message);
             ExitCode::FAILURE
         }
     }

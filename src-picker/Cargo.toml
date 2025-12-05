@@ -1,12 +1,12 @@
 [package]
-name = "screen-recorder-picker"
+name = "omnirec-picker"
 version = "0.1.0"
-description = "Custom picker for xdg-desktop-portal-hyprland that queries the main screen-recorder app"
+description = "Custom picker for xdg-desktop-portal-hyprland that queries the main omnirec app"
 authors = ["you"]
 edition = "2021"
 
 [[bin]]
-name = "screen-recorder-picker"
+name = "omnirec-picker"
 path = "src/main.rs"
 
 [dependencies]

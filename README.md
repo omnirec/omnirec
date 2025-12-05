@@ -1,4 +1,4 @@
-# Screen Recorder
+# OmniRec
 
 A high-performance screen, window, and region recording application built with Tauri. Record and share anything — completely free, no cloud account required.
 
@@ -83,18 +83,18 @@ cargo build --release
 
 ```bash
 # System-wide (requires root)
-sudo cp target/release/screen-recorder-picker /usr/local/bin/
+sudo cp target/release/omnirec-picker /usr/local/bin/
 
 # Or user-local
 mkdir -p ~/.local/bin
-cp target/release/screen-recorder-picker ~/.local/bin/
+cp target/release/omnirec-picker ~/.local/bin/
 ```
 
 ### 3. Install Portal Configuration
 
 ```bash
 # Portal registration (requires root)
-sudo cp resources/linux/screen-recorder.portal /usr/share/xdg-desktop-portal/portals/
+sudo cp resources/linux/omnirec.portal /usr/share/xdg-desktop-portal/portals/
 ```
 
 ### 4. Configure Portal Routing for Hyprland
@@ -108,13 +108,13 @@ cp resources/linux/hyprland-portals.conf ~/.config/xdg-desktop-portal/
 
 ```bash
 mkdir -p ~/.config/systemd/user
-cp resources/linux/screen-recorder-picker.service ~/.config/systemd/user/
+cp resources/linux/omnirec-picker.service ~/.config/systemd/user/
 
 # If installed to ~/.local/bin, edit the service file:
-# Change ExecStart=%h/.local/bin/screen-recorder-picker
+# Change ExecStart=%h/.local/bin/omnirec-picker
 
 systemctl --user daemon-reload
-systemctl --user enable --now screen-recorder-picker
+systemctl --user enable --now omnirec-picker
 ```
 
 ### 6. Restart xdg-desktop-portal
@@ -128,19 +128,19 @@ systemctl --user restart xdg-desktop-portal
 Check that the picker service is running:
 
 ```bash
-systemctl --user status screen-recorder-picker
+systemctl --user status omnirec-picker
 ```
 
 Check that it registered on D-Bus:
 
 ```bash
-busctl --user list | grep screenrecorder
+busctl --user list | grep omnirec
 ```
 
 ### Troubleshooting
 
 **Picker service won't start:**
-- Check logs: `journalctl --user -u screen-recorder-picker -f`
+- Check logs: `journalctl --user -u omnirec-picker -f`
 - Ensure `HYPRLAND_INSTANCE_SIGNATURE` is set (only works under Hyprland)
 
 **Portal still shows system picker:**
@@ -150,7 +150,7 @@ busctl --user list | grep screenrecorder
 
 **IPC connection failed:**
 - Ensure the main app is running before initiating capture
-- Check socket exists: `ls $XDG_RUNTIME_DIR/screen-recorder/`
+- Check socket exists: `ls $XDG_RUNTIME_DIR/omnirec/`
 
 ## Recommended IDE Setup
 
@@ -161,7 +161,7 @@ busctl --user list | grep screenrecorder
 ## Project Structure
 
 ```
-screen-recorder/
+omnirec/
 ├── src/                    # Frontend TypeScript/HTML/CSS
 │   ├── main.ts             # Main application logic
 │   ├── selection-overlay.ts # Region selection UI

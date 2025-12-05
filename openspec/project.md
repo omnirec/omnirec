@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Screen Recorder is a high-performance desktop application for recording screens, windows, and custom regions. The core goals are:
+OmniRec is a high-performance desktop application for recording screens, windows, and custom regions. The core goals are:
 
 - **Performance**: Minimal CPU/GPU overhead during recording
 - **Simplicity**: Easy-to-use interface for quick captures
