@@ -7,9 +7,7 @@ mod region;
 mod window_list;
 
 use crate::capture::error::{CaptureError, EnumerationError};
-use crate::capture::types::{
-    CapturedFrame, CaptureRegion, FrameReceiver, MonitorInfo, StopHandle, WindowInfo,
-};
+use crate::capture::types::{CaptureRegion, FrameReceiver, MonitorInfo, StopHandle, WindowInfo};
 use crate::capture::{CaptureBackend, HighlightProvider, MonitorEnumerator, WindowEnumerator};
 
 /// Windows platform capture backend.
@@ -78,6 +76,3 @@ impl HighlightProvider for WindowsBackend {
         highlight::show_highlight(x, y, width, height);
     }
 }
-
-// Re-export CapturedFrame for backward compatibility with encoder
-pub use crate::capture::types::CapturedFrame;
