@@ -232,6 +232,7 @@ impl MonitorEnumerator for LinuxBackend {
                 width: monitor.width as u32,
                 height: monitor.height as u32,
                 is_primary: monitor.focused,
+                scale_factor: monitor.scale as f64,
             });
         }
 

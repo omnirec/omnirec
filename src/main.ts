@@ -19,6 +19,7 @@ interface MonitorInfo {
   width: number;
   height: number;
   is_primary: boolean;
+  scale_factor: number;
 }
 
 interface CaptureRegion {
@@ -60,6 +61,9 @@ let resultEl: HTMLElement | null;
 let resultPathEl: HTMLElement | null;
 let openFolderBtn: HTMLButtonElement | null;
 let appVersionEl: HTMLElement | null;
+let permissionNoticeEl: HTMLElement | null;
+let captureUiEl: HTMLElement | null;
+let openSettingsBtn: HTMLButtonElement | null;
 
 // State
 let captureMode: CaptureMode = "window";
@@ -93,9 +97,13 @@ window.addEventListener("DOMContentLoaded", () => {
   resultPathEl = document.querySelector("#result-path");
   openFolderBtn = document.querySelector("#open-folder-btn");
   appVersionEl = document.querySelector("#app-version");
+  permissionNoticeEl = document.querySelector("#permission-notice");
+  captureUiEl = document.querySelector("#capture-ui");
+  openSettingsBtn = document.querySelector("#open-settings-btn");
 
   // Set up event listeners
   refreshBtn?.addEventListener("click", loadWindows);
+  openSettingsBtn?.addEventListener("click", handleOpenSettings);
   refreshDisplaysBtn?.addEventListener("click", loadDisplays);
   testPortalBtn?.addEventListener("click", testLinuxPortal);
   recordBtn?.addEventListener("click", handleRecordClick);
@@ -123,10 +131,41 @@ window.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // Initial load
-  loadWindows();
+  // Initial load - check permissions first
+  checkPermissionsAndLoad();
   loadAppVersion();
 });
+
+// Check screen recording permission and show appropriate UI
+async function checkPermissionsAndLoad(): Promise<void> {
+  const permissionStatus = await invoke<string>("check_screen_recording_permission");
+  
+  if (permissionStatus === "denied") {
+    showPermissionNotice();
+  } else {
+    hidePermissionNotice();
+    loadWindows();
+  }
+}
+
+// Show the permission notice and hide capture UI
+function showPermissionNotice(): void {
+  permissionNoticeEl?.classList.remove("hidden");
+  captureUiEl?.classList.add("hidden");
+  setStatus("Screen recording permission required", true);
+}
+
+// Hide the permission notice and show capture UI
+function hidePermissionNotice(): void {
+  permissionNoticeEl?.classList.add("hidden");
+  captureUiEl?.classList.remove("hidden");
+}
+
+// Handle clicking the "Open System Settings" button
+async function handleOpenSettings(): Promise<void> {
+  // Open System Settings to the Screen Recording pane
+  await invoke("open_screen_recording_settings");
+}
 
 // Load and display app version
 async function loadAppVersion(): Promise<void> {
@@ -317,6 +356,13 @@ async function loadWindows(): Promise<void> {
     const windows = await invoke<WindowInfo[]>("get_windows");
 
     if (windows.length === 0) {
+      // Re-check permission in case it was revoked
+      const permissionStatus = await invoke<string>("check_screen_recording_permission");
+      if (permissionStatus === "denied") {
+        showPermissionNotice();
+        return;
+      }
+      
       windowListEl.innerHTML = '<p class="empty">No capturable windows found</p>';
       return;
     }
@@ -499,6 +545,12 @@ async function startRecording(): Promise<void> {
       await invoke("start_recording", { windowHandle: selectedWindow.handle });
     } else if (captureMode === "region" && selectedRegion) {
       console.log("Starting region recording with:", selectedRegion);
+      
+      // Hide the selector UI elements before recording starts
+      if (regionSelectorWindow) {
+        await regionSelectorWindow.emit("recording-started");
+      }
+      
       await invoke("start_region_recording", {
         monitorId: selectedRegion.monitor_id,
         x: Math.round(selectedRegion.x),
@@ -529,6 +581,11 @@ async function stopRecording(): Promise<void> {
   currentState = "saving";
   updateRecordButton();
   stopTimer();
+
+  // Show the selector UI elements again
+  if (regionSelectorWindow) {
+    await regionSelectorWindow.emit("recording-stopped");
+  }
 
   try {
     const result = await invoke<RecordingResult>("stop_recording");

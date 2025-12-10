@@ -8,14 +8,16 @@ A high-performance screen, window, and region recording application built with T
 
 ---
 
-> **Status**: Early Alpha — Windows fully supported, Linux/Wayland (Hyprland) in development. Core recording functionality works, but many planned features are not yet implemented.
+> **Status**: Early Alpha — Windows, macOS (12.3+), and Linux/Wayland (Hyprland) supported. Core recording functionality works, but many planned features are not yet implemented.
 
 ## Current Features
 
-- **Window Recording**: Capture any application window using Windows.Graphics.Capture API
+- **Window Recording**: Capture any application window
+- **Display Recording**: Capture your entire screen
 - **Region Recording**: Select and record a custom region of your screen
 - **MP4 Output**: H.264 encoded video via FFmpeg
 - **High Performance**: Native Rust backend with efficient frame pipeline
+- **Cross-Platform**: Windows, macOS (12.3+), and Linux (Hyprland)
 - **No Cloud Required**: All processing happens locally — your recordings stay on your machine
 - **Free & Open Source**: No subscriptions, no accounts, no limits
 
@@ -32,19 +34,20 @@ A high-performance screen, window, and region recording application built with T
 
 See [docs/requirements.md](docs/requirements.md) for the full roadmap, including:
 
-- Full screen capture
 - Pause/Resume recording
 - Audio capture (system + microphone)
 - Additional output formats (WebM, GIF, APNG, WebP)
 - Configurable quality and frame rate
 - Global hotkeys
-- macOS and Linux support
 
 ## Tech Stack
 
 - **Frontend**: Vanilla TypeScript, HTML, CSS
 - **Backend**: Rust + Tauri v2
-- **Capture**: [windows-capture](https://crates.io/crates/windows-capture) (Windows.Graphics.Capture API)
+- **Capture**:
+  - Windows: [windows-capture](https://crates.io/crates/windows-capture) (Windows.Graphics.Capture API)
+  - macOS: [screencapturekit](https://crates.io/crates/screencapturekit) (ScreenCaptureKit)
+  - Linux: PipeWire + xdg-desktop-portal
 - **Encoding**: [ffmpeg-sidecar](https://crates.io/crates/ffmpeg-sidecar) (auto-downloads FFmpeg)
 - **Build**: Vite
 
@@ -54,6 +57,11 @@ See [docs/requirements.md](docs/requirements.md) for the full roadmap, including
 - [pnpm](https://pnpm.io/)
 - [Rust](https://www.rust-lang.org/tools/install)
 - [Tauri Prerequisites](https://tauri.app/v2/start/prerequisites/) (Windows: WebView2, VS Build Tools)
+
+### macOS Requirements
+
+- macOS 12.3 (Monterey) or later (ScreenCaptureKit requirement)
+- Screen Recording permission (granted via System Settings > Privacy & Security)
 
 ### Linux/Wayland Additional Requirements
 
@@ -181,7 +189,7 @@ omnirec/
 │       ├── capture/        # Window/region capture modules
 │       │   ├── windows/    # Windows-specific capture
 │       │   ├── linux/      # Linux/Wayland capture
-│       │   └── macos/      # macOS capture (stub)
+│       │   └── macos/      # macOS ScreenCaptureKit capture
 │       └── encoder/        # FFmpeg encoding
 ├── src-picker/             # Linux portal picker service
 │   └── src/

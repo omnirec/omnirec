@@ -238,11 +238,16 @@ pub async fn encode_frames(
     let mut next_frame_time = start_time + std::time::Duration::from_millis(FRAME_INTERVAL_MS);
 
     // Process frames with timing
+    // Track consecutive empty polls to detect when capture has truly stopped
+    let mut consecutive_empty_polls = 0u32;
+    const MAX_EMPTY_POLLS: u32 = 100; // ~1 second at 10ms per poll
+
     loop {
         let now = std::time::Instant::now();
         
         // Check stop flag
         if stop_flag.load(Ordering::Relaxed) {
+            eprintln!("[Encoder] Stop flag set, exiting loop");
             break;
         }
 
@@ -250,11 +255,30 @@ pub async fn encode_frames(
         match frame_rx.try_recv() {
             Ok(frame) => {
                 last_frame = frame;
+                consecutive_empty_polls = 0;
             }
             Err(mpsc::error::TryRecvError::Empty) => {
-                // No new frame available, we'll duplicate the last one if needed
+                // No new frame available
+                consecutive_empty_polls += 1;
+                
+                // If stop flag is set and we've had many empty polls, exit
+                // This handles the case where the channel isn't properly closed
+                if stop_flag.load(Ordering::Relaxed) && consecutive_empty_polls > 10 {
+                    eprintln!("[Encoder] Stop flag set and no frames, exiting");
+                    break;
+                }
+                
+                // Safety exit if we've polled too many times with no frames
+                if consecutive_empty_polls > MAX_EMPTY_POLLS {
+                    eprintln!("[Encoder] No frames for {}ms, checking stop flag", MAX_EMPTY_POLLS * 10);
+                    if stop_flag.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    consecutive_empty_polls = 0; // Reset and continue
+                }
             }
             Err(mpsc::error::TryRecvError::Disconnected) => {
+                eprintln!("[Encoder] Channel disconnected, exiting loop");
                 break;
             }
         }
@@ -265,8 +289,6 @@ pub async fn encode_frames(
             frames_written += 1;
             next_frame_time += std::time::Duration::from_millis(FRAME_INTERVAL_MS);
         }
-
-
 
         // Sleep until next frame time (with some margin for processing)
         let sleep_duration = next_frame_time.saturating_duration_since(std::time::Instant::now());

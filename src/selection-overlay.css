@@ -152,3 +152,12 @@ body.hyprland .handle {
   pointer-events: none;
   z-index: 20;
 }
+
+/* Recording state - hide UI elements that would appear in the recording */
+body.recording .handle {
+  display: none !important;
+}
+
+body.recording #dimensions {
+  display: none !important;
+}

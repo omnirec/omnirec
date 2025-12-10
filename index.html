@@ -15,6 +15,23 @@
         <span id="app-version" class="app-version"></span>
       </header>
 
+      <!-- Permission notice (shown when screen recording permission is not granted on macOS) -->
+      <section id="permission-notice" class="permission-notice hidden">
+        <div class="permission-notice__icon">&#128274;</div>
+        <h2 class="permission-notice__title">Screen Recording Permission Required</h2>
+        <p class="permission-notice__desc">OmniRec needs permission to see and record your screen, windows, and selected regions.</p>
+        <ol class="permission-notice__steps">
+          <li>Open <strong>System Settings</strong></li>
+          <li>Go to <strong>Privacy & Security</strong> → <strong>Screen Recording</strong></li>
+          <li>Find <strong>OmniRec</strong> in the list and toggle it <strong>ON</strong></li>
+          <li><strong>Quit and restart OmniRec</strong> for changes to take effect</li>
+        </ol>
+        <button id="open-settings-btn" type="button" class="btn btn--primary">Open System Settings</button>
+        <p class="permission-notice__hint">After enabling permission, please restart the app.</p>
+      </section>
+
+      <!-- Main capture UI (hidden when permission is not granted) -->
+      <div id="capture-ui">
       <section class="mode-selection">
         <nav class="mode-toggle" role="tablist">
           <button id="mode-window-btn" type="button" class="mode-btn active" role="tab" aria-selected="true">Window</button>
@@ -69,6 +86,7 @@
         <p id="result-path"></p>
         <button id="open-folder-btn" type="button">Open Folder</button>
       </section>
+      </div><!-- end capture-ui -->
     </main>
   </body>
 </html>

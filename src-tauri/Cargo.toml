@@ -18,7 +18,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["macos-private-api"] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -71,8 +71,27 @@ tracing = "0.1"
 # Lazy initialization
 once_cell = "1.19"
 
-# macOS-specific dependencies (to be added when implementing ScreenCaptureKit support)
-# [target.'cfg(target_os = "macos")'.dependencies]
-# screencapturekit = "0.2"
-# core-graphics = "0.23"
+# macOS-specific dependencies
+[target.'cfg(target_os = "macos")'.dependencies]
+# ScreenCaptureKit bindings for frame capture
+screencapturekit = "0.2"
+
+# Core Graphics for window/display enumeration
+core-graphics = "0.24"
+
+# Core Foundation for macOS system types
+core-foundation = "0.10"
+
+# Dispatch for async operations
+dispatch = "0.2"
+
+# objc2 for Objective-C runtime (NSWindow highlight)
+# Must match versions used by Tauri to avoid conflicts
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSThread", "NSGeometry"] }
+objc2-app-kit = { version = "0.3", features = ["NSWindow", "NSView", "NSColor", "NSScreen", "NSResponder", "NSGraphics"] }
+
+# Block support for callbacks
+block2 = "0.6"
+
 libc = "0.2"

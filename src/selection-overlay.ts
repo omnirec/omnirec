@@ -1,5 +1,6 @@
 import { getCurrentWindow, Window } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 interface MonitorInfo {
   id: string;
@@ -9,6 +10,7 @@ interface MonitorInfo {
   width: number;
   height: number;
   is_primary: boolean;
+  scale_factor: number;
 }
 
 
@@ -129,6 +131,17 @@ window.addEventListener("DOMContentLoaded", async () => {
     throttledEmitRegionUpdate();
   });
 
+  // Listen for recording start/stop events to hide/show UI elements
+  listen("recording-started", () => {
+    console.log("Recording started - hiding UI elements");
+    document.body.classList.add("recording");
+  });
+
+  listen("recording-stopped", () => {
+    console.log("Recording stopped - showing UI elements");
+    document.body.classList.remove("recording");
+  });
+
   // Initial update
   updateDisplay();
   emitRegionUpdate();
@@ -181,14 +194,24 @@ async function emitRegionUpdate(): Promise<void> {
     console.log("Position from Hyprland:", windowX, windowY, windowWidth, "x", windowHeight);
   } catch (e) {
     console.error("Failed to get position from Hyprland:", e);
-    // Fallback to Tauri (won't work correctly on Wayland but better than nothing)
+    // Fallback to Tauri
+    // NOTE: Tauri returns PhysicalPosition/PhysicalSize which are in device pixels
+    // We need to convert to logical coordinates to match monitor coordinate system
+    const scaleFactor = await currentWindow.scaleFactor();
     const pos = await currentWindow.outerPosition();
     const size = await currentWindow.innerSize();
-    windowX = pos.x;
-    windowY = pos.y;
-    windowWidth = size.width;
-    windowHeight = size.height;
-    console.log("Fallback to Tauri position:", windowX, windowY, windowWidth, "x", windowHeight);
+    
+    console.log("Tauri scaleFactor:", scaleFactor);
+    console.log("Tauri outerPosition (physical):", pos.x, pos.y);
+    console.log("Tauri innerSize (physical):", size.width, "x", size.height);
+    
+    // Convert from physical to logical coordinates
+    windowX = Math.round(pos.x / scaleFactor);
+    windowY = Math.round(pos.y / scaleFactor);
+    windowWidth = Math.round(size.width / scaleFactor);
+    windowHeight = Math.round(size.height / scaleFactor);
+    
+    console.log("Converted to logical:", windowX, windowY, windowWidth, "x", windowHeight);
   }
 
   // The actual recording area is inside the border
@@ -207,8 +230,13 @@ async function emitRegionUpdate(): Promise<void> {
   const centerX = recordX + recordWidth / 2;
   const centerY = recordY + recordHeight / 2;
 
-  console.log("Looking for monitor containing point:", centerX, centerY);
-  console.log("Available monitors:", monitors);
+  console.log("Selection window (physical?):", windowX, windowY, windowWidth, "x", windowHeight);
+  console.log("Record area after border offset:", recordX, recordY, recordWidth, "x", recordHeight);
+  console.log("Looking for monitor containing center point:", centerX, centerY);
+  console.log("Available monitors:");
+  for (const m of monitors) {
+    console.log(`  ${m.name}: origin=(${m.x}, ${m.y}) size=${m.width}x${m.height} scale=${m.scale_factor}`);
+  }
 
   let monitor = findMonitorAt(centerX, centerY);
   if (!monitor) {
@@ -227,7 +255,7 @@ async function emitRegionUpdate(): Promise<void> {
     return;
   }
 
-  // Convert to monitor-relative coordinates (both in physical pixels from Hyprland)
+  // Convert to monitor-relative coordinates
   const region: CaptureRegion = {
     monitor_id: monitor.id,
     monitor_name: monitor.name,
@@ -237,8 +265,14 @@ async function emitRegionUpdate(): Promise<void> {
     height: recordHeight,
   };
 
-  console.log("Selected monitor:", monitor.id, "at", monitor.x, ",", monitor.y);
-  console.log("Final region:", region);
+  console.log("=== REGION CALCULATION ===");
+  console.log("Selected monitor:", monitor.name, `(id=${monitor.id})`);
+  console.log("Monitor origin:", monitor.x, ",", monitor.y);
+  console.log("Monitor size:", monitor.width, "x", monitor.height);
+  console.log("Monitor scale_factor:", monitor.scale_factor);
+  console.log("Record area (screen coords):", recordX, recordY);
+  console.log("Region (monitor-relative):", region.x, ",", region.y, "size:", region.width, "x", region.height);
+  console.log("==========================");
   
   // Emit to main window
   const mainWindow = await Window.getByLabel("main");

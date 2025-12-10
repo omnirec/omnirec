@@ -23,16 +23,23 @@ pub struct MonitorInfo {
     pub id: String,
     /// Display name for UI
     pub name: String,
-    /// Virtual screen X position
+    /// Virtual screen X position (logical coordinates)
     pub x: i32,
-    /// Virtual screen Y position
+    /// Virtual screen Y position (logical coordinates)
     pub y: i32,
-    /// Width in pixels
+    /// Width in pixels (physical)
     pub width: u32,
-    /// Height in pixels
+    /// Height in pixels (physical)
     pub height: u32,
     /// Whether this is the primary monitor
     pub is_primary: bool,
+    /// Scale factor (e.g., 2.0 for Retina displays)
+    #[serde(default = "default_scale_factor")]
+    pub scale_factor: f64,
+}
+
+fn default_scale_factor() -> f64 {
+    1.0
 }
 
 /// A captured frame with its dimensions and pixel data.

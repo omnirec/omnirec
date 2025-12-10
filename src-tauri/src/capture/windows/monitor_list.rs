@@ -67,6 +67,7 @@ unsafe extern "system" fn enum_monitor_callback(
             width: (rect.right - rect.left) as u32,
             height: (rect.bottom - rect.top) as u32,
             is_primary,
+            scale_factor: 1.0, // TODO: Get actual DPI scale from Windows
         });
     }
 

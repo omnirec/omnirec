@@ -83,6 +83,58 @@ fn get_windows() -> Vec<WindowInfo> {
     list_windows()
 }
 
+/// Check screen recording permission status (macOS only).
+/// Returns: "granted", "denied", or "unknown" (non-macOS platforms).
+/// 
+/// This also triggers the permission prompt on first run to ensure
+/// the app appears in the Screen Recording permission list.
+#[tauri::command]
+fn check_screen_recording_permission() -> String {
+    #[cfg(target_os = "macos")]
+    {
+        use capture::macos::MacOSBackend;
+        
+        // First check if we already have permission
+        if MacOSBackend::has_screen_recording_permission() {
+            return "granted".to_string();
+        }
+        
+        // If not granted, trigger the prompt to add app to the permission list
+        // This causes macOS to show the permission dialog (first time only)
+        // and adds the app to System Settings > Screen Recording
+        MacOSBackend::trigger_permission_prompt();
+        
+        // Check again after triggering
+        if MacOSBackend::has_screen_recording_permission() {
+            "granted".to_string()
+        } else {
+            "denied".to_string()
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        "unknown".to_string()
+    }
+}
+
+/// Open System Settings to the Screen Recording privacy pane (macOS only).
+#[tauri::command]
+fn open_screen_recording_settings() {
+    #[cfg(target_os = "macos")]
+    {
+        // First trigger the permission prompt to ensure the app is in the list
+        use capture::macos::MacOSBackend;
+        MacOSBackend::trigger_permission_prompt();
+        
+        // Then open System Settings directly to the Screen Recording pane
+        // This URL scheme works on macOS 13+ (Ventura and later)
+        // Falls back to Privacy & Security on older versions
+        let _ = std::process::Command::new("open")
+            .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")
+            .spawn();
+    }
+}
+
 /// Get list of available monitors.
 #[tauri::command]
 fn get_monitors() -> Vec<MonitorInfo> {
@@ -332,6 +384,8 @@ pub fn run() {
             get_region_selector_position,
             is_hyprland,
             test_linux_portal,
+            check_screen_recording_permission,
+            open_screen_recording_settings,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
