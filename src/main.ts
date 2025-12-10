@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { getVersion } from "@tauri-apps/api/app";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { listen } from "@tauri-apps/api/event";
@@ -58,6 +59,7 @@ let statusEl: HTMLElement | null;
 let resultEl: HTMLElement | null;
 let resultPathEl: HTMLElement | null;
 let openFolderBtn: HTMLButtonElement | null;
+let appVersionEl: HTMLElement | null;
 
 // State
 let captureMode: CaptureMode = "window";
@@ -90,6 +92,7 @@ window.addEventListener("DOMContentLoaded", () => {
   resultEl = document.querySelector("#result");
   resultPathEl = document.querySelector("#result-path");
   openFolderBtn = document.querySelector("#open-folder-btn");
+  appVersionEl = document.querySelector("#app-version");
 
   // Set up event listeners
   refreshBtn?.addEventListener("click", loadWindows);
@@ -122,7 +125,19 @@ window.addEventListener("DOMContentLoaded", () => {
 
   // Initial load
   loadWindows();
+  loadAppVersion();
 });
+
+// Load and display app version
+async function loadAppVersion(): Promise<void> {
+  if (!appVersionEl) return;
+  try {
+    const version = await getVersion();
+    appVersionEl.textContent = `v${version}`;
+  } catch (error) {
+    console.error("Failed to load app version:", error);
+  }
+}
 
 // Set capture mode
 function setCaptureMode(mode: CaptureMode): void {
