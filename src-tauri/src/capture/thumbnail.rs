@@ -7,10 +7,10 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use image::{ImageBuffer, Rgba};
 
 /// Maximum thumbnail width in pixels.
-pub const THUMBNAIL_MAX_WIDTH: u32 = 160;
+pub const THUMBNAIL_MAX_WIDTH: u32 = 320;
 
 /// Maximum thumbnail height in pixels.
-pub const THUMBNAIL_MAX_HEIGHT: u32 = 90;
+pub const THUMBNAIL_MAX_HEIGHT: u32 = 180;
 
 /// Maximum region preview width in pixels.
 pub const PREVIEW_MAX_WIDTH: u32 = 400;
@@ -124,24 +124,24 @@ mod tests {
 
     #[test]
     fn test_calculate_scaled_dimensions_landscape() {
-        // 1920x1080 -> max 160x90
-        let (w, h) = calculate_scaled_dimensions(1920, 1080, 160, 90);
-        assert_eq!(w, 160);
-        assert_eq!(h, 90);
+        // 1920x1080 -> max 320x180
+        let (w, h) = calculate_scaled_dimensions(1920, 1080, 320, 180);
+        assert_eq!(w, 320);
+        assert_eq!(h, 180);
     }
 
     #[test]
     fn test_calculate_scaled_dimensions_portrait() {
-        // 1080x1920 -> max 160x90
-        let (w, h) = calculate_scaled_dimensions(1080, 1920, 160, 90);
-        assert_eq!(w, 50); // Limited by height
-        assert_eq!(h, 90);
+        // 1080x1920 -> max 320x180
+        let (w, h) = calculate_scaled_dimensions(1080, 1920, 320, 180);
+        assert_eq!(w, 101); // Limited by height
+        assert_eq!(h, 180);
     }
 
     #[test]
     fn test_calculate_scaled_dimensions_no_upscale() {
-        // 100x50 -> max 160x90 (should not upscale)
-        let (w, h) = calculate_scaled_dimensions(100, 50, 160, 90);
+        // 100x50 -> max 320x180 (should not upscale)
+        let (w, h) = calculate_scaled_dimensions(100, 50, 320, 180);
         assert_eq!(w, 100);
         assert_eq!(h, 50);
     }
@@ -156,7 +156,7 @@ mod tests {
             data.extend_from_slice(&[255, 0, 0, 255]); // BGRA blue
         }
 
-        let result = bgra_to_jpeg_thumbnail(&data, width, height, 160, 90);
+        let result = bgra_to_jpeg_thumbnail(&data, width, height, 320, 180);
         assert!(result.is_ok());
 
         let (base64_str, scaled_w, scaled_h) = result.unwrap();

@@ -378,8 +378,8 @@ section {
 
 .window-item__thumbnail {
   flex-shrink: 0;
-  width: 80px;
-  height: 45px;
+  width: 160px;
+  height: 90px;
   border-radius: 4px;
   overflow: hidden;
   background: var(--gray-700);
@@ -502,8 +502,8 @@ section {
 
 .display-item__thumbnail {
   flex-shrink: 0;
-  width: 80px;
-  height: 45px;
+  width: 160px;
+  height: 90px;
   border-radius: 4px;
   overflow: hidden;
   background: var(--gray-700);
