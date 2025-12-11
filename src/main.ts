@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { WebviewWindow, getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { listen } from "@tauri-apps/api/event";
 
 // Types matching Rust structs
@@ -56,7 +56,8 @@ let modeWindowBtn: HTMLButtonElement | null;
 let modeRegionBtn: HTMLButtonElement | null;
 let modeDisplayBtn: HTMLButtonElement | null;
 let timerEl: HTMLElement | null;
-let statusEl: HTMLElement | null;
+let statusOverlayEl: HTMLElement | null;
+let statusDismissTimeout: number | null = null;
 let resultEl: HTMLElement | null;
 let resultPathEl: HTMLElement | null;
 let openFolderBtn: HTMLButtonElement | null;
@@ -64,6 +65,7 @@ let appVersionEl: HTMLElement | null;
 let permissionNoticeEl: HTMLElement | null;
 let captureUiEl: HTMLElement | null;
 let openSettingsBtn: HTMLButtonElement | null;
+let closeBtn: HTMLButtonElement | null;
 
 // State
 let captureMode: CaptureMode = "window";
@@ -92,7 +94,7 @@ window.addEventListener("DOMContentLoaded", () => {
   modeRegionBtn = document.querySelector("#mode-region-btn");
   modeDisplayBtn = document.querySelector("#mode-display-btn");
   timerEl = document.querySelector("#timer");
-  statusEl = document.querySelector("#status");
+  statusOverlayEl = document.querySelector("#status-overlay");
   resultEl = document.querySelector("#result");
   resultPathEl = document.querySelector("#result-path");
   openFolderBtn = document.querySelector("#open-folder-btn");
@@ -100,8 +102,11 @@ window.addEventListener("DOMContentLoaded", () => {
   permissionNoticeEl = document.querySelector("#permission-notice");
   captureUiEl = document.querySelector("#capture-ui");
   openSettingsBtn = document.querySelector("#open-settings-btn");
+  closeBtn = document.querySelector("#close-btn");
 
   // Set up event listeners
+  closeBtn?.addEventListener("click", () => getCurrentWebviewWindow().close());
+  statusOverlayEl?.addEventListener("click", dismissStatus);
   refreshBtn?.addEventListener("click", loadWindows);
   openSettingsBtn?.addEventListener("click", handleOpenSettings);
   refreshDisplaysBtn?.addEventListener("click", loadDisplays);
@@ -208,19 +213,6 @@ function setCaptureMode(mode: CaptureMode): void {
   }
 
   updateRecordButton();
-
-  // Set appropriate status message
-  switch (mode) {
-    case "window":
-      setStatus("Select a window to record");
-      break;
-    case "region":
-      setStatus("Select a region to record");
-      break;
-    case "display":
-      setStatus("Select a display to record");
-      break;
-  }
 }
 
 // Update region display
@@ -234,10 +226,15 @@ function updateRegionDisplay(): void {
         <div class="region-details__dimensions">${selectedRegion.width} x ${selectedRegion.height}</div>
         <div class="region-details__monitor">${selectedRegion.monitor_name}</div>
       </div>
+      <button id="select-region-btn" type="button">Change Region</button>
     `;
+    // Re-attach event listener since we replaced the DOM
+    document.querySelector("#select-region-btn")?.addEventListener("click", openRegionSelector);
   } else {
     regionDisplayEl.classList.remove("has-selection");
-    regionDisplayEl.innerHTML = '<p class="region-placeholder">No region selected</p>';
+    regionDisplayEl.innerHTML = '<button id="select-region-btn" type="button">Select Region</button>';
+    // Re-attach event listener since we replaced the DOM
+    document.querySelector("#select-region-btn")?.addEventListener("click", openRegionSelector);
   }
 }
 
@@ -250,8 +247,6 @@ async function openRegionSelector(): Promise<void> {
     await regionSelectorWindow.setFocus();
     return;
   }
-
-  setStatus("Opening region selector...");
 
   try {
     // Get monitors for coordinate mapping
@@ -336,7 +331,6 @@ async function openRegionSelector(): Promise<void> {
     updateRecordButton();
 
     console.log("Selector ready");
-    setStatus("Drag to move, resize corners, click Record when ready");
 
   } catch (error) {
     console.error("Error opening region selector:", error);
@@ -454,7 +448,6 @@ function selectDisplayItem(display: MonitorInfo, element: HTMLElement): void {
   element.classList.add("selected");
   selectedDisplay = display;
   updateRecordButton();
-  setStatus(`Selected: ${display.name} (${display.width} x ${display.height})`);
 
   // Show highlight overlay on the selected display
   showDisplayHighlight(display);
@@ -508,7 +501,6 @@ function selectWindow(win: WindowInfo, element: HTMLElement): void {
   element.classList.add("selected");
   selectedWindow = win;
   updateRecordButton();
-  setStatus(`Selected: ${win.title}`);
 }
 
 // Handle record button click
@@ -668,8 +660,9 @@ function disableSelection(disabled: boolean): void {
   if (refreshDisplaysBtn) {
     refreshDisplaysBtn.disabled = disabled;
   }
-  if (selectRegionBtn) {
-    selectRegionBtn.disabled = disabled;
+  const currentSelectRegionBtn = document.querySelector<HTMLButtonElement>("#select-region-btn");
+  if (currentSelectRegionBtn) {
+    currentSelectRegionBtn.disabled = disabled;
   }
   if (modeWindowBtn) {
     modeWindowBtn.disabled = disabled;
@@ -722,12 +715,43 @@ async function handleOpenFolder(): Promise<void> {
   }
 }
 
-// Set status message
+// Set status message - shows as overlay that auto-dismisses
 function setStatus(message: string, isError = false): void {
-  if (!statusEl) return;
+  if (!statusOverlayEl) return;
 
-  statusEl.textContent = message;
-  statusEl.classList.toggle("error", isError);
+  // Clear any existing dismiss timeout
+  if (statusDismissTimeout !== null) {
+    clearTimeout(statusDismissTimeout);
+    statusDismissTimeout = null;
+  }
+
+  // Update content and show
+  statusOverlayEl.textContent = message;
+  statusOverlayEl.classList.toggle("error", isError);
+  statusOverlayEl.classList.remove("hidden", "fade-out");
+
+  // Auto-dismiss after 5 seconds
+  statusDismissTimeout = window.setTimeout(() => {
+    dismissStatus();
+  }, 5000);
+}
+
+// Dismiss the status overlay
+function dismissStatus(): void {
+  if (!statusOverlayEl) return;
+
+  // Clear timeout if manually dismissed
+  if (statusDismissTimeout !== null) {
+    clearTimeout(statusDismissTimeout);
+    statusDismissTimeout = null;
+  }
+
+  // Fade out then hide
+  statusOverlayEl.classList.add("fade-out");
+  setTimeout(() => {
+    statusOverlayEl?.classList.add("hidden");
+    statusOverlayEl?.classList.remove("fade-out");
+  }, 200);
 }
 
 // HTML escape helper

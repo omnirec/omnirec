@@ -9,6 +9,8 @@
   </head>
 
   <body>
+    <button id="close-btn" class="close-btn" type="button" title="Close">&times;</button>
+    <div id="status-overlay" class="status-overlay hidden"></div>
     <main class="container">
       <header class="app-header">
         <img src="/src/assets/omnirec-logo-transparent-dark.png" alt="OmniRec" class="app-logo" />
@@ -56,9 +58,8 @@
         </div>
         <div class="region-info">
           <div id="region-display" class="region-display">
-            <p class="region-placeholder">No region selected</p>
+            <button id="select-region-btn" type="button">Select Region</button>
           </div>
-          <button id="select-region-btn" type="button">Select Region</button>
         </div>
       </section>
 
@@ -78,7 +79,6 @@
           <button id="record-btn" type="button" disabled>Record</button>
           <span id="timer" class="timer">00:00</span>
         </div>
-        <div id="status" class="status"></div>
       </section>
 
       <section id="result" class="result hidden">

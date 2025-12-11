@@ -18,7 +18,8 @@
         "title": "OmniRec",
         "width": 500,
         "height": 650,
-        "resizable": false
+        "resizable": false,
+        "decorations": false
       }
     ],
     "security": {

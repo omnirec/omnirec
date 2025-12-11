@@ -58,15 +58,62 @@
 html, body {
   margin: 0;
   padding: 0;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
   background: linear-gradient(180deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%);
+}
+
+/* Make window draggable by default, except interactive elements */
+body {
+  -webkit-app-region: drag;
+}
+
+button, input, select, textarea, a, .window-list, .display-list, .region-display, .mode-toggle {
+  -webkit-app-region: no-drag;
+}
+
+/* ===== Close Button ===== */
+.close-btn {
+  position: fixed;
+  top: 6px;
+  right: 6px;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s;
+  z-index: 1000;
+  padding: 0;
+}
+
+.close-btn:hover {
+  background: transparent;
+  color: var(--text-primary);
 }
 
 /* ===== Container ===== */
 .container {
-  margin: 0 auto;
-  padding: 20px;
-  max-width: 460px;
+  margin: 0;
+  padding: 20px 20px;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#capture-ui {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
 }
 
 /* ===== App Header ===== */
@@ -172,22 +219,28 @@ section {
 
 /* ===== Region Selection ===== */
 .region-selection {
-  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  margin-bottom: 16px;
 }
 
 .region-info {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  align-items: center;
+  flex: 1;
+  min-height: 0;
 }
 
 .region-display {
   width: 100%;
-  min-height: 70px;
+  flex: 1;
+  min-height: 200px;
   border: 2px dashed var(--gray-600);
   border-radius: 8px;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   background: var(--bg-surface);
@@ -199,15 +252,9 @@ section {
   background: rgba(59, 130, 246, 0.1);
 }
 
-.region-placeholder {
-  color: var(--text-muted);
-  margin: 0;
-  font-size: 0.9em;
-}
-
 .region-details {
   text-align: center;
-  margin: 0;
+  margin: 0 0 16px 0;
 }
 
 .region-details__dimensions {
@@ -232,11 +279,21 @@ section {
   background-color: var(--accent-primary-hover);
 }
 
+/* ===== Window Selection ===== */
+.window-selection {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  margin-bottom: 16px;
+}
+
 /* ===== Window List ===== */
 .window-list {
   border: 1px solid var(--border-color);
   border-radius: 8px;
-  max-height: 250px;
+  flex: 1;
+  min-height: 200px;
   overflow-y: auto;
   background: var(--bg-surface);
 }
@@ -296,13 +353,18 @@ section {
 
 /* ===== Display List ===== */
 .display-selection {
-  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  margin-bottom: 16px;
 }
 
 .display-list {
   border: 1px solid var(--border-color);
   border-radius: 8px;
-  max-height: 250px;
+  flex: 1;
+  min-height: 200px;
   overflow-y: auto;
   background: var(--bg-surface);
 }
@@ -436,15 +498,16 @@ button:disabled {
 
 /* ===== Controls ===== */
 .controls {
-  text-align: center;
+  text-align: left;
+  margin-bottom: 0;
+  flex-shrink: 0;
 }
 
 .record-controls {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 16px;
-  margin-bottom: 10px;
 }
 
 .timer {
@@ -459,15 +522,36 @@ button:disabled {
   color: var(--accent-danger);
 }
 
-/* ===== Status ===== */
-.status {
-  min-height: 20px;
-  color: var(--text-secondary);
-  font-size: 0.85em;
+/* ===== Status Overlay ===== */
+.status-overlay {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(0, 0, 0, 0.85);
+  color: var(--text-primary);
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 0.9em;
+  z-index: 1000;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: opacity 0.2s ease-out;
+  max-width: calc(100% - 40px);
+  text-align: center;
 }
 
-.status.error {
-  color: var(--accent-danger);
+.status-overlay.hidden {
+  display: none;
+}
+
+.status-overlay.fade-out {
+  opacity: 0;
+}
+
+.status-overlay.error {
+  background: rgba(239, 68, 68, 0.9);
 }
 
 /* ===== Result Section ===== */
