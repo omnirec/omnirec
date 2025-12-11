@@ -554,21 +554,35 @@ button:disabled {
   background: rgba(239, 68, 68, 0.9);
 }
 
-/* ===== Result Section ===== */
+/* ===== Result Section (Overlay) ===== */
 .result {
-  background: rgba(34, 197, 94, 0.1);
-  border: 1px solid var(--accent-success);
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(34, 197, 94, 0.95);
+  border: none;
   border-radius: 8px;
-  padding: 14px;
+  padding: 14px 20px;
   text-align: center;
+  z-index: 1000;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: opacity 0.2s ease-out;
+  max-width: calc(100% - 40px);
 }
 
 .result.hidden {
   display: none;
 }
 
+.result.fade-out {
+  opacity: 0;
+}
+
 .result h3 {
-  color: var(--accent-success);
+  color: white;
   margin-bottom: 8px;
 }
 
@@ -577,17 +591,18 @@ button:disabled {
   font-size: 0.8em;
   word-break: break-all;
   margin: 8px 0 12px 0;
-  color: var(--text-secondary);
+  color: rgba(255, 255, 255, 0.9);
 }
 
 #open-folder-btn {
-  background-color: var(--accent-success);
-  color: white;
+  background-color: white;
+  color: var(--accent-success);
   border: none;
+  font-weight: 500;
 }
 
 #open-folder-btn:hover:not(:disabled) {
-  background-color: var(--accent-success-hover);
+  background-color: rgba(255, 255, 255, 0.9);
 }
 
 /* ===== Recording Indicator ===== */

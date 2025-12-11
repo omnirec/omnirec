@@ -58,6 +58,7 @@ let modeDisplayBtn: HTMLButtonElement | null;
 let timerEl: HTMLElement | null;
 let statusOverlayEl: HTMLElement | null;
 let statusDismissTimeout: number | null = null;
+let resultDismissTimeout: number | null = null;
 let resultEl: HTMLElement | null;
 let resultPathEl: HTMLElement | null;
 let openFolderBtn: HTMLButtonElement | null;
@@ -107,6 +108,12 @@ window.addEventListener("DOMContentLoaded", () => {
   // Set up event listeners
   closeBtn?.addEventListener("click", () => getCurrentWebviewWindow().close());
   statusOverlayEl?.addEventListener("click", dismissStatus);
+  resultEl?.addEventListener("click", (e) => {
+    // Don't dismiss if clicking the Open Folder button
+    if (e.target !== openFolderBtn) {
+      dismissResult();
+    }
+  });
   refreshBtn?.addEventListener("click", loadWindows);
   openSettingsBtn?.addEventListener("click", handleOpenSettings);
   refreshDisplaysBtn?.addEventListener("click", loadDisplays);
@@ -691,15 +698,44 @@ function disableSelection(disabled: boolean): void {
   });
 }
 
-// Show result section
+// Show result overlay with auto-dismiss
 function showResult(filePath: string): void {
   if (!resultEl || !resultPathEl) return;
 
+  // Clear any existing dismiss timeout
+  if (resultDismissTimeout !== null) {
+    clearTimeout(resultDismissTimeout);
+    resultDismissTimeout = null;
+  }
+
   resultPathEl.textContent = filePath;
-  resultEl.classList.remove("hidden");
+  resultEl.classList.remove("hidden", "fade-out");
 
   // Store path for open folder button
   resultEl.dataset.path = filePath;
+
+  // Auto-dismiss after 5 seconds
+  resultDismissTimeout = window.setTimeout(() => {
+    dismissResult();
+  }, 5000);
+}
+
+// Dismiss the result overlay
+function dismissResult(): void {
+  if (!resultEl) return;
+
+  // Clear timeout if manually dismissed
+  if (resultDismissTimeout !== null) {
+    clearTimeout(resultDismissTimeout);
+    resultDismissTimeout = null;
+  }
+
+  // Fade out then hide
+  resultEl.classList.add("fade-out");
+  setTimeout(() => {
+    resultEl?.classList.add("hidden");
+    resultEl?.classList.remove("fade-out");
+  }, 200);
 }
 
 // Handle open folder button
@@ -717,6 +753,13 @@ async function handleOpenFolder(): Promise<void> {
 
 // Set status message - shows as overlay that auto-dismisses
 function setStatus(message: string, isError = false): void {
+  // Log the message to console
+  if (isError) {
+    console.error("[Status]", message);
+  } else {
+    console.log("[Status]", message);
+  }
+
   if (!statusOverlayEl) return;
 
   // Clear any existing dismiss timeout

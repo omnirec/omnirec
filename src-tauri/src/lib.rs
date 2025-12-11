@@ -155,10 +155,15 @@ async fn start_recording(
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     if !state.ffmpeg_ready {
-        return Err("FFmpeg is not available. Please restart the application.".to_string());
+        let err = "FFmpeg is not available. Please restart the application.";
+        eprintln!("[start_recording] Error: {}", err);
+        return Err(err.to_string());
     }
     let manager = state.recording_manager.lock().await;
-    manager.start_recording(window_handle).await
+    manager.start_recording(window_handle).await.map_err(|e| {
+        eprintln!("[start_recording] Error: {}", e);
+        e
+    })
 }
 
 /// Start recording a screen region.
@@ -172,7 +177,9 @@ async fn start_region_recording(
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     if !state.ffmpeg_ready {
-        return Err("FFmpeg is not available. Please restart the application.".to_string());
+        let err = "FFmpeg is not available. Please restart the application.";
+        eprintln!("[start_region_recording] Error: {}", err);
+        return Err(err.to_string());
     }
 
     let region = CaptureRegion {
@@ -184,7 +191,10 @@ async fn start_region_recording(
     };
 
     let manager = state.recording_manager.lock().await;
-    manager.start_region_recording(region).await
+    manager.start_region_recording(region).await.map_err(|e| {
+        eprintln!("[start_region_recording] Error: {}", e);
+        e
+    })
 }
 
 /// Start recording an entire display.
@@ -194,7 +204,9 @@ async fn start_display_recording(
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     if !state.ffmpeg_ready {
-        return Err("FFmpeg is not available. Please restart the application.".to_string());
+        let err = "FFmpeg is not available. Please restart the application.";
+        eprintln!("[start_display_recording] Error: {}", err);
+        return Err(err.to_string());
     }
 
     // Find the monitor to get its dimensions
@@ -202,19 +214,30 @@ async fn start_display_recording(
     let monitor = monitors
         .iter()
         .find(|m| m.id == monitor_id)
-        .ok_or_else(|| format!("Monitor not found: {}", monitor_id))?;
+        .ok_or_else(|| {
+            let err = format!("Monitor not found: {}", monitor_id);
+            eprintln!("[start_display_recording] Error: {}", err);
+            err
+        })?;
 
     let manager = state.recording_manager.lock().await;
     manager
         .start_display_recording(monitor_id, monitor.width, monitor.height)
         .await
+        .map_err(|e| {
+            eprintln!("[start_display_recording] Error: {}", e);
+            e
+        })
 }
 
 /// Stop the current recording and save the file.
 #[tauri::command]
 async fn stop_recording(state: State<'_, AppState>) -> Result<RecordingResult, String> {
     let manager = state.recording_manager.lock().await;
-    manager.stop_recording().await
+    manager.stop_recording().await.map_err(|e| {
+        eprintln!("[stop_recording] Error: {}", e);
+        e
+    })
 }
 
 /// Get elapsed recording time in seconds.
