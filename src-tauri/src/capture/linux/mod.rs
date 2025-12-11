@@ -8,6 +8,7 @@
 //! The capture flow involves a separate picker service that auto-approves
 //! portal requests based on the user's selection in the main app UI.
 
+pub mod highlight;
 pub mod ipc_server;
 pub mod pipewire_capture;
 pub mod portal_client;
@@ -176,6 +177,9 @@ impl WindowEnumerator for LinuxBackend {
             EnumerationError::PlatformError(format!("Failed to get Hyprland clients: {}", e))
         })?;
 
+        // Get monitors to look up scale factors (Hyprland Monitor has numeric `id` field)
+        let monitors = Monitors::get().ok();
+
         let mut windows = Vec::new();
         for client in clients {
             // Skip windows without titles or hidden windows
@@ -189,10 +193,37 @@ impl WindowEnumerator for LinuxBackend {
             let handle = handle.trim_start_matches("0x");
             let handle = isize::from_str_radix(handle, 16).unwrap_or(0);
 
+            // Hyprland reports window position and size in logical (scaled) coordinates
+            // We need to match the MonitorInfo format which uses:
+            // - x, y: logical coordinates (Hyprland workspace coordinates)
+            // - width, height: physical pixels
+            let (logical_x, logical_y) = (client.at.0 as i32, client.at.1 as i32);
+            let (logical_width, logical_height) = (client.size.0 as u32, client.size.1 as u32);
+
+            // Find the scale factor for this window's monitor
+            // client.monitor is Option<MonitorId> (i128), mon.id is also the numeric ID
+            let scale = monitors.as_ref()
+                .and_then(|m| {
+                    client.monitor.and_then(|client_mon_id| {
+                        m.iter().find(|mon| mon.id as i128 == client_mon_id)
+                    })
+                })
+                .map(|mon| mon.scale as f64)
+                .unwrap_or(1.0);
+
+            // Convert only width/height to physical pixels (to match MonitorInfo format)
+            // Keep x, y in logical coordinates (Hyprland workspace space)
+            let width = (logical_width as f64 * scale).round() as u32;
+            let height = (logical_height as f64 * scale).round() as u32;
+
             windows.push(WindowInfo {
                 handle,
                 title: client.title.clone(),
                 process_name: client.class.clone(),
+                x: logical_x,
+                y: logical_y,
+                width,
+                height,
             });
         }
 
@@ -447,10 +478,8 @@ impl CaptureBackend for LinuxBackend {
 }
 
 impl HighlightProvider for LinuxBackend {
-    fn show_highlight(&self, _x: i32, _y: i32, _width: i32, _height: i32) {
-        // Highlight is less important on Wayland - portal handles selection
-        // Could potentially use layer-shell in the future
-        eprintln!("Linux display highlight not yet implemented");
+    fn show_highlight(&self, x: i32, y: i32, width: i32, height: i32) {
+        highlight::show_highlight(x, y, width, height);
     }
 }
 

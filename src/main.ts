@@ -508,6 +508,20 @@ function selectWindow(win: WindowInfo, element: HTMLElement): void {
   element.classList.add("selected");
   selectedWindow = win;
   updateRecordButton();
+
+  // Show highlight overlay on the selected window
+  showWindowHighlight(win);
+}
+
+// Show a brief highlight border on a window to help identify it
+async function showWindowHighlight(win: WindowInfo): Promise<void> {
+  try {
+    await invoke("show_window_highlight", {
+      windowHandle: win.handle,
+    });
+  } catch (error) {
+    console.error("Error showing window highlight:", error);
+  }
 }
 
 // Handle record button click

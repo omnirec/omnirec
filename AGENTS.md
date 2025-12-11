@@ -87,7 +87,3 @@ pnpm build             # Build frontend only
 ## Documentation and Notes
 
 - Update the project `README.md` document any time significant features are added or changed.
-- Relevant notes and other information about this project can be found in Obsidian under 'Dev/Projects/Screen Capture'.
-- Update the 'Dev/Projects/Screen Capture/Development Notes' Obsidian document automatically as a journal of development history. Keep it brief.
-- As needed, create new development/design notes in 'Dev/Projects/Screen Capture' in Obsidian instead of creating them in the project `docs` folder.
-

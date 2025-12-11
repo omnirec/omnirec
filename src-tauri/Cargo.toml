@@ -74,6 +74,10 @@ once_cell = "1.19"
 # Memory mapping for DMA-BUF frame access
 libc = "0.2"
 
+# Wayland client for layer-shell highlight overlay
+wayland-client = "0.31"
+wayland-protocols-wlr = { version = "0.3", features = ["client"] }
+
 # macOS-specific dependencies
 [target.'cfg(target_os = "macos")'.dependencies]
 # ScreenCaptureKit bindings for frame capture

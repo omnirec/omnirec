@@ -6,9 +6,10 @@ use std::os::windows::ffi::OsStringExt;
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM};
 use windows::Win32::System::ProcessStatus::GetModuleBaseNameW;
 use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ};
+use windows::Win32::Foundation::RECT;
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsIconic,
-    IsWindowVisible, GA_ROOTOWNER, GetAncestor, GetWindow, GetWindowLongW,
+    EnumWindows, GetWindowRect, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId,
+    IsIconic, IsWindowVisible, GA_ROOTOWNER, GetAncestor, GetWindow, GetWindowLongW,
     GWL_EXSTYLE, GW_OWNER, WS_EX_TOOLWINDOW,
 };
 
@@ -110,10 +111,27 @@ unsafe extern "system" fn enum_window_callback(hwnd: HWND, lparam: LPARAM) -> BO
         String::from("Unknown")
     };
 
+    // Get window position and size
+    let mut rect = RECT::default();
+    let (x, y, width, height) = if GetWindowRect(hwnd, &mut rect).is_ok() {
+        (
+            rect.left,
+            rect.top,
+            (rect.right - rect.left).max(0) as u32,
+            (rect.bottom - rect.top).max(0) as u32,
+        )
+    } else {
+        (0, 0, 0, 0)
+    };
+
     windows.push(WindowInfo {
         handle: hwnd.0 as isize,
         title,
         process_name,
+        x,
+        y,
+        width,
+        height,
     });
 
     BOOL(1) // Continue enumeration

@@ -14,6 +14,18 @@ pub struct WindowInfo {
     pub title: String,
     /// Process name (executable name)
     pub process_name: String,
+    /// Window X position (logical coordinates)
+    #[serde(default)]
+    pub x: i32,
+    /// Window Y position (logical coordinates)
+    #[serde(default)]
+    pub y: i32,
+    /// Window width in pixels
+    #[serde(default)]
+    pub width: u32,
+    /// Window height in pixels
+    #[serde(default)]
+    pub height: u32,
 }
 
 /// Information about a display monitor.

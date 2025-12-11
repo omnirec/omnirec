@@ -269,6 +269,31 @@ async fn show_display_highlight(
     Ok(())
 }
 
+/// Show a highlight border on the specified window.
+#[tauri::command]
+async fn show_window_highlight(
+    window_handle: isize,
+) -> Result<(), String> {
+    // Find the window
+    let windows = list_windows();
+    let window = windows
+        .iter()
+        .find(|w| w.handle == window_handle)
+        .ok_or_else(|| format!("Window not found: {}", window_handle))?;
+
+    // Only show highlight if window has valid dimensions
+    if window.width > 0 && window.height > 0 {
+        show_highlight(
+            window.x,
+            window.y,
+            window.width as i32,
+            window.height as i32,
+        );
+    }
+
+    Ok(())
+}
+
 /// Configure Hyprland window rules for the region selector.
 /// This makes the region selector window floating and properly positioned.
 #[cfg(target_os = "linux")]
@@ -403,6 +428,7 @@ pub fn run() {
             stop_recording,
             get_elapsed_time,
             show_display_highlight,
+            show_window_highlight,
             configure_region_selector_window,
             get_region_selector_position,
             is_hyprland,

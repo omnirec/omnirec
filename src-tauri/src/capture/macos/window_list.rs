@@ -76,6 +76,10 @@ pub fn list_windows() -> Vec<WindowInfo> {
             handle: window.window_id as isize,
             title,
             process_name,
+            x: window.x as i32,
+            y: window.y as i32,
+            width: window.width as u32,
+            height: window.height as u32,
         });
     }
 
