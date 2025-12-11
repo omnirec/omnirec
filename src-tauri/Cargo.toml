@@ -35,6 +35,12 @@ directories = "5"
 # Date/time for filenames
 chrono = "0.4"
 
+# Image processing for thumbnails
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+
+# Base64 encoding for thumbnail data URIs
+base64 = "0.22"
+
 # =============================================================================
 # Platform-specific dependencies
 # =============================================================================

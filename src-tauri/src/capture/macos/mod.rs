@@ -8,13 +8,14 @@
 pub mod highlight;
 pub mod monitor_list;
 pub mod recorder;
+pub mod thumbnail;
 pub mod window_list;
 
 use crate::capture::error::{CaptureError, EnumerationError};
 use crate::capture::types::{
     CaptureRegion, CapturedFrame, FrameReceiver, MonitorInfo, StopHandle, WindowInfo,
 };
-use crate::capture::{CaptureBackend, HighlightProvider, MonitorEnumerator, WindowEnumerator};
+use crate::capture::{CaptureBackend, HighlightProvider, MonitorEnumerator, ThumbnailCapture, ThumbnailResult, WindowEnumerator};
 use std::sync::atomic::Ordering;
 use tokio::sync::mpsc;
 
@@ -266,6 +267,27 @@ impl CaptureBackend for MacOSBackend {
 impl HighlightProvider for MacOSBackend {
     fn show_highlight(&self, x: i32, y: i32, width: i32, height: i32) {
         highlight::show_highlight(x, y, width, height);
+    }
+}
+
+impl ThumbnailCapture for MacOSBackend {
+    fn capture_window_thumbnail(&self, window_handle: isize) -> Result<ThumbnailResult, CaptureError> {
+        thumbnail::MacOSThumbnailCapture::new().capture_window_thumbnail(window_handle)
+    }
+
+    fn capture_display_thumbnail(&self, monitor_id: &str) -> Result<ThumbnailResult, CaptureError> {
+        thumbnail::MacOSThumbnailCapture::new().capture_display_thumbnail(monitor_id)
+    }
+
+    fn capture_region_preview(
+        &self,
+        monitor_id: &str,
+        x: i32,
+        y: i32,
+        width: u32,
+        height: u32,
+    ) -> Result<ThumbnailResult, CaptureError> {
+        thumbnail::MacOSThumbnailCapture::new().capture_region_preview(monitor_id, x, y, width, height)
     }
 }
 

@@ -40,6 +40,72 @@ interface RecordingResult {
   error: string | null;
 }
 
+interface ThumbnailResponse {
+  data: string;
+  width: number;
+  height: number;
+}
+
+// Thumbnail cache with TTL
+const THUMBNAIL_CACHE_TTL_MS = 5000; // 5 seconds
+const thumbnailCache = new Map<string, { data: string; timestamp: number }>();
+
+function getCachedThumbnail(key: string): string | null {
+  const cached = thumbnailCache.get(key);
+  if (cached && Date.now() - cached.timestamp < THUMBNAIL_CACHE_TTL_MS) {
+    return cached.data;
+  }
+  return null;
+}
+
+function setCachedThumbnail(key: string, data: string): void {
+  thumbnailCache.set(key, { data, timestamp: Date.now() });
+}
+
+// Thumbnail request queue - serialize requests to avoid portal conflicts
+type ThumbnailRequest = {
+  type: "window" | "display";
+  id: string | number;
+  imgElement: HTMLImageElement;
+};
+const thumbnailQueue: ThumbnailRequest[] = [];
+let thumbnailQueueProcessing = false;
+
+async function processThumbnailQueue(): Promise<void> {
+  if (thumbnailQueueProcessing) return;
+  thumbnailQueueProcessing = true;
+
+  while (thumbnailQueue.length > 0) {
+    const request = thumbnailQueue.shift()!;
+    
+    // Skip if element is no longer in DOM
+    if (!document.contains(request.imgElement)) continue;
+
+    try {
+      if (request.type === "window") {
+        await loadWindowThumbnailDirect(request.id as number, request.imgElement);
+      } else {
+        await loadDisplayThumbnailDirect(request.id as string, request.imgElement);
+      }
+    } catch (error) {
+      console.error(`Failed to load ${request.type} thumbnail:`, error);
+    }
+  }
+
+  thumbnailQueueProcessing = false;
+}
+
+function queueThumbnailRequest(request: ThumbnailRequest): void {
+  // Don't queue duplicates for the same element
+  const exists = thumbnailQueue.some(
+    (r) => r.imgElement === request.imgElement
+  );
+  if (!exists) {
+    thumbnailQueue.push(request);
+    processThumbnailQueue();
+  }
+}
+
 // DOM Elements
 let windowListEl: HTMLElement | null;
 let windowSelectionEl: HTMLElement | null;
@@ -77,6 +143,13 @@ let regionSelectorWindow: WebviewWindow | null = null;
 let currentState: RecordingState = "idle";
 let timerInterval: number | null = null;
 let recordingStartTime: number = 0;
+
+// Thumbnail refresh state
+let windowThumbnailRefreshInterval: number | null = null;
+let displayThumbnailRefreshInterval: number | null = null;
+let regionPreviewData: string | null = null;
+let lastRegionPreviewTime = 0;
+const REGION_PREVIEW_THROTTLE_MS = 1000; // 1 second throttle
 
 // Initialize on DOM load
 window.addEventListener("DOMContentLoaded", () => {
@@ -212,11 +285,27 @@ function setCaptureMode(mode: CaptureMode): void {
     document.querySelectorAll(".window-item.selected").forEach((el) => {
       el.classList.remove("selected");
     });
+    stopWindowThumbnailRefresh();
+  }
+
+  // Clear region preview when switching away from region mode
+  if (mode !== "region") {
+    regionPreviewData = null;
+  }
+
+  // Stop display refresh when switching away from display mode
+  if (mode !== "display") {
+    stopDisplayThumbnailRefresh();
   }
 
   // Load displays when switching to display mode
   if (mode === "display") {
     loadDisplays();
+  }
+
+  // Restart window refresh when switching to window mode
+  if (mode === "window") {
+    startWindowThumbnailRefresh();
   }
 
   updateRecordButton();
@@ -228,7 +317,16 @@ function updateRegionDisplay(): void {
 
   if (selectedRegion) {
     regionDisplayEl.classList.add("has-selection");
+    
+    // Build the preview image element if we have preview data
+    const previewImg = regionPreviewData 
+      ? `<img class="region-preview__img" src="data:image/jpeg;base64,${regionPreviewData}" alt="Region preview" />`
+      : '<div class="region-preview__placeholder"></div>';
+    
     regionDisplayEl.innerHTML = `
+      <div class="region-preview">
+        ${previewImg}
+      </div>
       <div class="region-details">
         <div class="region-details__dimensions">${selectedRegion.width} x ${selectedRegion.height}</div>
         <div class="region-details__monitor">${selectedRegion.monitor_name}</div>
@@ -237,11 +335,59 @@ function updateRegionDisplay(): void {
     `;
     // Re-attach event listener since we replaced the DOM
     document.querySelector("#select-region-btn")?.addEventListener("click", openRegionSelector);
+    
+    // Load region preview (throttled)
+    loadRegionPreviewThrottled();
   } else {
     regionDisplayEl.classList.remove("has-selection");
+    regionPreviewData = null;
     regionDisplayEl.innerHTML = '<button id="select-region-btn" type="button">Select Region</button>';
     // Re-attach event listener since we replaced the DOM
     document.querySelector("#select-region-btn")?.addEventListener("click", openRegionSelector);
+  }
+}
+
+// Load region preview (throttled to 1 per second)
+function loadRegionPreviewThrottled(): void {
+  const now = Date.now();
+  if (now - lastRegionPreviewTime < REGION_PREVIEW_THROTTLE_MS) {
+    return; // Throttled - skip this request
+  }
+  lastRegionPreviewTime = now;
+  loadRegionPreview();
+}
+
+// Load the region preview image
+async function loadRegionPreview(): Promise<void> {
+  if (!selectedRegion) return;
+  
+  try {
+    const result = await invoke<ThumbnailResponse | null>("get_region_preview", {
+      monitorId: selectedRegion.monitor_id,
+      x: Math.round(selectedRegion.x),
+      y: Math.round(selectedRegion.y),
+      width: Math.round(selectedRegion.width),
+      height: Math.round(selectedRegion.height),
+    });
+    
+    if (result && result.data) {
+      regionPreviewData = result.data;
+      // Update the preview image if the region display still exists
+      const img = document.querySelector<HTMLImageElement>(".region-preview__img");
+      const placeholder = document.querySelector(".region-preview__placeholder");
+      
+      if (img) {
+        img.src = `data:image/jpeg;base64,${result.data}`;
+      } else if (placeholder && regionDisplayEl) {
+        // Replace placeholder with image
+        const previewContainer = document.querySelector(".region-preview");
+        if (previewContainer) {
+          previewContainer.innerHTML = `<img class="region-preview__img" src="data:image/jpeg;base64,${result.data}" alt="Region preview" />`;
+        }
+      }
+    }
+  } catch (error) {
+    console.error("Failed to load region preview:", error);
   }
 }
 
@@ -353,6 +499,9 @@ async function loadWindows(): Promise<void> {
   selectedWindow = null;
   updateRecordButton();
 
+  // Stop any existing refresh interval
+  stopWindowThumbnailRefresh();
+
   try {
     const windows = await invoke<WindowInfo[]>("get_windows");
 
@@ -373,10 +522,47 @@ async function loadWindows(): Promise<void> {
       const item = createWindowItem(win);
       windowListEl.appendChild(item);
     }
+
+    // Start auto-refresh for thumbnails
+    startWindowThumbnailRefresh();
   } catch (error) {
     windowListEl.innerHTML = `<p class="error">Error loading windows: ${error}</p>`;
     setStatus(`Error: ${error}`, true);
   }
+}
+
+// Start auto-refresh for window thumbnails
+function startWindowThumbnailRefresh(): void {
+  if (windowThumbnailRefreshInterval !== null) return;
+  
+  windowThumbnailRefreshInterval = window.setInterval(() => {
+    if (currentState !== "idle" || captureMode !== "window") {
+      return; // Don't refresh during recording or when not in window mode
+    }
+    refreshWindowThumbnails();
+  }, 5000);
+}
+
+// Stop auto-refresh for window thumbnails
+function stopWindowThumbnailRefresh(): void {
+  if (windowThumbnailRefreshInterval !== null) {
+    clearInterval(windowThumbnailRefreshInterval);
+    windowThumbnailRefreshInterval = null;
+  }
+}
+
+// Refresh all visible window thumbnails
+function refreshWindowThumbnails(): void {
+  const items = document.querySelectorAll(".window-item");
+  items.forEach((item) => {
+    const handle = parseInt(item.getAttribute("data-handle") || "0", 10);
+    const img = item.querySelector<HTMLImageElement>(".window-item__thumb-img");
+    if (img && handle) {
+      // Clear cache for this item to force refresh
+      thumbnailCache.delete(`window:${handle}`);
+      loadWindowThumbnail(handle, img);
+    }
+  });
 }
 
 // Create a window list item element
@@ -386,13 +572,63 @@ function createWindowItem(win: WindowInfo): HTMLElement {
   item.dataset.handle = String(win.handle);
 
   item.innerHTML = `
-    <div class="window-item__title">${escapeHtml(win.title)}</div>
-    <div class="window-item__process">${escapeHtml(win.process_name)}</div>
+    <div class="window-item__thumbnail">
+      <img class="window-item__thumb-img" alt="" />
+      <div class="window-item__thumb-placeholder"></div>
+    </div>
+    <div class="window-item__info">
+      <div class="window-item__title">${escapeHtml(win.title)}</div>
+      <div class="window-item__process">${escapeHtml(win.process_name)}</div>
+    </div>
   `;
 
   item.addEventListener("click", () => selectWindow(win, item));
 
+  // Load thumbnail asynchronously
+  const img = item.querySelector<HTMLImageElement>(".window-item__thumb-img");
+  if (img) {
+    loadWindowThumbnail(win.handle, img);
+  }
+
   return item;
+}
+
+// Load a window thumbnail (queued to serialize portal requests)
+function loadWindowThumbnail(handle: number, imgElement: HTMLImageElement): void {
+  const cacheKey = `window:${handle}`;
+  const cached = getCachedThumbnail(cacheKey);
+  
+  if (cached) {
+    imgElement.src = `data:image/jpeg;base64,${cached}`;
+    imgElement.classList.add("loaded");
+    return;
+  }
+
+  // Queue the request to avoid concurrent portal sessions
+  queueThumbnailRequest({ type: "window", id: handle, imgElement });
+}
+
+// Direct thumbnail load (called from queue processor)
+async function loadWindowThumbnailDirect(handle: number, imgElement: HTMLImageElement): Promise<void> {
+  const cacheKey = `window:${handle}`;
+  
+  // Check cache again in case it was populated while queued
+  const cached = getCachedThumbnail(cacheKey);
+  if (cached) {
+    imgElement.src = `data:image/jpeg;base64,${cached}`;
+    imgElement.classList.add("loaded");
+    return;
+  }
+
+  const result = await invoke<ThumbnailResponse | null>("get_window_thumbnail", {
+    windowHandle: handle,
+  });
+  
+  if (result && result.data) {
+    setCachedThumbnail(cacheKey, result.data);
+    imgElement.src = `data:image/jpeg;base64,${result.data}`;
+    imgElement.classList.add("loaded");
+  }
 }
 
 // Load available displays
@@ -402,6 +638,9 @@ async function loadDisplays(): Promise<void> {
   displayListEl.innerHTML = '<p class="loading">Loading displays...</p>';
   selectedDisplay = null;
   updateRecordButton();
+
+  // Stop any existing refresh interval
+  stopDisplayThumbnailRefresh();
 
   try {
     const displays = await invoke<MonitorInfo[]>("get_monitors");
@@ -416,10 +655,47 @@ async function loadDisplays(): Promise<void> {
       const item = createDisplayItem(display);
       displayListEl.appendChild(item);
     }
+
+    // Start auto-refresh for thumbnails
+    startDisplayThumbnailRefresh();
   } catch (error) {
     displayListEl.innerHTML = `<p class="error">Error loading displays: ${error}</p>`;
     setStatus(`Error: ${error}`, true);
   }
+}
+
+// Start auto-refresh for display thumbnails
+function startDisplayThumbnailRefresh(): void {
+  if (displayThumbnailRefreshInterval !== null) return;
+  
+  displayThumbnailRefreshInterval = window.setInterval(() => {
+    if (currentState !== "idle" || captureMode !== "display") {
+      return; // Don't refresh during recording or when not in display mode
+    }
+    refreshDisplayThumbnails();
+  }, 5000);
+}
+
+// Stop auto-refresh for display thumbnails
+function stopDisplayThumbnailRefresh(): void {
+  if (displayThumbnailRefreshInterval !== null) {
+    clearInterval(displayThumbnailRefreshInterval);
+    displayThumbnailRefreshInterval = null;
+  }
+}
+
+// Refresh all visible display thumbnails
+function refreshDisplayThumbnails(): void {
+  const items = document.querySelectorAll(".display-item");
+  items.forEach((item) => {
+    const monitorId = item.getAttribute("data-id");
+    const img = item.querySelector<HTMLImageElement>(".display-item__thumb-img");
+    if (img && monitorId) {
+      // Clear cache for this item to force refresh
+      thumbnailCache.delete(`display:${monitorId}`);
+      loadDisplayThumbnail(monitorId, img);
+    }
+  });
 }
 
 // Create a display list item element
@@ -433,13 +709,63 @@ function createDisplayItem(display: MonitorInfo): HTMLElement {
     : "";
 
   item.innerHTML = `
-    <div class="display-item__name">${escapeHtml(display.name)}${primaryBadge}</div>
-    <div class="display-item__resolution">${display.width} x ${display.height}</div>
+    <div class="display-item__thumbnail">
+      <img class="display-item__thumb-img" alt="" />
+      <div class="display-item__thumb-placeholder"></div>
+    </div>
+    <div class="display-item__info">
+      <div class="display-item__name">${escapeHtml(display.name)}${primaryBadge}</div>
+      <div class="display-item__resolution">${display.width} x ${display.height}</div>
+    </div>
   `;
 
   item.addEventListener("click", () => selectDisplayItem(display, item));
 
+  // Load thumbnail asynchronously
+  const img = item.querySelector<HTMLImageElement>(".display-item__thumb-img");
+  if (img) {
+    loadDisplayThumbnail(display.id, img);
+  }
+
   return item;
+}
+
+// Load a display thumbnail (queued to serialize portal requests)
+function loadDisplayThumbnail(monitorId: string, imgElement: HTMLImageElement): void {
+  const cacheKey = `display:${monitorId}`;
+  const cached = getCachedThumbnail(cacheKey);
+  
+  if (cached) {
+    imgElement.src = `data:image/jpeg;base64,${cached}`;
+    imgElement.classList.add("loaded");
+    return;
+  }
+
+  // Queue the request to avoid concurrent portal sessions
+  queueThumbnailRequest({ type: "display", id: monitorId, imgElement });
+}
+
+// Direct display thumbnail load (called from queue processor)
+async function loadDisplayThumbnailDirect(monitorId: string, imgElement: HTMLImageElement): Promise<void> {
+  const cacheKey = `display:${monitorId}`;
+  
+  // Check cache again in case it was populated while queued
+  const cached = getCachedThumbnail(cacheKey);
+  if (cached) {
+    imgElement.src = `data:image/jpeg;base64,${cached}`;
+    imgElement.classList.add("loaded");
+    return;
+  }
+
+  const result = await invoke<ThumbnailResponse | null>("get_display_thumbnail", {
+    monitorId,
+  });
+  
+  if (result && result.data) {
+    setCachedThumbnail(cacheKey, result.data);
+    imgElement.src = `data:image/jpeg;base64,${result.data}`;
+    imgElement.classList.add("loaded");
+  }
 }
 
 // Select a display for recording

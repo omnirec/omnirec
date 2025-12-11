@@ -4,7 +4,7 @@ mod capture;
 mod encoder;
 mod state;
 
-use capture::{list_monitors, list_windows, show_highlight, CaptureRegion, MonitorInfo, WindowInfo};
+use capture::{list_monitors, list_windows, show_highlight, CaptureRegion, MonitorInfo, WindowInfo, ThumbnailCapture, ThumbnailResult, get_backend};
 use encoder::ensure_ffmpeg_blocking;
 use state::{RecordingManager, RecordingResult, RecordingState};
 use std::sync::Arc;
@@ -413,6 +413,94 @@ async fn test_linux_portal(_monitor_id: String) -> Result<String, String> {
     Err("Portal test is only available on Linux".to_string())
 }
 
+/// Thumbnail result for JSON serialization.
+#[derive(serde::Serialize)]
+pub struct ThumbnailResponse {
+    /// Base64-encoded JPEG image data
+    data: String,
+    /// Thumbnail width in pixels
+    width: u32,
+    /// Thumbnail height in pixels
+    height: u32,
+}
+
+impl From<ThumbnailResult> for ThumbnailResponse {
+    fn from(result: ThumbnailResult) -> Self {
+        Self {
+            data: result.data,
+            width: result.width,
+            height: result.height,
+        }
+    }
+}
+
+/// Capture a thumbnail of a window.
+///
+/// Returns a base64-encoded JPEG image or null if capture fails.
+#[tauri::command]
+async fn get_window_thumbnail(window_handle: isize) -> Result<Option<ThumbnailResponse>, String> {
+    let backend = get_backend();
+    match backend.capture_window_thumbnail(window_handle) {
+        Ok(result) => Ok(Some(result.into())),
+        Err(e) => {
+            eprintln!("[get_window_thumbnail] Error: {}", e);
+            // Return None for NotImplemented errors (expected on Windows/macOS)
+            // Return error for other failures
+            if matches!(e, capture::CaptureError::NotImplemented(_)) {
+                Ok(None)
+            } else {
+                Ok(None) // Fail gracefully - show placeholder
+            }
+        }
+    }
+}
+
+/// Capture a thumbnail of a display.
+///
+/// Returns a base64-encoded JPEG image or null if capture fails.
+#[tauri::command]
+async fn get_display_thumbnail(monitor_id: String) -> Result<Option<ThumbnailResponse>, String> {
+    let backend = get_backend();
+    match backend.capture_display_thumbnail(&monitor_id) {
+        Ok(result) => Ok(Some(result.into())),
+        Err(e) => {
+            eprintln!("[get_display_thumbnail] Error: {}", e);
+            // Return None for NotImplemented errors (expected on Windows/macOS)
+            if matches!(e, capture::CaptureError::NotImplemented(_)) {
+                Ok(None)
+            } else {
+                Ok(None) // Fail gracefully - show placeholder
+            }
+        }
+    }
+}
+
+/// Capture a preview of a screen region.
+///
+/// Returns a base64-encoded JPEG image or null if capture fails.
+#[tauri::command]
+async fn get_region_preview(
+    monitor_id: String,
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+) -> Result<Option<ThumbnailResponse>, String> {
+    let backend = get_backend();
+    match backend.capture_region_preview(&monitor_id, x, y, width, height) {
+        Ok(result) => Ok(Some(result.into())),
+        Err(e) => {
+            eprintln!("[get_region_preview] Error: {}", e);
+            // Return None for NotImplemented errors (expected on Windows/macOS)
+            if matches!(e, capture::CaptureError::NotImplemented(_)) {
+                Ok(None)
+            } else {
+                Ok(None) // Fail gracefully - show placeholder
+            }
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -435,6 +523,9 @@ pub fn run() {
             test_linux_portal,
             check_screen_recording_permission,
             open_screen_recording_settings,
+            get_window_thumbnail,
+            get_display_thumbnail,
+            get_region_preview,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

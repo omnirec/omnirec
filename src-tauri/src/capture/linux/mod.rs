@@ -12,12 +12,13 @@ pub mod highlight;
 pub mod ipc_server;
 pub mod pipewire_capture;
 pub mod portal_client;
+pub mod thumbnail;
 
 use crate::capture::error::{CaptureError, EnumerationError};
 use crate::capture::types::{
     CaptureRegion, FrameReceiver, MonitorInfo, StopHandle, WindowInfo,
 };
-use crate::capture::{CaptureBackend, HighlightProvider, MonitorEnumerator, WindowEnumerator};
+use crate::capture::{CaptureBackend, HighlightProvider, MonitorEnumerator, ThumbnailCapture, ThumbnailResult, WindowEnumerator};
 
 use hyprland::data::{Clients, Monitors};
 use hyprland::shared::HyprData;
@@ -480,6 +481,33 @@ impl CaptureBackend for LinuxBackend {
 impl HighlightProvider for LinuxBackend {
     fn show_highlight(&self, x: i32, y: i32, width: i32, height: i32) {
         highlight::show_highlight(x, y, width, height);
+    }
+}
+
+impl ThumbnailCapture for LinuxBackend {
+    fn capture_window_thumbnail(&self, window_handle: isize) -> Result<ThumbnailResult, CaptureError> {
+        let thumb_capture = thumbnail::LinuxThumbnailCapture::from_global()
+            .ok_or_else(|| CaptureError::PlatformError("IPC server not initialized".to_string()))?;
+        thumb_capture.capture_window_thumbnail(window_handle)
+    }
+
+    fn capture_display_thumbnail(&self, monitor_id: &str) -> Result<ThumbnailResult, CaptureError> {
+        let thumb_capture = thumbnail::LinuxThumbnailCapture::from_global()
+            .ok_or_else(|| CaptureError::PlatformError("IPC server not initialized".to_string()))?;
+        thumb_capture.capture_display_thumbnail(monitor_id)
+    }
+
+    fn capture_region_preview(
+        &self,
+        monitor_id: &str,
+        x: i32,
+        y: i32,
+        width: u32,
+        height: u32,
+    ) -> Result<ThumbnailResult, CaptureError> {
+        let thumb_capture = thumbnail::LinuxThumbnailCapture::from_global()
+            .ok_or_else(|| CaptureError::PlatformError("IPC server not initialized".to_string()))?;
+        thumb_capture.capture_region_preview(monitor_id, x, y, width, height)
     }
 }
 

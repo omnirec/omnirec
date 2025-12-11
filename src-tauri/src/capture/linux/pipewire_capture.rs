@@ -569,12 +569,92 @@ fn crop_frame_data(frame_data: &[u8], full_width: u32, full_height: u32, crop: C
     Some(cropped)
 }
 
+/// Convert frame data to BGRA format based on the source format.
+fn convert_to_bgra(frame_data: Vec<u8>, format: spa::param::video::VideoFormat) -> Vec<u8> {
+    use spa::param::video::VideoFormat;
+    
+    match format {
+        // Already BGRA or BGRx - no conversion needed
+        VideoFormat::BGRA | VideoFormat::BGRx => frame_data,
+        
+        // RGBA/RGBx -> BGRA: swap R and B
+        VideoFormat::RGBA | VideoFormat::RGBx => {
+            let mut converted = frame_data;
+            for chunk in converted.chunks_exact_mut(4) {
+                chunk.swap(0, 2); // Swap R and B
+            }
+            converted
+        }
+        
+        // ARGB -> BGRA: shift ARGB to BGRA (A,R,G,B -> B,G,R,A)
+        VideoFormat::ARGB => {
+            let mut converted = Vec::with_capacity(frame_data.len());
+            for chunk in frame_data.chunks_exact(4) {
+                converted.push(chunk[3]); // B
+                converted.push(chunk[2]); // G
+                converted.push(chunk[1]); // R
+                converted.push(chunk[0]); // A
+            }
+            converted
+        }
+        
+        // xRGB -> BGRA: shift xRGB to BGRA (x,R,G,B -> B,G,R,255)
+        VideoFormat::xRGB => {
+            let mut converted = Vec::with_capacity(frame_data.len());
+            for chunk in frame_data.chunks_exact(4) {
+                converted.push(chunk[3]); // B
+                converted.push(chunk[2]); // G
+                converted.push(chunk[1]); // R
+                converted.push(255);      // A (fully opaque)
+            }
+            converted
+        }
+        
+        // ABGR -> BGRA: A,B,G,R -> B,G,R,A
+        VideoFormat::ABGR => {
+            let mut converted = Vec::with_capacity(frame_data.len());
+            for chunk in frame_data.chunks_exact(4) {
+                converted.push(chunk[1]); // B
+                converted.push(chunk[2]); // G
+                converted.push(chunk[3]); // R
+                converted.push(chunk[0]); // A
+            }
+            converted
+        }
+        
+        // xBGR -> BGRA: x,B,G,R -> B,G,R,255
+        VideoFormat::xBGR => {
+            let mut converted = Vec::with_capacity(frame_data.len());
+            for chunk in frame_data.chunks_exact(4) {
+                converted.push(chunk[1]); // B
+                converted.push(chunk[2]); // G
+                converted.push(chunk[3]); // R
+                converted.push(255);      // A (fully opaque)
+            }
+            converted
+        }
+        
+        // Unknown format - log warning and return as-is
+        _ => {
+            static LOGGED_UNKNOWN: AtomicBool = AtomicBool::new(false);
+            if !LOGGED_UNKNOWN.swap(true, Ordering::Relaxed) {
+                eprintln!("[PipeWire] Warning: unknown video format {:?}, colors may be incorrect", format);
+            }
+            frame_data
+        }
+    }
+}
+
 /// Send a frame to the encoder channel.
 fn send_frame(user_data: &mut StreamData, width: u32, height: u32, frame_data: Vec<u8>) {
+    // Convert to BGRA format for consistent downstream processing
+    let format = user_data.format.format();
+    let bgra_data = convert_to_bgra(frame_data, format);
+    
     let frame = CapturedFrame {
         width,
         height,
-        data: frame_data,
+        data: bgra_data,
     };
     
     // Non-blocking send - drop frame if channel is full
