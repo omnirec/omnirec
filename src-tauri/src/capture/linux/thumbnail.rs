@@ -1,131 +1,172 @@
-//! Linux thumbnail capture implementation using PipeWire.
+//! Linux thumbnail capture implementation using wlr-screencopy.
 //!
-//! This module captures single frames from windows and displays for use as
-//! thumbnails in the UI. It uses the existing portal/PipeWire infrastructure
-//! but captures only one frame before stopping.
+//! This module captures single frames from outputs for use as thumbnails in the UI.
+//! It uses the wlr-screencopy protocol for fast, efficient capture without the
+//! overhead of portal/PipeWire infrastructure.
 
 use crate::capture::error::CaptureError;
 use crate::capture::thumbnail::{
     bgra_to_jpeg_thumbnail, PREVIEW_MAX_HEIGHT, PREVIEW_MAX_WIDTH, THUMBNAIL_MAX_HEIGHT,
     THUMBNAIL_MAX_WIDTH,
 };
-use crate::capture::{MonitorEnumerator, ThumbnailCapture, ThumbnailResult, WindowEnumerator};
+use crate::capture::{ThumbnailCapture, ThumbnailResult};
 
-use super::ipc_server::IpcServerState;
-use super::portal_client::PortalClient;
-use super::pipewire_capture::CropRegion;
-use super::{get_ipc_state, LinuxBackend};
+use super::screencopy;
 
-use std::sync::atomic::Ordering;
-use std::sync::Arc;
-use std::time::Duration;
-use tokio::sync::RwLock;
+use hyprland::data::{Clients, Monitors};
+use hyprland::shared::HyprData;
 
-/// Capture a single frame from a PipeWire stream.
-///
-/// This starts a PipeWire capture, waits for one frame, then immediately stops.
-async fn capture_single_frame(
-    node_id: u32,
-    width: u32,
-    height: u32,
-    crop_region: Option<CropRegion>,
-) -> Result<(Vec<u8>, u32, u32), String> {
-    use super::pipewire_capture;
-
-    eprintln!("[Thumbnail] Starting PipeWire capture for node {} ({}x{})", node_id, width, height);
-
-    // Start capture
-    let (mut frame_rx, stop_flag) = if let Some(crop) = crop_region {
-        pipewire_capture::start_pipewire_capture_with_crop(node_id, width, height, Some(crop))?
-    } else {
-        pipewire_capture::start_pipewire_capture(node_id, width, height)?
-    };
-
-    // Wait for a single frame with timeout
-    let frame = tokio::time::timeout(Duration::from_secs(5), frame_rx.recv())
-        .await
-        .map_err(|_| "Timeout waiting for frame".to_string())?
-        .ok_or_else(|| "No frame received".to_string())?;
-
-    eprintln!("[Thumbnail] Got frame: {}x{}", frame.width, frame.height);
-
-    // Stop capture immediately
-    stop_flag.store(true, Ordering::SeqCst);
-
-    Ok((frame.data, frame.width, frame.height))
+/// Crop a BGRA frame to a specified region.
+fn crop_frame(
+    data: &[u8],
+    frame_width: u32,
+    frame_height: u32,
+    crop_x: i32,
+    crop_y: i32,
+    crop_width: u32,
+    crop_height: u32,
+) -> Vec<u8> {
+    // Clamp crop region to frame bounds
+    let x = crop_x.max(0) as u32;
+    let y = crop_y.max(0) as u32;
+    let w = crop_width.min(frame_width.saturating_sub(x));
+    let h = crop_height.min(frame_height.saturating_sub(y));
+    
+    if w == 0 || h == 0 {
+        return Vec::new();
+    }
+    
+    let mut cropped = vec![0u8; (w * h * 4) as usize];
+    
+    for row in 0..h {
+        let src_offset = ((y + row) * frame_width + x) as usize * 4;
+        let dst_offset = (row * w) as usize * 4;
+        let row_bytes = (w * 4) as usize;
+        
+        if src_offset + row_bytes <= data.len() {
+            cropped[dst_offset..dst_offset + row_bytes]
+                .copy_from_slice(&data[src_offset..src_offset + row_bytes]);
+        }
+    }
+    
+    cropped
 }
 
-/// Linux thumbnail capture implementation.
-pub struct LinuxThumbnailCapture {
-    ipc_state: Arc<RwLock<IpcServerState>>,
+/// Find which monitor contains a window based on its position.
+fn find_monitor_for_window(window_x: i32, window_y: i32) -> Option<String> {
+    let monitors = Monitors::get().ok()?;
+    
+    for monitor in monitors.iter() {
+        let mon_x = monitor.x as i32;
+        let mon_y = monitor.y as i32;
+        // Use logical dimensions for comparison (window coords are logical)
+        let mon_width = (monitor.width as f64 / monitor.scale as f64).round() as i32;
+        let mon_height = (monitor.height as f64 / monitor.scale as f64).round() as i32;
+        
+        if window_x >= mon_x && window_x < mon_x + mon_width
+            && window_y >= mon_y && window_y < mon_y + mon_height
+        {
+            return Some(monitor.name.clone());
+        }
+    }
+    
+    // Fallback to first monitor if window position doesn't match any
+    monitors.iter().next().map(|m| m.name.clone())
 }
+
+/// Get monitor info by name.
+fn get_monitor_info(monitor_name: &str) -> Option<(i32, i32, u32, u32, f64)> {
+    let monitors = Monitors::get().ok()?;
+    monitors.iter()
+        .find(|m| m.name == monitor_name)
+        .map(|m| (m.x as i32, m.y as i32, m.width as u32, m.height as u32, m.scale as f64))
+}
+
+/// Linux thumbnail capture implementation using wlr-screencopy.
+pub struct LinuxThumbnailCapture;
 
 impl LinuxThumbnailCapture {
     /// Create a new Linux thumbnail capture instance.
-    pub fn new(ipc_state: Arc<RwLock<IpcServerState>>) -> Self {
-        Self { ipc_state }
+    pub fn new() -> Self {
+        Self
     }
+}
 
-    /// Create from the global IPC state if available.
-    pub fn from_global() -> Option<Self> {
-        get_ipc_state().map(|state| Self::new(state))
+impl Default for LinuxThumbnailCapture {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
 impl ThumbnailCapture for LinuxThumbnailCapture {
     fn capture_window_thumbnail(&self, window_handle: isize) -> Result<ThumbnailResult, CaptureError> {
-        // Get window info to find the address
-        let backend = LinuxBackend::new();
-        let windows = backend.list_windows().map_err(|e| {
-            CaptureError::PlatformError(format!("Failed to list windows: {}", e))
+        // Get window info from Hyprland
+        let clients = Clients::get().map_err(|e| {
+            CaptureError::PlatformError(format!("Failed to get Hyprland clients: {}", e))
         })?;
-
-        let window = windows
-            .iter()
-            .find(|w| w.handle == window_handle)
+        
+        // Convert handle to hex address for comparison
+        let target_address = format!("0x{:x}", window_handle as usize);
+        
+        let client = clients.iter()
+            .find(|c| {
+                let addr = c.address.to_string();
+                addr == target_address || addr.trim_start_matches("0x") == target_address.trim_start_matches("0x")
+            })
             .ok_or_else(|| {
                 CaptureError::TargetNotFound(format!("Window with handle {} not found", window_handle))
             })?;
-
-        // Convert handle to hex address
-        let window_address = format!("0x{:x}", window_handle as usize);
-
-        eprintln!(
-            "[Thumbnail] Capturing window thumbnail for {} ({})",
-            window.title, window_address
+        
+        // Find which monitor contains this window
+        let monitor_name = find_monitor_for_window(client.at.0 as i32, client.at.1 as i32)
+            .ok_or_else(|| CaptureError::PlatformError("Could not find monitor for window".to_string()))?;
+        
+        // Get monitor info for coordinate conversion
+        let (mon_x, mon_y, _mon_width, _mon_height, scale) = get_monitor_info(&monitor_name)
+            .ok_or_else(|| CaptureError::PlatformError(format!("Monitor '{}' not found", monitor_name)))?;
+        
+        // Capture the output
+        let frame = screencopy::capture_output(&monitor_name)
+            .map_err(|e| CaptureError::PlatformError(e))?;
+        
+        // Calculate window position relative to monitor in physical pixels
+        // Window coordinates from Hyprland are in logical space
+        let window_x_logical = client.at.0 as i32 - mon_x;
+        let window_y_logical = client.at.1 as i32 - mon_y;
+        let window_width_logical = client.size.0 as u32;
+        let window_height_logical = client.size.1 as u32;
+        
+        // Convert to physical pixels for cropping the captured frame
+        let crop_x = (window_x_logical as f64 * scale).round() as i32;
+        let crop_y = (window_y_logical as f64 * scale).round() as i32;
+        let crop_width = (window_width_logical as f64 * scale).round() as u32;
+        let crop_height = (window_height_logical as f64 * scale).round() as u32;
+        
+        // Crop the frame to window bounds
+        let cropped = crop_frame(
+            &frame.data,
+            frame.width,
+            frame.height,
+            crop_x,
+            crop_y,
+            crop_width,
+            crop_height,
         );
-
-        // Request capture via portal
-        let ipc_state = self.ipc_state.clone();
-        let stream = tokio::task::block_in_place(|| {
-            let rt = tokio::runtime::Handle::current();
-            let portal_client = PortalClient::new(ipc_state);
-            rt.block_on(portal_client.request_window_capture(&window_address))
-        })
-        .map_err(|e| CaptureError::PlatformError(e))?;
-
-        // Capture single frame
-        let (width, height) = stream
-            .size
-            .map(|(w, h)| (w as u32, h as u32))
-            .unwrap_or((window.width, window.height));
-
-        let (data, frame_width, frame_height) = tokio::task::block_in_place(|| {
-            let rt = tokio::runtime::Handle::current();
-            rt.block_on(capture_single_frame(stream.node_id, width, height, None))
-        })
-        .map_err(|e| CaptureError::PlatformError(e))?;
-
+        
+        if cropped.is_empty() {
+            return Err(CaptureError::PlatformError("Crop resulted in empty frame".to_string()));
+        }
+        
         // Convert to thumbnail
         let (base64_data, thumb_width, thumb_height) = bgra_to_jpeg_thumbnail(
-            &data,
-            frame_width,
-            frame_height,
+            &cropped,
+            crop_width,
+            crop_height,
             THUMBNAIL_MAX_WIDTH,
             THUMBNAIL_MAX_HEIGHT,
         )
         .map_err(|e| CaptureError::PlatformError(e))?;
-
+        
         Ok(ThumbnailResult {
             data: base64_data,
             width: thumb_width,
@@ -134,48 +175,15 @@ impl ThumbnailCapture for LinuxThumbnailCapture {
     }
 
     fn capture_display_thumbnail(&self, monitor_id: &str) -> Result<ThumbnailResult, CaptureError> {
-        eprintln!("[Thumbnail] Capturing display thumbnail for {}", monitor_id);
-
-        // Get monitor info for dimensions
-        let backend = LinuxBackend::new();
-        let monitors = backend.list_monitors().map_err(|e| {
-            CaptureError::PlatformError(format!("Failed to list monitors: {}", e))
-        })?;
-
-        let monitor = monitors
-            .iter()
-            .find(|m| m.id == monitor_id)
-            .ok_or_else(|| {
-                CaptureError::TargetNotFound(format!("Monitor '{}' not found", monitor_id))
-            })?;
-
-        // Request capture via portal
-        let ipc_state = self.ipc_state.clone();
-        let monitor_id_owned = monitor_id.to_string();
-        let stream = tokio::task::block_in_place(|| {
-            let rt = tokio::runtime::Handle::current();
-            let portal_client = PortalClient::new(ipc_state);
-            rt.block_on(portal_client.request_monitor_capture(&monitor_id_owned))
-        })
-        .map_err(|e| CaptureError::PlatformError(e))?;
-
-        // Capture single frame
-        let (width, height) = stream
-            .size
-            .map(|(w, h)| (w as u32, h as u32))
-            .unwrap_or((monitor.width, monitor.height));
-
-        let (data, frame_width, frame_height) = tokio::task::block_in_place(|| {
-            let rt = tokio::runtime::Handle::current();
-            rt.block_on(capture_single_frame(stream.node_id, width, height, None))
-        })
-        .map_err(|e| CaptureError::PlatformError(e))?;
+        // Capture the output directly via screencopy
+        let frame = screencopy::capture_output(monitor_id)
+            .map_err(|e| CaptureError::PlatformError(e))?;
 
         // Convert to thumbnail
         let (base64_data, thumb_width, thumb_height) = bgra_to_jpeg_thumbnail(
-            &data,
-            frame_width,
-            frame_height,
+            &frame.data,
+            frame.width,
+            frame.height,
             THUMBNAIL_MAX_WIDTH,
             THUMBNAIL_MAX_HEIGHT,
         )
@@ -196,10 +204,6 @@ impl ThumbnailCapture for LinuxThumbnailCapture {
         width: u32,
         height: u32,
     ) -> Result<ThumbnailResult, CaptureError> {
-        eprintln!(
-            "[Thumbnail] Capturing region preview for {} ({}x{} at {},{})",
-            monitor_id, width, height, x, y
-        );
 
         // Validate region
         if width < 100 || height < 100 {
@@ -209,70 +213,42 @@ impl ThumbnailCapture for LinuxThumbnailCapture {
             )));
         }
 
-        // Get monitor info
-        let backend = LinuxBackend::new();
-        let monitors = backend.list_monitors().map_err(|e| {
-            CaptureError::PlatformError(format!("Failed to list monitors: {}", e))
-        })?;
+        // Get monitor info including scale factor
+        let (_, _, _, _, scale) = get_monitor_info(monitor_id)
+            .ok_or_else(|| CaptureError::TargetNotFound(format!("Monitor '{}' not found", monitor_id)))?;
 
-        let monitor = monitors
-            .iter()
-            .find(|m| m.id == monitor_id)
-            .ok_or_else(|| {
-                CaptureError::TargetNotFound(format!("Monitor '{}' not found", monitor_id))
-            })?;
+        // Capture the output via screencopy (returns physical pixels)
+        let frame = screencopy::capture_output(monitor_id)
+            .map_err(|e| CaptureError::PlatformError(e))?;
 
-        // Request capture via portal (region capture)
-        let ipc_state = self.ipc_state.clone();
-        let monitor_id_owned = monitor_id.to_string();
-        let stream = tokio::task::block_in_place(|| {
-            let rt = tokio::runtime::Handle::current();
-            let portal_client = PortalClient::new(ipc_state);
-            rt.block_on(portal_client.request_region_capture(
-                &monitor_id_owned,
-                x,
-                y,
-                width,
-                height,
-            ))
-        })
-        .map_err(|e| CaptureError::PlatformError(e))?;
+        // Region coordinates from frontend are in LOGICAL pixels (from Hyprland)
+        // Screencopy capture is in PHYSICAL pixels
+        // Need to scale the crop coordinates
+        let crop_x = (x as f64 * scale).round() as i32;
+        let crop_y = (y as f64 * scale).round() as i32;
+        let crop_width = (width as f64 * scale).round() as u32;
+        let crop_height = (height as f64 * scale).round() as u32;
 
-        // Determine if portal pre-cropped the stream
-        let (capture_width, capture_height) = stream
-            .size
-            .map(|(w, h)| (w as u32, h as u32))
-            .unwrap_or((monitor.width, monitor.height));
+        // Crop the frame to region bounds
+        let cropped = crop_frame(
+            &frame.data,
+            frame.width,
+            frame.height,
+            crop_x,
+            crop_y,
+            crop_width,
+            crop_height,
+        );
 
-        let is_precropped = capture_width < monitor.width || capture_height < monitor.height;
-
-        let (data, frame_width, frame_height) = if is_precropped {
-            // Portal already cropped - capture as-is
-            tokio::task::block_in_place(|| {
-                let rt = tokio::runtime::Handle::current();
-                rt.block_on(capture_single_frame(stream.node_id, capture_width, capture_height, None))
-            })
-            .map_err(|e| CaptureError::PlatformError(e))?
-        } else {
-            // Need to crop in app
-            let crop = CropRegion {
-                x,
-                y,
-                width,
-                height,
-            };
-            tokio::task::block_in_place(|| {
-                let rt = tokio::runtime::Handle::current();
-                rt.block_on(capture_single_frame(stream.node_id, capture_width, capture_height, Some(crop)))
-            })
-            .map_err(|e| CaptureError::PlatformError(e))?
-        };
+        if cropped.is_empty() {
+            return Err(CaptureError::PlatformError("Crop resulted in empty frame".to_string()));
+        }
 
         // Convert to preview (larger than thumbnail)
         let (base64_data, preview_width, preview_height) = bgra_to_jpeg_thumbnail(
-            &data,
-            frame_width,
-            frame_height,
+            &cropped,
+            crop_width,
+            crop_height,
             PREVIEW_MAX_WIDTH,
             PREVIEW_MAX_HEIGHT,
         )

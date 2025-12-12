@@ -149,7 +149,8 @@ let windowThumbnailRefreshInterval: number | null = null;
 let displayThumbnailRefreshInterval: number | null = null;
 let regionPreviewData: string | null = null;
 let lastRegionPreviewTime = 0;
-const REGION_PREVIEW_THROTTLE_MS = 1000; // 1 second throttle
+let regionPreviewPendingTimeout: number | null = null;
+const REGION_PREVIEW_THROTTLE_MS = 500; // 500ms throttle
 
 // Initialize on DOM load
 window.addEventListener("DOMContentLoaded", () => {
@@ -209,11 +210,9 @@ window.addEventListener("DOMContentLoaded", () => {
   // Listen for selector window closed
   listen("region-selector-closed", () => {
     regionSelectorWindow = null;
-    if (currentState === "idle") {
-      selectedRegion = null;
-      updateRegionDisplay();
-      updateRecordButton();
-    }
+    // Update display to show details/button instead of fullsize preview
+    // Keep the selected region - user can still record it
+    updateRegionDisplay();
   });
 
   // Initial load - check permissions first
@@ -318,28 +317,44 @@ function updateRegionDisplay(): void {
   if (selectedRegion) {
     regionDisplayEl.classList.add("has-selection");
     
+    // Check if selector is currently active
+    const selectorActive = regionSelectorWindow !== null;
+    
     // Build the preview image element if we have preview data
     const previewImg = regionPreviewData 
       ? `<img class="region-preview__img" src="data:image/jpeg;base64,${regionPreviewData}" alt="Region preview" />`
       : '<div class="region-preview__placeholder"></div>';
     
+    if (selectorActive) {
+      regionDisplayEl.classList.add("selector-active");
+    } else {
+      regionDisplayEl.classList.remove("selector-active");
+    }
+    
+    // Always show fullsize preview with overlay info
     regionDisplayEl.innerHTML = `
-      <div class="region-preview">
+      <div class="region-preview region-preview--fullsize">
         ${previewImg}
+        <div class="region-overlay">
+          <div class="region-overlay__info">
+            <div class="region-overlay__dimensions">${selectedRegion.width} x ${selectedRegion.height}</div>
+            <div class="region-overlay__monitor">${selectedRegion.monitor_name}</div>
+          </div>
+          ${!selectorActive ? '<button id="select-region-btn" type="button">Change Region</button>' : ''}
+        </div>
       </div>
-      <div class="region-details">
-        <div class="region-details__dimensions">${selectedRegion.width} x ${selectedRegion.height}</div>
-        <div class="region-details__monitor">${selectedRegion.monitor_name}</div>
-      </div>
-      <button id="select-region-btn" type="button">Change Region</button>
     `;
+    
     // Re-attach event listener since we replaced the DOM
-    document.querySelector("#select-region-btn")?.addEventListener("click", openRegionSelector);
+    if (!selectorActive) {
+      document.querySelector("#select-region-btn")?.addEventListener("click", openRegionSelector);
+    }
     
     // Load region preview (throttled)
     loadRegionPreviewThrottled();
   } else {
     regionDisplayEl.classList.remove("has-selection");
+    regionDisplayEl.classList.remove("selector-active");
     regionPreviewData = null;
     regionDisplayEl.innerHTML = '<button id="select-region-btn" type="button">Select Region</button>';
     // Re-attach event listener since we replaced the DOM
@@ -347,14 +362,33 @@ function updateRegionDisplay(): void {
   }
 }
 
-// Load region preview (throttled to 1 per second)
+// Load region preview (throttled with trailing edge)
 function loadRegionPreviewThrottled(): void {
   const now = Date.now();
-  if (now - lastRegionPreviewTime < REGION_PREVIEW_THROTTLE_MS) {
-    return; // Throttled - skip this request
+  const timeSinceLastUpdate = now - lastRegionPreviewTime;
+  
+  if (timeSinceLastUpdate >= REGION_PREVIEW_THROTTLE_MS) {
+    // Enough time has passed, update immediately
+    lastRegionPreviewTime = now;
+    
+    // Clear any pending update
+    if (regionPreviewPendingTimeout !== null) {
+      clearTimeout(regionPreviewPendingTimeout);
+      regionPreviewPendingTimeout = null;
+    }
+    
+    loadRegionPreview();
+  } else {
+    // Throttled - schedule an update for when the throttle period ends
+    if (regionPreviewPendingTimeout === null) {
+      const delay = REGION_PREVIEW_THROTTLE_MS - timeSinceLastUpdate;
+      regionPreviewPendingTimeout = window.setTimeout(() => {
+        regionPreviewPendingTimeout = null;
+        lastRegionPreviewTime = Date.now();
+        loadRegionPreview();
+      }, delay);
+    }
   }
-  lastRegionPreviewTime = now;
-  loadRegionPreview();
 }
 
 // Load the region preview image
@@ -523,6 +557,15 @@ async function loadWindows(): Promise<void> {
       windowListEl.appendChild(item);
     }
 
+    // Load thumbnails now that items are in DOM
+    for (const win of windows) {
+      const item = windowListEl.querySelector(`[data-handle="${win.handle}"]`);
+      const img = item?.querySelector<HTMLImageElement>(".window-item__thumb-img");
+      if (img) {
+        loadWindowThumbnail(win.handle, img);
+      }
+    }
+
     // Start auto-refresh for thumbnails
     startWindowThumbnailRefresh();
   } catch (error) {
@@ -584,11 +627,8 @@ function createWindowItem(win: WindowInfo): HTMLElement {
 
   item.addEventListener("click", () => selectWindow(win, item));
 
-  // Load thumbnail asynchronously
-  const img = item.querySelector<HTMLImageElement>(".window-item__thumb-img");
-  if (img) {
-    loadWindowThumbnail(win.handle, img);
-  }
+  // NOTE: Don't load thumbnail here - element not in DOM yet
+  // Thumbnails are loaded after items are appended in loadWindows()
 
   return item;
 }
@@ -656,6 +696,15 @@ async function loadDisplays(): Promise<void> {
       displayListEl.appendChild(item);
     }
 
+    // Load thumbnails now that items are in DOM
+    for (const display of displays) {
+      const item = displayListEl.querySelector(`[data-id="${display.id}"]`);
+      const img = item?.querySelector<HTMLImageElement>(".display-item__thumb-img");
+      if (img) {
+        loadDisplayThumbnail(display.id, img);
+      }
+    }
+
     // Start auto-refresh for thumbnails
     startDisplayThumbnailRefresh();
   } catch (error) {
@@ -721,11 +770,8 @@ function createDisplayItem(display: MonitorInfo): HTMLElement {
 
   item.addEventListener("click", () => selectDisplayItem(display, item));
 
-  // Load thumbnail asynchronously
-  const img = item.querySelector<HTMLImageElement>(".display-item__thumb-img");
-  if (img) {
-    loadDisplayThumbnail(display.id, img);
-  }
+  // NOTE: Don't load thumbnail here - element not in DOM yet
+  // Thumbnails are loaded after items are appended in loadDisplays()
 
   return item;
 }

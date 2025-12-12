@@ -289,6 +289,72 @@ section {
   opacity: 0.5;
 }
 
+/* Fullsize preview when selector is active */
+.region-preview--fullsize {
+  max-width: none;
+  aspect-ratio: auto;
+  flex: 1;
+  margin: 0;
+  padding: 0;
+  border-radius: 0;
+  background: black;
+}
+
+.region-preview--fullsize .region-preview__img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: transparent;
+}
+
+.region-preview--fullsize .region-preview__placeholder {
+  width: 100%;
+  height: 100%;
+}
+
+.region-display.selector-active {
+  padding: 0;
+  overflow: hidden;
+}
+
+.region-display.has-selection:not(.selector-active) {
+  padding: 0;
+  overflow: hidden;
+}
+
+/* Overlay info on top of preview */
+.region-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 12px;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.7) 0%, transparent 100%);
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.region-overlay__info {
+  color: white;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.region-overlay__dimensions {
+  font-size: 1.1em;
+  font-weight: 600;
+}
+
+.region-overlay__monitor {
+  font-size: 0.85em;
+  opacity: 0.8;
+}
+
+.region-overlay #select-region-btn {
+  flex-shrink: 0;
+}
+
 .region-details {
   text-align: center;
   margin: 0 0 16px 0;

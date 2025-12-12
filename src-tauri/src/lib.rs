@@ -24,10 +24,7 @@ impl AppState {
     fn new() -> Self {
         // Initialize FFmpeg at startup (downloads if needed)
         let ffmpeg_ready = match ensure_ffmpeg_blocking() {
-            Ok(()) => {
-                println!("FFmpeg initialized successfully");
-                true
-            }
+            Ok(()) => true,
             Err(e) => {
                 eprintln!("Failed to initialize FFmpeg: {}", e);
                 false
@@ -68,6 +65,9 @@ impl AppState {
                 Ok(Err(e)) => eprintln!("[AppState] IPC server failed: {}", e),
                 Err(_) => eprintln!("[AppState] Timeout waiting for IPC server"),
             }
+            
+            // Pre-initialize screencopy for faster first thumbnail
+            linux::init_screencopy();
         }
 
         Self {
@@ -443,7 +443,6 @@ async fn get_window_thumbnail(window_handle: isize) -> Result<Option<ThumbnailRe
     match backend.capture_window_thumbnail(window_handle) {
         Ok(result) => Ok(Some(result.into())),
         Err(e) => {
-            eprintln!("[get_window_thumbnail] Error: {}", e);
             // Return None for NotImplemented errors (expected on Windows/macOS)
             // Return error for other failures
             if matches!(e, capture::CaptureError::NotImplemented(_)) {

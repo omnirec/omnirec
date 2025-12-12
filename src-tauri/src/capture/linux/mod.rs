@@ -12,6 +12,7 @@ pub mod highlight;
 pub mod ipc_server;
 pub mod pipewire_capture;
 pub mod portal_client;
+pub mod screencopy;
 pub mod thumbnail;
 
 use crate::capture::error::{CaptureError, EnumerationError};
@@ -50,6 +51,14 @@ pub async fn init_ipc_server() -> Result<(), String> {
 /// Get the global IPC state.
 pub fn get_ipc_state() -> Option<Arc<RwLock<IpcServerState>>> {
     IPC_STATE.get().cloned()
+}
+
+/// Pre-initialize the screencopy subsystem for faster first thumbnail.
+///
+/// Call this at app startup (after IPC init) to avoid latency on first thumbnail.
+/// This is a no-op if the compositor doesn't support wlr-screencopy.
+pub fn init_screencopy() {
+    let _ = screencopy::init();
 }
 
 /// Test the portal flow: set selection, call portal, log results.
@@ -486,14 +495,12 @@ impl HighlightProvider for LinuxBackend {
 
 impl ThumbnailCapture for LinuxBackend {
     fn capture_window_thumbnail(&self, window_handle: isize) -> Result<ThumbnailResult, CaptureError> {
-        let thumb_capture = thumbnail::LinuxThumbnailCapture::from_global()
-            .ok_or_else(|| CaptureError::PlatformError("IPC server not initialized".to_string()))?;
+        let thumb_capture = thumbnail::LinuxThumbnailCapture::new();
         thumb_capture.capture_window_thumbnail(window_handle)
     }
 
     fn capture_display_thumbnail(&self, monitor_id: &str) -> Result<ThumbnailResult, CaptureError> {
-        let thumb_capture = thumbnail::LinuxThumbnailCapture::from_global()
-            .ok_or_else(|| CaptureError::PlatformError("IPC server not initialized".to_string()))?;
+        let thumb_capture = thumbnail::LinuxThumbnailCapture::new();
         thumb_capture.capture_display_thumbnail(monitor_id)
     }
 
@@ -505,8 +512,7 @@ impl ThumbnailCapture for LinuxBackend {
         width: u32,
         height: u32,
     ) -> Result<ThumbnailResult, CaptureError> {
-        let thumb_capture = thumbnail::LinuxThumbnailCapture::from_global()
-            .ok_or_else(|| CaptureError::PlatformError("IPC server not initialized".to_string()))?;
+        let thumb_capture = thumbnail::LinuxThumbnailCapture::new();
         thumb_capture.capture_region_preview(monitor_id, x, y, width, height)
     }
 }
