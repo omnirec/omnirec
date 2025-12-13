@@ -192,6 +192,11 @@ async function closeRegionSelector(): Promise<void> {
 
 // Initialize on DOM load
 window.addEventListener("DOMContentLoaded", () => {
+  // Disable default context menu
+  document.addEventListener("contextmenu", (e) => {
+    e.preventDefault();
+  });
+
   windowListEl = document.querySelector("#window-list");
   windowSelectionEl = document.querySelector("#window-selection");
   regionSelectionEl = document.querySelector("#region-selection");
