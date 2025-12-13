@@ -151,6 +151,45 @@ let lastRegionPreviewTime = 0;
 let regionPreviewPendingTimeout: number | null = null;
 const REGION_PREVIEW_THROTTLE_MS = 500; // 500ms throttle
 
+// Stored region selector geometry (for persistence across close/reopen)
+interface SelectorGeometry {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+let storedSelectorGeometry: SelectorGeometry | null = null;
+
+// Close region selector and store its geometry for later restoration
+async function closeRegionSelector(): Promise<void> {
+  if (!regionSelectorWindow) return;
+  
+  try {
+    // Get current position and size before closing
+    const pos = await regionSelectorWindow.outerPosition();
+    const size = await regionSelectorWindow.innerSize();
+    
+    storedSelectorGeometry = {
+      x: pos.x,
+      y: pos.y,
+      width: size.width,
+      height: size.height,
+    };
+    console.log("Stored selector geometry:", storedSelectorGeometry);
+  } catch (e) {
+    console.warn("Failed to get selector geometry:", e);
+  }
+  
+  try {
+    await regionSelectorWindow.close();
+  } catch (e) {
+    console.warn("Failed to close selector:", e);
+  }
+  
+  regionSelectorWindow = null;
+  updateRegionDisplay();
+}
+
 // Initialize on DOM load
 window.addEventListener("DOMContentLoaded", () => {
   windowListEl = document.querySelector("#window-list");
@@ -179,7 +218,49 @@ window.addEventListener("DOMContentLoaded", () => {
   closeBtn = document.querySelector("#close-btn");
 
   // Set up event listeners
-  closeBtn?.addEventListener("click", () => getCurrentWebviewWindow().close());
+  closeBtn?.addEventListener("click", async () => {
+    // Close region selector first if open, then close the main window
+    if (regionSelectorWindow) {
+      try {
+        await regionSelectorWindow.close();
+      } catch (e) {
+        console.warn("Failed to close selector:", e);
+      }
+      regionSelectorWindow = null;
+    }
+    getCurrentWebviewWindow().close();
+  });
+  
+  // Also listen for window close event (e.g., from OS close button or Alt+F4)
+  getCurrentWebviewWindow().onCloseRequested(async (_event) => {
+    // If selector is open, close it first but don't prevent the main window close
+    if (regionSelectorWindow) {
+      try {
+        await regionSelectorWindow.close();
+      } catch (e) {
+        console.warn("Failed to close selector on close request:", e);
+      }
+      regionSelectorWindow = null;
+    }
+    // Allow the close to proceed (don't call event.preventDefault())
+  });
+  
+  // Also listen for window close event (e.g., from OS close button or Alt+F4)
+  getCurrentWebviewWindow().onCloseRequested(async (_event) => {
+    console.log("onCloseRequested fired");
+    // If selector is open, close it first but don't prevent the main window close
+    if (regionSelectorWindow) {
+      console.log("Closing selector from onCloseRequested");
+      try {
+        await regionSelectorWindow.close();
+      } catch (e) {
+        console.warn("Failed to close selector on close request:", e);
+      }
+      regionSelectorWindow = null;
+    }
+    console.log("Allowing close to proceed");
+    // Allow the close to proceed (don't call event.preventDefault())
+  });
   statusOverlayEl?.addEventListener("click", dismissStatus);
   resultEl?.addEventListener("click", (e) => {
     // Don't dismiss if clicking the Open Folder button
@@ -205,8 +286,13 @@ window.addEventListener("DOMContentLoaded", () => {
     updateRecordButton();
   });
 
-  // Listen for selector window closed
-  listen("region-selector-closed", () => {
+  // Listen for selector window closed (e.g., user pressed Escape)
+  listen<SelectorGeometry | Record<string, never>>("region-selector-closed", (event) => {
+    // Store geometry from event payload (sent by selector before closing)
+    const payload = event.payload;
+    if (payload && 'x' in payload && 'width' in payload) {
+      storedSelectorGeometry = payload as SelectorGeometry;
+    }
     regionSelectorWindow = null;
     // Update display to show details/button instead of fullsize preview
     // Keep the selected region - user can still record it
@@ -447,11 +533,25 @@ async function openRegionSelector(): Promise<void> {
     // Find primary monitor or use first one
     const primaryMonitor = monitors.find(m => m.is_primary) || monitors[0];
 
-    // Default selection size and position (centered on primary monitor)
-    const defaultWidth = 640;
-    const defaultHeight = 480;
-    const startX = primaryMonitor.x + Math.floor((primaryMonitor.width - defaultWidth) / 2);
-    const startY = primaryMonitor.y + Math.floor((primaryMonitor.height - defaultHeight) / 2);
+    // Use stored geometry if available, otherwise default to centered on primary monitor
+    let startX: number;
+    let startY: number;
+    let startWidth: number;
+    let startHeight: number;
+    
+    if (storedSelectorGeometry) {
+      // Restore previous position and size
+      startX = storedSelectorGeometry.x;
+      startY = storedSelectorGeometry.y;
+      startWidth = storedSelectorGeometry.width;
+      startHeight = storedSelectorGeometry.height;
+    } else {
+      // Default selection size and position (centered on primary monitor)
+      startWidth = 640;
+      startHeight = 480;
+      startX = primaryMonitor.x + Math.floor((primaryMonitor.width - startWidth) / 2);
+      startY = primaryMonitor.y + Math.floor((primaryMonitor.height - startHeight) / 2);
+    }
 
     // Determine the URL based on environment
     const isDev = window.location.hostname === "localhost";
@@ -459,7 +559,7 @@ async function openRegionSelector(): Promise<void> {
       ? "http://localhost:1420/src/selection-overlay.html"
       : "src/selection-overlay.html";
 
-    console.log("Creating selector window:", { overlayUrl, startX, startY, defaultWidth, defaultHeight });
+
 
     // Minimum size for region (100px recording area + 6px for borders)
     const minSize = 106;
@@ -474,8 +574,8 @@ async function openRegionSelector(): Promise<void> {
       skipTaskbar: true,
       x: startX,
       y: startY,
-      width: defaultWidth,
-      height: defaultHeight,
+      width: startWidth,
+      height: startHeight,
       minWidth: minSize,
       minHeight: minSize,
     });
@@ -501,6 +601,21 @@ async function openRegionSelector(): Promise<void> {
       console.warn("Failed to configure region selector window rules:", e);
     }
     
+    // If we have stored geometry, move the window to that position (Hyprland only)
+    // Wayland doesn't respect window position hints, so we use Hyprland IPC
+    if (storedSelectorGeometry) {
+      try {
+        await invoke("move_region_selector", {
+          x: storedSelectorGeometry.x,
+          y: storedSelectorGeometry.y,
+          width: storedSelectorGeometry.width,
+          height: storedSelectorGeometry.height,
+        });
+      } catch (e) {
+        console.warn("Failed to move region selector:", e);
+      }
+    }
+    
     await selector.setFocus();
 
     // Set initial region immediately so Record button is enabled
@@ -509,8 +624,8 @@ async function openRegionSelector(): Promise<void> {
       monitor_name: primaryMonitor.name,
       x: startX - primaryMonitor.x,
       y: startY - primaryMonitor.y,
-      width: defaultWidth,
-      height: defaultHeight,
+      width: startWidth,
+      height: startHeight,
     };
     updateRegionDisplay();
     updateRecordButton();
@@ -943,22 +1058,30 @@ async function stopRecording(): Promise<void> {
   updateRecordButton();
   stopTimer();
 
-  // Show the selector UI elements again
-  if (regionSelectorWindow) {
-    await regionSelectorWindow.emit("recording-stopped");
-  }
-
   try {
     const result = await invoke<RecordingResult>("stop_recording");
 
     if (result.success && result.file_path) {
       showResult(result.file_path);
       setStatus("Recording saved successfully!");
+      
+      // Close region selector after successful recording (preserves region state)
+      if (captureMode === "region" && regionSelectorWindow) {
+        await closeRegionSelector();
+      }
     } else {
       setStatus(`Recording failed: ${result.error || "Unknown error"}`, true);
+      // Show the selector UI elements again on failure
+      if (regionSelectorWindow) {
+        await regionSelectorWindow.emit("recording-stopped");
+      }
     }
   } catch (error) {
     setStatus(`Error stopping recording: ${error}`, true);
+    // Show the selector UI elements again on error
+    if (regionSelectorWindow) {
+      await regionSelectorWindow.emit("recording-stopped");
+    }
   }
 
   currentState = "idle";

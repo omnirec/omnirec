@@ -45,6 +45,22 @@ The system SHALL display an interactive overlay window for selecting a screen re
 - **THEN** the selection is constrained to the monitor where the drag started
 - **AND** the cursor can move freely but the rectangle clips at monitor edges
 
+#### Scenario: Dimensions display auto-hide
+
+- **WHEN** the user moves or resizes the selection rectangle
+- **THEN** the dimensions indicator becomes visible
+- **AND** after 1.5 seconds of inactivity, the dimensions indicator fades out
+- **WHEN** the user moves or resizes again before the timeout
+- **THEN** the timeout is reset and dimensions remain visible
+
+#### Scenario: Restore previous selector position
+
+- **WHEN** the user clicks "Change Region" after previously closing the selector
+- **AND** a region was previously selected
+- **THEN** the selector window opens at the previously stored position and size
+- **WHEN** no previous position exists
+- **THEN** the selector opens centered on the primary monitor with default dimensions
+
 ### Requirement: Selection Rectangle Manipulation
 
 The system SHALL allow the user to resize and reposition the selection rectangle after initial creation.
@@ -174,4 +190,27 @@ The system SHALL support region capture on Linux/Wayland (Hyprland) using PipeWi
 - **THEN** it outputs `[SELECTION]/region:<monitor_id>@<x>,<y>,<width>,<height>` to stdout
 - **AND** XDPH interprets this as a monitor capture request
 - **AND** the portal returns a PipeWire stream for the full monitor
+
+### Requirement: Region Selector Lifecycle Management
+
+The system SHALL manage the region selector window lifecycle to prevent orphaned windows and improve workflow.
+
+#### Scenario: Close selector on recording complete
+
+- **WHEN** a region recording completes successfully
+- **AND** the region selector window is open
+- **THEN** the selector window is automatically closed
+- **AND** the selected region remains stored for future recordings
+
+#### Scenario: Close selector on main window close
+
+- **WHEN** the main application window is closed
+- **AND** the region selector window is open
+- **THEN** the selector window is automatically closed
+
+#### Scenario: Persist selector geometry on close
+
+- **WHEN** the region selector window is closed (manually or automatically)
+- **THEN** the current position and size are stored
+- **AND** the stored geometry persists for the session
 

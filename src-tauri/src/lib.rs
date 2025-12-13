@@ -397,6 +397,67 @@ async fn configure_region_selector_window(_window_label: String) -> Result<(), S
     Ok(())
 }
 
+/// Move the region selector window to a specific position (Hyprland only).
+/// Wayland doesn't allow apps to position windows, so we use Hyprland IPC.
+#[cfg(target_os = "linux")]
+#[tauri::command]
+async fn move_region_selector(x: i32, y: i32, width: i32, height: i32) -> Result<(), String> {
+    if std::env::var("HYPRLAND_INSTANCE_SIGNATURE").is_err() {
+        return Ok(()); // Not on Hyprland, silently ignore
+    }
+    
+    // First, find the window address
+    use hyprland::data::Clients;
+    use hyprland::shared::HyprData;
+    
+    let clients = Clients::get().map_err(|e| format!("Failed to get clients: {}", e))?;
+    
+    let window_address = clients.iter()
+        .find(|c| c.title == "Region Selection")
+        .map(|c| format!("address:{}", c.address));
+    
+    let Some(addr) = window_address else {
+        return Err("Region selector window not found".to_string());
+    };
+    
+    // Move the window using hyprctl dispatch
+    // movewindowpixel exact x y,<window>
+    let move_cmd = format!("exact {} {},{}", x, y, addr);
+    let output = std::process::Command::new("hyprctl")
+        .args(["dispatch", "movewindowpixel", &move_cmd])
+        .output()
+        .map_err(|e| format!("Failed to run hyprctl: {}", e))?;
+    
+    if !output.status.success() {
+        let err = String::from_utf8_lossy(&output.stderr);
+        eprintln!("[move_region_selector] movewindowpixel failed: {}", err);
+    }
+    
+    // Resize the window using hyprctl dispatch
+    // resizewindowpixel exact w h,<window>
+    let resize_cmd = format!("exact {} {},{}", width, height, addr);
+    let output = std::process::Command::new("hyprctl")
+        .args(["dispatch", "resizewindowpixel", &resize_cmd])
+        .output()
+        .map_err(|e| format!("Failed to run hyprctl: {}", e))?;
+    
+    if !output.status.success() {
+        let err = String::from_utf8_lossy(&output.stderr);
+        eprintln!("[move_region_selector] resizewindowpixel failed: {}", err);
+    }
+    
+    eprintln!("[move_region_selector] Moved window to ({}, {}) size {}x{}", x, y, width, height);
+    
+    Ok(())
+}
+
+/// Stub for non-Linux platforms.
+#[cfg(not(target_os = "linux"))]
+#[tauri::command]
+async fn move_region_selector(_x: i32, _y: i32, _width: i32, _height: i32) -> Result<(), String> {
+    Ok(())
+}
+
 
 
 /// Thumbnail result for JSON serialization.
@@ -504,6 +565,7 @@ pub fn run() {
             show_window_highlight,
             configure_region_selector_window,
             get_region_selector_position,
+            move_region_selector,
             is_hyprland,
             check_screen_recording_permission,
             open_screen_recording_settings,

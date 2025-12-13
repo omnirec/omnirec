@@ -13,8 +13,6 @@ interface MonitorInfo {
   scale_factor: number;
 }
 
-
-
 interface CaptureRegion {
   monitor_id: string;
   monitor_name: string;
@@ -37,7 +35,6 @@ let emitTimeout: number | null = null;
 let isHyprland = false;
 
 // DOM elements
-let dimensionsEl: HTMLElement;
 let dragAreaEl: HTMLElement;
 
 // Map handle names to Tauri resize directions
@@ -58,7 +55,6 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   currentWindow = getCurrentWindow();
 
-  dimensionsEl = document.getElementById("dimensions")!;
   dragAreaEl = document.getElementById("drag-area")!;
 
   // Check if running on Hyprland
@@ -99,7 +95,6 @@ window.addEventListener("DOMContentLoaded", async () => {
         if (handleName && handleToDirection[handleName]) {
           await currentWindow.startResizeDragging(handleToDirection[handleName]);
           // Update after resize completes
-          updateDisplay();
           emitRegionUpdate();
         }
       });
@@ -127,7 +122,6 @@ window.addEventListener("DOMContentLoaded", async () => {
   });
 
   currentWindow.onResized(() => {
-    updateDisplay();
     throttledEmitRegionUpdate();
   });
 
@@ -143,27 +137,8 @@ window.addEventListener("DOMContentLoaded", async () => {
   });
 
   // Initial update
-  updateDisplay();
   emitRegionUpdate();
 });
-
-async function updateDisplay(): Promise<void> {
-  // Get actual size from Hyprland for accurate display
-  try {
-    const [_x, _y, w, h] = await invoke<[number, number, number, number]>("get_region_selector_position");
-    const borderOffset = BORDER_WIDTH + 1;
-    const recordWidth = w - (borderOffset * 2);
-    const recordHeight = h - (borderOffset * 2);
-    dimensionsEl.textContent = `${recordWidth} × ${recordHeight}`;
-  } catch {
-    // Fallback to Tauri size
-    const size = await currentWindow.innerSize();
-    const borderOffset = BORDER_WIDTH + 1;
-    const recordWidth = size.width - (borderOffset * 2);
-    const recordHeight = size.height - (borderOffset * 2);
-    dimensionsEl.textContent = `${recordWidth} × ${recordHeight}`;
-  }
-}
 
 // Throttle region updates to avoid spamming events
 function throttledEmitRegionUpdate(): void {
@@ -298,7 +273,29 @@ function findMonitorAt(x: number, y: number): MonitorInfo | null {
 async function closeOverlay(): Promise<void> {
   const mainWindow = await Window.getByLabel("main");
   if (mainWindow) {
-    await mainWindow.emit("region-selector-closed", {});
+    // Send current geometry with the close event so main window can store it
+    try {
+      // Try Hyprland IPC first (works on Wayland), fallback to Tauri
+      let x: number, y: number, width: number, height: number;
+      try {
+        const [hx, hy, hw, hh] = await invoke<[number, number, number, number]>("get_region_selector_position");
+        x = hx;
+        y = hy;
+        width = hw;
+        height = hh;
+      } catch {
+        const pos = await currentWindow.outerPosition();
+        const size = await currentWindow.innerSize();
+        x = pos.x;
+        y = pos.y;
+        width = size.width;
+        height = size.height;
+      }
+      await mainWindow.emit("region-selector-closed", { x, y, width, height });
+    } catch (e) {
+      console.warn("Failed to get geometry for close event:", e);
+      await mainWindow.emit("region-selector-closed", {});
+    }
   }
   await currentWindow.close();
 }

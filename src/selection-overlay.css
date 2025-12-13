@@ -136,28 +136,7 @@ body.hyprland .handle {
   visibility: hidden !important;
 }
 
-/* Dimension display */
-#dimensions {
-  position: fixed;
-  top: 10px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: rgba(0, 0, 0, 0.8);
-  color: #fff;
-  padding: 4px 10px;
-  border-radius: 4px;
-  font-family: monospace;
-  font-size: 12px;
-  white-space: nowrap;
-  pointer-events: none;
-  z-index: 20;
-}
-
 /* Recording state - hide UI elements that would appear in the recording */
 body.recording .handle {
-  display: none !important;
-}
-
-body.recording #dimensions {
   display: none !important;
 }
