@@ -36,7 +36,8 @@ impl CaptureSourceType {
 pub struct ScreencastStream {
     /// PipeWire node ID for the video stream
     pub node_id: u32,
-    /// Source type that was approved
+    /// Source type that was approved (e.g., Monitor, Window)
+    #[allow(dead_code)]
     pub source_type: Option<SourceType>,
     /// Stream dimensions (if available)
     pub size: Option<(i32, i32)>,

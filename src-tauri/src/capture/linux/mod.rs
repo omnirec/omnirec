@@ -64,69 +64,26 @@ pub fn init_screencopy() {
 
 
 /// Linux platform capture backend using Hyprland/PipeWire.
-pub struct LinuxBackend {
-    /// IPC server state for communicating with the picker service
-    ipc_state: Option<Arc<RwLock<IpcServerState>>>,
-}
+///
+/// This backend uses the global IPC server state initialized at startup.
+/// See `init_ipc_server()` for initialization.
+pub struct LinuxBackend;
 
 impl LinuxBackend {
     /// Create a new Linux backend.
     pub fn new() -> Self {
-        Self { ipc_state: None }
+        Self
     }
 
     /// Check if running on Hyprland compositor.
     pub fn is_hyprland() -> bool {
         std::env::var("HYPRLAND_INSTANCE_SIGNATURE").is_ok()
     }
-
-    /// Initialize the backend (starts IPC server).
-    ///
-    /// This should be called once at app startup on Linux.
-    pub async fn initialize(&mut self) -> Result<(), String> {
-        if !Self::is_hyprland() {
-            return Err(
-                "This application requires Hyprland compositor. \
-                 HYPRLAND_INSTANCE_SIGNATURE not found."
-                    .to_string(),
-            );
-        }
-
-        // Start IPC server for picker communication
-        let state = ipc_server::start_ipc_server()
-            .await
-            .map_err(|e| format!("Failed to start IPC server: {}", e))?;
-
-        self.ipc_state = Some(state);
-        Ok(())
-    }
-
-    /// Set the current capture selection (called before starting recording).
-    pub async fn set_selection(&self, selection: ipc_server::CaptureSelection) -> Result<(), String> {
-        match &self.ipc_state {
-            Some(state) => {
-                ipc_server::set_selection(state, selection).await;
-                Ok(())
-            }
-            None => Err("IPC server not initialized".to_string()),
-        }
-    }
-
-    /// Clear the current capture selection.
-    pub async fn clear_selection(&self) -> Result<(), String> {
-        match &self.ipc_state {
-            Some(state) => {
-                ipc_server::clear_selection(state).await;
-                Ok(())
-            }
-            None => Err("IPC server not initialized".to_string()),
-        }
-    }
 }
 
 impl Default for LinuxBackend {
     fn default() -> Self {
-        Self::new()
+        Self
     }
 }
 
@@ -530,8 +487,7 @@ mod tests {
 
     #[test]
     fn test_backend_creation() {
-        let backend = LinuxBackend::new();
-        assert!(backend.ipc_state.is_none());
+        let _backend = LinuxBackend::new();
     }
 
     #[test]

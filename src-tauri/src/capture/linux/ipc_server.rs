@@ -183,6 +183,7 @@ pub async fn start_ipc_server() -> Result<Arc<RwLock<IpcServerState>>, Box<dyn s
 }
 
 /// Update the current capture selection.
+#[allow(dead_code)]
 pub async fn set_selection(
     state: &Arc<RwLock<IpcServerState>>,
     selection: CaptureSelection,
@@ -194,6 +195,7 @@ pub async fn set_selection(
 }
 
 /// Clear the current capture selection.
+#[allow(dead_code)]
 pub async fn clear_selection(state: &Arc<RwLock<IpcServerState>>) {
     let mut state = state.write().await;
     state.selection = None;
