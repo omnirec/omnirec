@@ -9,6 +9,69 @@ use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::{Mutex, RwLock};
 
+/// Output format for recordings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum OutputFormat {
+    /// MP4 container with H.264 codec (default, no transcoding needed)
+    #[default]
+    Mp4,
+    /// WebM container with VP9 codec
+    WebM,
+    /// MKV container with H.264 codec (remux only)
+    Mkv,
+    /// QuickTime container with H.264 codec (remux only)
+    QuickTime,
+    /// Animated GIF
+    Gif,
+    /// Animated PNG
+    AnimatedPng,
+    /// Animated WebP
+    AnimatedWebp,
+}
+
+impl OutputFormat {
+    /// Get the file extension for this format.
+    pub fn extension(&self) -> &'static str {
+        match self {
+            OutputFormat::Mp4 => "mp4",
+            OutputFormat::WebM => "webm",
+            OutputFormat::Mkv => "mkv",
+            OutputFormat::QuickTime => "mov",
+            OutputFormat::Gif => "gif",
+            OutputFormat::AnimatedPng => "apng",
+            OutputFormat::AnimatedWebp => "webp",
+        }
+    }
+
+    /// Get display name for this format.
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            OutputFormat::Mp4 => "MP4",
+            OutputFormat::WebM => "WebM",
+            OutputFormat::Mkv => "MKV",
+            OutputFormat::QuickTime => "QuickTime (.mov)",
+            OutputFormat::Gif => "GIF",
+            OutputFormat::AnimatedPng => "Animated PNG",
+            OutputFormat::AnimatedWebp => "Animated WebP",
+        }
+    }
+
+    /// Parse from string (case-insensitive).
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "mp4" => Some(OutputFormat::Mp4),
+            "webm" => Some(OutputFormat::WebM),
+            "mkv" => Some(OutputFormat::Mkv),
+            "quicktime" | "mov" => Some(OutputFormat::QuickTime),
+            "gif" => Some(OutputFormat::Gif),
+            "animatedpng" | "apng" => Some(OutputFormat::AnimatedPng),
+            "animatedwebp" | "webp" => Some(OutputFormat::AnimatedWebp),
+            _ => None,
+        }
+    }
+}
+
 /// Recording state enum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -25,7 +88,10 @@ pub enum RecordingState {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecordingResult {
     pub success: bool,
+    /// Path to the final output file (transcoded if applicable)
     pub file_path: Option<String>,
+    /// Path to the original MP4 source file (same as file_path if format is MP4)
+    pub source_path: Option<String>,
     pub error: Option<String>,
 }
 
@@ -35,6 +101,7 @@ pub struct RecordingManager {
     stop_flag: Mutex<Option<Arc<AtomicBool>>>,
     recording_start: Mutex<Option<Instant>>,
     encoding_task: Mutex<Option<tokio::task::JoinHandle<Result<PathBuf, String>>>>,
+    output_format: RwLock<OutputFormat>,
 }
 
 impl RecordingManager {
@@ -45,7 +112,24 @@ impl RecordingManager {
             stop_flag: Mutex::new(None),
             recording_start: Mutex::new(None),
             encoding_task: Mutex::new(None),
+            output_format: RwLock::new(OutputFormat::default()),
         }
+    }
+
+    /// Get the current output format.
+    pub async fn get_output_format(&self) -> OutputFormat {
+        *self.output_format.read().await
+    }
+
+    /// Set the output format for future recordings.
+    pub async fn set_output_format(&self, format: OutputFormat) -> Result<(), String> {
+        let state = self.state.read().await;
+        if *state != RecordingState::Idle {
+            return Err("Cannot change format while recording".to_string());
+        }
+        let mut fmt = self.output_format.write().await;
+        *fmt = format;
+        Ok(())
     }
 
     /// Get the current recording state.
@@ -160,7 +244,8 @@ impl RecordingManager {
     }
 
     /// Stop the current recording and save the file.
-    pub async fn stop_recording(&self) -> Result<RecordingResult, String> {
+    /// Returns the source MP4 path. Transcoding is handled separately by the caller.
+    pub async fn stop_recording(&self) -> Result<(PathBuf, OutputFormat), String> {
         // Check current state
         {
             let state = self.state.read().await;
@@ -168,6 +253,9 @@ impl RecordingManager {
                 return Err("Not currently recording".to_string());
             }
         }
+
+        // Get the output format before changing state
+        let format = self.get_output_format().await;
 
         // Set state to saving
         {
@@ -184,36 +272,27 @@ impl RecordingManager {
         }
 
         // Wait for encoding to complete
-        let result = {
+        let source_path = {
             let mut task = self.encoding_task.lock().await;
             if let Some(handle) = task.take() {
                 match handle.await {
-                    Ok(Ok(path)) => RecordingResult {
-                        success: true,
-                        file_path: Some(path.to_string_lossy().to_string()),
-                        error: None,
-                    },
-                    Ok(Err(e)) => RecordingResult {
-                        success: false,
-                        file_path: None,
-                        error: Some(e),
-                    },
-                    Err(e) => RecordingResult {
-                        success: false,
-                        file_path: None,
-                        error: Some(format!("Task error: {}", e)),
-                    },
+                    Ok(Ok(path)) => path,
+                    Ok(Err(e)) => {
+                        self.cleanup().await;
+                        return Err(e);
+                    }
+                    Err(e) => {
+                        self.cleanup().await;
+                        return Err(format!("Task error: {}", e));
+                    }
                 }
             } else {
-                RecordingResult {
-                    success: false,
-                    file_path: None,
-                    error: Some("No encoding task found".to_string()),
-                }
+                self.cleanup().await;
+                return Err("No encoding task found".to_string());
             }
         };
 
-        // Clean up
+        // Clean up recording state (but don't reset to idle yet - caller handles that after transcoding)
         {
             let mut flag = self.stop_flag.lock().await;
             *flag = None;
@@ -223,13 +302,29 @@ impl RecordingManager {
             *start = None;
         }
 
-        // Reset state to idle
+        Ok((source_path, format))
+    }
+
+    /// Clean up internal state and reset to idle.
+    async fn cleanup(&self) {
+        {
+            let mut flag = self.stop_flag.lock().await;
+            *flag = None;
+        }
+        {
+            let mut start = self.recording_start.lock().await;
+            *start = None;
+        }
         {
             let mut state = self.state.write().await;
             *state = RecordingState::Idle;
         }
+    }
 
-        Ok(result)
+    /// Reset state to idle after recording/transcoding is complete.
+    pub async fn set_idle(&self) {
+        let mut state = self.state.write().await;
+        *state = RecordingState::Idle;
     }
 }
 

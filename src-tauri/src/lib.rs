@@ -6,9 +6,9 @@ mod state;
 
 use capture::{list_monitors, list_windows, show_highlight, CaptureRegion, MonitorInfo, WindowInfo, ThumbnailCapture, ThumbnailResult, get_backend};
 use encoder::ensure_ffmpeg_blocking;
-use state::{RecordingManager, RecordingResult, RecordingState};
+use state::{OutputFormat, RecordingManager, RecordingResult, RecordingState};
 use std::sync::Arc;
-use tauri::State;
+use tauri::{Emitter, State};
 use tokio::sync::Mutex;
 
 #[cfg(target_os = "linux")]
@@ -231,13 +231,109 @@ async fn start_display_recording(
 }
 
 /// Stop the current recording and save the file.
+/// If the output format is not MP4, transcodes to the target format.
 #[tauri::command]
-async fn stop_recording(state: State<'_, AppState>) -> Result<RecordingResult, String> {
-    let manager = state.recording_manager.lock().await;
-    manager.stop_recording().await.map_err(|e| {
-        eprintln!("[stop_recording] Error: {}", e);
-        e
+async fn stop_recording(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<RecordingResult, String> {
+    // Stop recording and get source MP4 path and target format
+    let (source_path, format) = {
+        let manager = state.recording_manager.lock().await;
+        manager.stop_recording().await.map_err(|e| {
+            eprintln!("[stop_recording] Error: {}", e);
+            e
+        })?
+    };
+
+    let source_path_str = source_path.to_string_lossy().to_string();
+
+    // If format is MP4, no transcoding needed
+    if format == OutputFormat::Mp4 {
+        // Reset state to idle
+        let manager = state.recording_manager.lock().await;
+        manager.set_idle().await;
+        
+        return Ok(RecordingResult {
+            success: true,
+            file_path: Some(source_path_str.clone()),
+            source_path: Some(source_path_str),
+            error: None,
+        });
+    }
+
+    // Emit transcoding-started event
+    let format_name = format.display_name().to_string();
+    let _ = app.emit("transcoding-started", &format_name);
+    eprintln!("[stop_recording] Starting transcoding to {}", format_name);
+
+    // Transcode to target format
+    let transcode_result = tokio::task::spawn_blocking({
+        let source = source_path.clone();
+        move || crate::encoder::transcode_video(&source, format)
     })
+    .await;
+
+    // Reset state to idle
+    {
+        let manager = state.recording_manager.lock().await;
+        manager.set_idle().await;
+    }
+
+    match transcode_result {
+        Ok(Ok(output_path)) => {
+            let output_path_str = output_path.to_string_lossy().to_string();
+            
+            // Emit transcoding-complete event with success
+            let _ = app.emit("transcoding-complete", serde_json::json!({
+                "success": true,
+                "output_path": &output_path_str,
+                "source_path": &source_path_str,
+            }));
+            
+            Ok(RecordingResult {
+                success: true,
+                file_path: Some(output_path_str),
+                source_path: Some(source_path_str),
+                error: None,
+            })
+        }
+        Ok(Err(e)) => {
+            eprintln!("[stop_recording] Transcoding failed: {}", e);
+            
+            // Emit transcoding-complete event with failure
+            let _ = app.emit("transcoding-complete", serde_json::json!({
+                "success": false,
+                "error": &e,
+                "source_path": &source_path_str,
+            }));
+            
+            // Return success with the original MP4 path, but note the transcoding error
+            Ok(RecordingResult {
+                success: true, // MP4 was saved successfully
+                file_path: Some(source_path_str.clone()),
+                source_path: Some(source_path_str),
+                error: Some(format!("Transcoding failed: {}. Original MP4 saved.", e)),
+            })
+        }
+        Err(e) => {
+            eprintln!("[stop_recording] Transcoding task error: {}", e);
+            
+            // Emit transcoding-complete event with failure
+            let _ = app.emit("transcoding-complete", serde_json::json!({
+                "success": false,
+                "error": e.to_string(),
+                "source_path": &source_path_str,
+            }));
+            
+            Ok(RecordingResult {
+                success: true, // MP4 was saved successfully
+                file_path: Some(source_path_str.clone()),
+                source_path: Some(source_path_str),
+                error: Some(format!("Transcoding task failed: {}. Original MP4 saved.", e)),
+            })
+        }
+    }
 }
 
 /// Get elapsed recording time in seconds.
@@ -245,6 +341,24 @@ async fn stop_recording(state: State<'_, AppState>) -> Result<RecordingResult, S
 async fn get_elapsed_time(state: State<'_, AppState>) -> Result<u64, String> {
     let manager = state.recording_manager.lock().await;
     Ok(manager.get_elapsed_seconds().await)
+}
+
+/// Get the current output format.
+#[tauri::command]
+async fn get_output_format(state: State<'_, AppState>) -> Result<String, String> {
+    let manager = state.recording_manager.lock().await;
+    let format = manager.get_output_format().await;
+    Ok(format.extension().to_string())
+}
+
+/// Set the output format for future recordings.
+#[tauri::command]
+async fn set_output_format(format: String, state: State<'_, AppState>) -> Result<(), String> {
+    let output_format = OutputFormat::from_str(&format)
+        .ok_or_else(|| format!("Invalid output format: {}", format))?;
+    
+    let manager = state.recording_manager.lock().await;
+    manager.set_output_format(output_format).await
 }
 
 /// Show a highlight border on the specified monitor.
@@ -561,6 +675,8 @@ pub fn run() {
             start_display_recording,
             stop_recording,
             get_elapsed_time,
+            get_output_format,
+            set_output_format,
             show_display_highlight,
             show_window_highlight,
             configure_region_selector_window,

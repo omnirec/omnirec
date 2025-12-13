@@ -77,6 +77,43 @@
         <div class="record-controls">
           <button id="record-btn" type="button" disabled>Record</button>
           <span id="timer" class="timer">00:00</span>
+          <div class="format-selector">
+            <button id="format-btn" type="button" class="format-btn">
+              <span class="format-btn__label">Format:</span>
+              <span class="format-btn__value">MP4</span>
+              <span class="format-btn__arrow"></span>
+            </button>
+            <div id="format-dropdown" class="format-dropdown hidden">
+              <div class="format-option" data-value="mp4">
+                <span class="format-option__name">MP4</span>
+                <span class="format-option__desc">Best compatibility, recommended</span>
+              </div>
+              <div class="format-option" data-value="webm">
+                <span class="format-option__name">WebM</span>
+                <span class="format-option__desc">Web-optimized, smaller files</span>
+              </div>
+              <div class="format-option" data-value="mkv">
+                <span class="format-option__name">MKV</span>
+                <span class="format-option__desc">Universal container, fast export</span>
+              </div>
+              <div class="format-option" data-value="quicktime">
+                <span class="format-option__name">QuickTime (.mov)</span>
+                <span class="format-option__desc">Apple ecosystem, fast export</span>
+              </div>
+              <div class="format-option" data-value="gif">
+                <span class="format-option__name">GIF</span>
+                <span class="format-option__desc">Animated image, wide support</span>
+              </div>
+              <div class="format-option" data-value="apng">
+                <span class="format-option__name">Animated PNG</span>
+                <span class="format-option__desc">Lossless animation, larger files</span>
+              </div>
+              <div class="format-option" data-value="webp">
+                <span class="format-option__name">Animated WebP</span>
+                <span class="format-option__desc">Modern format, small files</span>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 

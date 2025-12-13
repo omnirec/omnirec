@@ -309,3 +309,105 @@ pub fn ensure_ffmpeg_blocking() -> Result<(), String> {
     ffmpeg_sidecar::download::auto_download()
         .map_err(|e| format!("Failed to download FFmpeg: {}", e))
 }
+
+use crate::state::OutputFormat;
+
+/// Transcode a source MP4 file to the specified output format.
+/// Returns the path to the transcoded file.
+pub fn transcode_video(source_path: &PathBuf, format: OutputFormat) -> Result<PathBuf, String> {
+    // Generate output path with new extension
+    let output_path = source_path.with_extension(format.extension());
+    
+    eprintln!("[Transcode] Converting {} to {:?}", source_path.display(), format);
+    eprintln!("[Transcode] Output: {}", output_path.display());
+
+    let mut command = FfmpegCommand::new();
+    
+    // Input file
+    command.args(["-i", source_path.to_string_lossy().as_ref()]);
+    
+    // Format-specific encoding settings
+    match format {
+        OutputFormat::Mp4 => {
+            // No transcoding needed for MP4
+            return Ok(source_path.clone());
+        }
+        OutputFormat::WebM => {
+            // VP9 codec with good quality
+            command.args(["-c:v", "libvpx-vp9"]);
+            command.args(["-crf", "30"]);
+            command.args(["-b:v", "0"]);
+        }
+        OutputFormat::Mkv => {
+            // Remux only - copy video stream (very fast)
+            command.args(["-c:v", "copy"]);
+        }
+        OutputFormat::QuickTime => {
+            // Remux only - copy video stream (very fast)
+            command.args(["-c:v", "copy"]);
+            command.args(["-f", "mov"]);
+        }
+        OutputFormat::Gif => {
+            // Generate palette for better quality GIF
+            // Reduce fps to 15 for reasonable file size, keep original resolution
+            command.args([
+                "-vf",
+                "fps=15,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse",
+            ]);
+        }
+        OutputFormat::AnimatedPng => {
+            // APNG format
+            command.args(["-plays", "0"]); // Loop forever
+            command.args(["-f", "apng"]);
+        }
+        OutputFormat::AnimatedWebp => {
+            // WebP format with good quality
+            command.args(["-c:v", "libwebp"]);
+            command.args(["-lossless", "0"]);
+            command.args(["-q:v", "75"]);
+            command.args(["-loop", "0"]); // Loop forever
+        }
+    }
+    
+    // Overwrite output and set output path
+    command.args(["-y"]);
+    command.arg(output_path.to_string_lossy().to_string());
+
+    // Get the inner command and configure for process output
+    let inner_command = command.as_inner_mut();
+    inner_command.stdout(Stdio::null());
+    inner_command.stderr(Stdio::piped());
+
+    let mut child = inner_command
+        .spawn()
+        .map_err(|e| format!("Failed to start FFmpeg for transcoding: {}", e))?;
+
+    // Read stderr for progress/error messages
+    let stderr_output = if let Some(mut stderr) = child.stderr.take() {
+        use std::io::Read;
+        let mut output = String::new();
+        let _ = stderr.read_to_string(&mut output);
+        output
+    } else {
+        String::new()
+    };
+
+    let status = child
+        .wait()
+        .map_err(|e| format!("FFmpeg transcoding process error: {}", e))?;
+
+    if !status.success() {
+        let error_msg = if stderr_output.is_empty() {
+            format!("FFmpeg transcoding failed with exit code: {:?}", status.code())
+        } else {
+            format!(
+                "FFmpeg transcoding failed: {}",
+                stderr_output.lines().last().unwrap_or(&stderr_output)
+            )
+        };
+        return Err(error_msg);
+    }
+
+    eprintln!("[Transcode] Successfully created {}", output_path.display());
+    Ok(output_path)
+}

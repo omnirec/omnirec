@@ -33,11 +33,20 @@ interface CaptureRegion {
 
 type CaptureMode = "window" | "region" | "display";
 type RecordingState = "idle" | "recording" | "saving";
+type OutputFormat = "mp4" | "webm" | "mkv" | "quicktime" | "gif" | "apng" | "webp";
 
 interface RecordingResult {
   success: boolean;
   file_path: string | null;
+  source_path: string | null;
   error: string | null;
+}
+
+interface TranscodingCompleteEvent {
+  success: boolean;
+  output_path?: string;
+  source_path?: string;
+  error?: string;
 }
 
 interface ThumbnailResponse {
@@ -132,6 +141,8 @@ let permissionNoticeEl: HTMLElement | null;
 let captureUiEl: HTMLElement | null;
 let openSettingsBtn: HTMLButtonElement | null;
 let closeBtn: HTMLButtonElement | null;
+let formatBtnEl: HTMLButtonElement | null;
+let formatDropdownEl: HTMLDivElement | null;
 
 // State
 let captureMode: CaptureMode = "window";
@@ -142,6 +153,7 @@ let regionSelectorWindow: WebviewWindow | null = null;
 let currentState: RecordingState = "idle";
 let timerInterval: number | null = null;
 let recordingStartTime: number = 0;
+let selectedFormat: OutputFormat = "mp4";
 
 // Thumbnail refresh state
 let windowThumbnailRefreshInterval: number | null = null;
@@ -221,6 +233,8 @@ window.addEventListener("DOMContentLoaded", () => {
   captureUiEl = document.querySelector("#capture-ui");
   openSettingsBtn = document.querySelector("#open-settings-btn");
   closeBtn = document.querySelector("#close-btn");
+  formatBtnEl = document.querySelector("#format-btn");
+  formatDropdownEl = document.querySelector("#format-dropdown");
 
   // Set up event listeners
   closeBtn?.addEventListener("click", async () => {
@@ -283,12 +297,47 @@ window.addEventListener("DOMContentLoaded", () => {
   modeRegionBtn?.addEventListener("click", () => setCaptureMode("region"));
   modeDisplayBtn?.addEventListener("click", () => setCaptureMode("display"));
 
+  // Format selector handlers
+  formatBtnEl?.addEventListener("click", toggleFormatDropdown);
+  
+  // Handle clicking on format options
+  formatDropdownEl?.querySelectorAll(".format-option").forEach((option) => {
+    option.addEventListener("click", () => {
+      const value = (option as HTMLElement).dataset.value as OutputFormat;
+      selectFormat(value);
+    });
+  });
+
+  // Close dropdown when clicking outside
+  document.addEventListener("click", (e) => {
+    if (formatDropdownEl && !formatDropdownEl.classList.contains("hidden")) {
+      const target = e.target as HTMLElement;
+      if (!target.closest(".format-selector")) {
+        closeFormatDropdown();
+      }
+    }
+  });
+
   // Listen for region updates from selector window (continuous updates as user moves/resizes)
   listen<CaptureRegion>("region-updated", (event) => {
     console.log("Received region-updated:", event.payload);
     selectedRegion = event.payload;
     updateRegionDisplay();
     updateRecordButton();
+  });
+
+  // Listen for transcoding events
+  listen<string>("transcoding-started", (event) => {
+    console.log("Transcoding started:", event.payload);
+    setStatus(`Transcoding to ${event.payload}...`);
+  });
+
+  listen<TranscodingCompleteEvent>("transcoding-complete", (event) => {
+    console.log("Transcoding complete:", event.payload);
+    if (!event.payload.success && event.payload.error) {
+      // Transcoding failed but MP4 was saved
+      setStatus(`Transcoding failed: ${event.payload.error}`, true);
+    }
   });
 
   // Listen for selector window closed (e.g., user pressed Escape)
@@ -397,6 +446,72 @@ function setCaptureMode(mode: CaptureMode): void {
   }
 
   updateRecordButton();
+}
+
+// Format dropdown functions
+function toggleFormatDropdown(): void {
+  if (!formatDropdownEl || !formatBtnEl) return;
+  
+  const isOpen = !formatDropdownEl.classList.contains("hidden");
+  if (isOpen) {
+    closeFormatDropdown();
+  } else {
+    openFormatDropdown();
+  }
+}
+
+function openFormatDropdown(): void {
+  if (!formatDropdownEl || !formatBtnEl) return;
+  formatDropdownEl.classList.remove("hidden");
+  formatBtnEl.classList.add("open");
+  
+  // Update selected state
+  formatDropdownEl.querySelectorAll(".format-option").forEach((option) => {
+    const value = (option as HTMLElement).dataset.value;
+    option.classList.toggle("selected", value === selectedFormat);
+  });
+}
+
+function closeFormatDropdown(): void {
+  if (!formatDropdownEl || !formatBtnEl) return;
+  formatDropdownEl.classList.add("hidden");
+  formatBtnEl.classList.remove("open");
+}
+
+async function selectFormat(format: OutputFormat): Promise<void> {
+  try {
+    await invoke("set_output_format", { format });
+    selectedFormat = format;
+    
+    // Update button display
+    updateFormatButtonDisplay();
+    
+    console.log("Output format set to:", format);
+  } catch (error) {
+    console.error("Failed to set output format:", error);
+    setStatus(`Failed to change format: ${error}`, true);
+  }
+  
+  closeFormatDropdown();
+}
+
+function updateFormatButtonDisplay(): void {
+  if (!formatBtnEl) return;
+  
+  const formatNames: Record<OutputFormat, string> = {
+    mp4: "MP4",
+    webm: "WebM",
+    mkv: "MKV",
+    quicktime: "QuickTime",
+    gif: "GIF",
+    apng: "APNG",
+    webp: "WebP",
+  };
+  
+  const valueEl = formatBtnEl.querySelector(".format-btn__value");
+  if (valueEl) {
+    valueEl.textContent = formatNames[selectedFormat];
+  }
 }
 
 // Update region display
@@ -1169,6 +1284,12 @@ function disableSelection(disabled: boolean): void {
   }
   if (modeDisplayBtn) {
     modeDisplayBtn.disabled = disabled;
+  }
+  if (formatBtnEl) {
+    formatBtnEl.disabled = disabled;
+    if (disabled) {
+      closeFormatDropdown();
+    }
   }
 
   document.querySelectorAll(".window-item").forEach((el) => {
