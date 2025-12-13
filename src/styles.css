@@ -26,7 +26,7 @@
   /* Semantic colors */
   --bg-gradient-start: #1a1a1f;
   --bg-gradient-end: #0f0f12;
-  --bg-surface: var(--gray-800);
+  --bg-surface: var(--gray-950);
   --bg-surface-hover: var(--gray-700);
   --bg-surface-elevated: var(--gray-700);
   --text-primary: var(--gray-100);
@@ -416,7 +416,7 @@ section {
 
 .window-item {
   padding: 10px 14px;
-  border-bottom: 1px solid var(--border-color-subtle);
+  /* border-bottom: 1px solid var(--border-color-subtle); */
   cursor: pointer;
   transition: background-color 0.15s;
   display: flex;
@@ -540,7 +540,7 @@ section {
 
 .display-item {
   padding: 10px 14px;
-  border-bottom: 1px solid var(--border-color-subtle);
+  /* border-bottom: 1px solid var(--border-color-subtle); */
   cursor: pointer;
   transition: background-color 0.15s;
   display: flex;
