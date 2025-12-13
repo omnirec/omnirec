@@ -116,7 +116,6 @@ let displayListEl: HTMLElement | null;
 let recordBtn: HTMLButtonElement | null;
 let refreshBtn: HTMLButtonElement | null;
 let refreshDisplaysBtn: HTMLButtonElement | null;
-let testPortalBtn: HTMLButtonElement | null;
 let selectRegionBtn: HTMLButtonElement | null;
 let modeWindowBtn: HTMLButtonElement | null;
 let modeRegionBtn: HTMLButtonElement | null;
@@ -163,7 +162,7 @@ window.addEventListener("DOMContentLoaded", () => {
   recordBtn = document.querySelector("#record-btn");
   refreshBtn = document.querySelector("#refresh-btn");
   refreshDisplaysBtn = document.querySelector("#refresh-displays-btn");
-  testPortalBtn = document.querySelector("#test-portal-btn");
+
   selectRegionBtn = document.querySelector("#select-region-btn");
   modeWindowBtn = document.querySelector("#mode-window-btn");
   modeRegionBtn = document.querySelector("#mode-region-btn");
@@ -191,7 +190,6 @@ window.addEventListener("DOMContentLoaded", () => {
   refreshBtn?.addEventListener("click", loadWindows);
   openSettingsBtn?.addEventListener("click", handleOpenSettings);
   refreshDisplaysBtn?.addEventListener("click", loadDisplays);
-  testPortalBtn?.addEventListener("click", testLinuxPortal);
   recordBtn?.addEventListener("click", handleRecordClick);
   openFolderBtn?.addEventListener("click", handleOpenFolder);
   selectRegionBtn?.addEventListener("click", openRegionSelector);
@@ -843,29 +841,7 @@ async function showDisplayHighlight(display: MonitorInfo): Promise<void> {
   }
 }
 
-// Test the Linux portal flow (for development/debugging)
-async function testLinuxPortal(): Promise<void> {
-  if (!selectedDisplay) {
-    setStatus("Select a display first to test portal", true);
-    return;
-  }
 
-  setStatus("Testing Linux portal flow...");
-  console.log("[Portal Test] Starting with display:", selectedDisplay.id);
-
-  try {
-    const result = await invoke<string>("test_linux_portal", {
-      monitorId: selectedDisplay.id,
-    });
-    console.log("[Portal Test] Result:", result);
-    setStatus(`Portal test: ${result}`);
-    alert(`Portal Test Result:\n\n${result}`);
-  } catch (error) {
-    console.error("[Portal Test] Error:", error);
-    setStatus(`Portal test failed: ${error}`, true);
-    alert(`Portal Test Failed:\n\n${error}`);
-  }
-}
 
 // Select a window for recording
 function selectWindow(win: WindowInfo, element: HTMLElement): void {

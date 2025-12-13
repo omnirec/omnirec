@@ -61,51 +61,7 @@ pub fn init_screencopy() {
     let _ = screencopy::init();
 }
 
-/// Test the portal flow: set selection, call portal, log results.
-/// This is for validating Phase 1 implementation.
-pub async fn test_portal_flow(monitor_id: &str) -> Result<String, String> {
-    eprintln!("[Linux] === Testing Portal Flow ===");
-    eprintln!("[Linux] Monitor ID: {}", monitor_id);
 
-    // Step 1: Ensure IPC server is running
-    let ipc_state = get_ipc_state().ok_or_else(|| {
-        "IPC server not initialized. Call init_ipc_server() first.".to_string()
-    })?;
-    eprintln!("[Linux] Step 1: IPC server is running");
-
-    // Step 2: Set the selection
-    let selection = ipc_server::CaptureSelection {
-        source_type: "monitor".to_string(),
-        source_id: monitor_id.to_string(),
-        geometry: None,
-    };
-    ipc_server::set_selection(&ipc_state, selection).await;
-    eprintln!("[Linux] Step 2: Selection set for monitor '{}'", monitor_id);
-
-    // Step 3: Create portal client and request capture
-    eprintln!("[Linux] Step 3: Requesting screencast via portal...");
-    eprintln!("[Linux]   (This should trigger the picker service)");
-
-    let portal_client = portal_client::PortalClient::new(ipc_state);
-    
-    match portal_client.request_monitor_capture(monitor_id).await {
-        Ok(stream) => {
-            let result = format!(
-                "SUCCESS! Portal returned:\n  - PipeWire Node ID: {}\n  - Source Type: {:?}\n  - Size: {:?}",
-                stream.node_id,
-                stream.source_type,
-                stream.size
-            );
-            eprintln!("[Linux] Step 4: {}", result);
-            Ok(result)
-        }
-        Err(e) => {
-            let result = format!("Portal request failed: {}", e);
-            eprintln!("[Linux] Step 4: {}", result);
-            Err(result)
-        }
-    }
-}
 
 /// Linux platform capture backend using Hyprland/PipeWire.
 pub struct LinuxBackend {

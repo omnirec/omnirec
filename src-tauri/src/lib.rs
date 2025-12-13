@@ -397,21 +397,7 @@ async fn configure_region_selector_window(_window_label: String) -> Result<(), S
     Ok(())
 }
 
-/// Test the portal flow on Linux (for development/debugging).
-/// This validates that the picker service is working correctly.
-#[cfg(target_os = "linux")]
-#[tauri::command]
-async fn test_linux_portal(monitor_id: String) -> Result<String, String> {
-    eprintln!("[test_linux_portal] Called with monitor_id: {}", monitor_id);
-    linux::test_portal_flow(&monitor_id).await
-}
 
-/// Stub for non-Linux platforms.
-#[cfg(not(target_os = "linux"))]
-#[tauri::command]
-async fn test_linux_portal(_monitor_id: String) -> Result<String, String> {
-    Err("Portal test is only available on Linux".to_string())
-}
 
 /// Thumbnail result for JSON serialization.
 #[derive(serde::Serialize)]
@@ -519,7 +505,6 @@ pub fn run() {
             configure_region_selector_window,
             get_region_selector_position,
             is_hyprland,
-            test_linux_portal,
             check_screen_recording_permission,
             open_screen_recording_settings,
             get_window_thumbnail,
