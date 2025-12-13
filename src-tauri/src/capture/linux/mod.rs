@@ -21,7 +21,7 @@ use crate::capture::types::{
 };
 use crate::capture::{CaptureBackend, HighlightProvider, MonitorEnumerator, ThumbnailCapture, ThumbnailResult, WindowEnumerator};
 
-use hyprland::data::{Clients, Monitors};
+use hyprland::data::Monitors;
 use hyprland::shared::HyprData;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -174,6 +174,26 @@ impl Default for LinuxBackend {
     }
 }
 
+/// Workspace info from Hyprland JSON
+#[derive(serde::Deserialize, Debug)]
+struct RawWorkspaceBasic {
+    id: i32,
+}
+
+/// Raw client data from Hyprland JSON (includes fields missing from hyprland crate)
+#[derive(serde::Deserialize, Debug)]
+struct RawHyprlandClient {
+    address: String,
+    at: (i16, i16),
+    size: (i16, i16),
+    workspace: RawWorkspaceBasic,
+    monitor: Option<i128>,
+    class: String,
+    title: String,
+    /// Whether the window is hidden (e.g., inactive tab in a group)
+    hidden: bool,
+}
+
 impl WindowEnumerator for LinuxBackend {
     fn list_windows(&self) -> Result<Vec<WindowInfo>, EnumerationError> {
         if !Self::is_hyprland() {
@@ -182,25 +202,56 @@ impl WindowEnumerator for LinuxBackend {
             ));
         }
 
-        // Query Hyprland for client (window) list
-        let clients = Clients::get().map_err(|e| {
-            EnumerationError::PlatformError(format!("Failed to get Hyprland clients: {}", e))
-        })?;
+        // Query Hyprland directly via hyprctl to get the 'hidden' field
+        // The hyprland crate's Client struct doesn't include this field
+        let output = std::process::Command::new("hyprctl")
+            .args(["clients", "-j"])
+            .output()
+            .map_err(|e| {
+                EnumerationError::PlatformError(format!("Failed to run hyprctl: {}", e))
+            })?;
 
-        // Get monitors to look up scale factors (Hyprland Monitor has numeric `id` field)
+        if !output.status.success() {
+            return Err(EnumerationError::PlatformError(format!(
+                "hyprctl failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            )));
+        }
+
+        let clients: Vec<RawHyprlandClient> = serde_json::from_slice(&output.stdout)
+            .map_err(|e| {
+                EnumerationError::PlatformError(format!("Failed to parse hyprctl output: {}", e))
+            })?;
+
+        // Get monitors to look up scale factors and active workspaces
         let monitors = Monitors::get().ok();
+
+        // Build set of active workspace IDs (one per monitor)
+        let active_workspace_ids: std::collections::HashSet<i32> = monitors
+            .as_ref()
+            .map(|m| m.iter().map(|mon| mon.active_workspace.id).collect())
+            .unwrap_or_default();
 
         let mut windows = Vec::new();
         for client in clients {
-            // Skip windows without titles or hidden windows
+            // Skip windows without titles
             if client.title.is_empty() {
+                continue;
+            }
+
+            // Skip hidden windows (e.g., inactive tabs in window groups)
+            if client.hidden {
+                continue;
+            }
+
+            // Skip windows on non-visible workspaces
+            if !active_workspace_ids.contains(&client.workspace.id) {
                 continue;
             }
 
             // Convert Hyprland address to isize handle
             // The address is a hex value like "0x5638d0a12345"
-            let handle = client.address.to_string();
-            let handle = handle.trim_start_matches("0x");
+            let handle = client.address.trim_start_matches("0x");
             let handle = isize::from_str_radix(handle, 16).unwrap_or(0);
 
             // Hyprland reports window position and size in logical (scaled) coordinates
