@@ -86,16 +86,40 @@ pnpm tauri build
 
 ## Linux Installation (Hyprland)
 
+### Option A: Install from AUR (Recommended)
+
+For Arch Linux users, install from the AUR:
+
+```bash
+# Using an AUR helper (e.g., yay, paru)
+yay -S omnirec-bin
+
+# Or manually
+git clone https://aur.archlinux.org/omnirec-bin.git
+cd omnirec-bin
+makepkg -si
+```
+
+After installation, configure portal routing for Hyprland:
+
+```bash
+mkdir -p ~/.config/xdg-desktop-portal
+echo -e '[preferred]\ndefault=hyprland;gtk' > ~/.config/xdg-desktop-portal/hyprland-portals.conf
+systemctl --user restart xdg-desktop-portal
+```
+
+### Option B: Build from Source
+
 The Linux version requires a separate picker service that integrates with xdg-desktop-portal. This allows the app to capture screens without showing the default portal picker dialog.
 
-### 1. Build the Picker Service
+#### 1. Build the Picker Service
 
 ```bash
 cd src-picker
 cargo build --release
 ```
 
-### 2. Install the Picker Binary
+#### 2. Install the Picker Binary
 
 ```bash
 # System-wide (requires root)
@@ -106,21 +130,21 @@ mkdir -p ~/.local/bin
 cp target/release/omnirec-picker ~/.local/bin/
 ```
 
-### 3. Install Portal Configuration
+#### 3. Install Portal Configuration
 
 ```bash
 # Portal registration (requires root)
 sudo cp resources/linux/omnirec.portal /usr/share/xdg-desktop-portal/portals/
 ```
 
-### 4. Configure Portal Routing for Hyprland
+#### 4. Configure Portal Routing for Hyprland
 
 ```bash
 mkdir -p ~/.config/xdg-desktop-portal
 cp resources/linux/hyprland-portals.conf ~/.config/xdg-desktop-portal/
 ```
 
-### 5. Install and Enable the Systemd Service
+#### 5. Install and Enable the Systemd Service
 
 ```bash
 mkdir -p ~/.config/systemd/user
@@ -133,7 +157,7 @@ systemctl --user daemon-reload
 systemctl --user enable --now omnirec-picker
 ```
 
-### 6. Restart xdg-desktop-portal
+#### 6. Restart xdg-desktop-portal
 
 ```bash
 systemctl --user restart xdg-desktop-portal
@@ -207,6 +231,38 @@ omnirec/
 ## Documentation
 
 - [Requirements](docs/requirements.md) - Full project requirements and specifications
+
+## AUR Publishing (Maintainers)
+
+To publish a new version to the AUR:
+
+1. Update version in `packaging/aur/PKGBUILD`:
+   ```bash
+   pkgver=X.Y.Z
+   pkgrel=1
+   ```
+
+2. Update the sha256sum for the release tarball:
+   ```bash
+   # Download the release and compute checksum
+   sha256sum omnirec-X.Y.Z-linux-x86_64.tar.gz
+   ```
+
+3. Generate `.SRCINFO`:
+   ```bash
+   cd packaging/aur
+   makepkg --printsrcinfo > .SRCINFO
+   ```
+
+4. Clone the AUR repository and update:
+   ```bash
+   git clone ssh://aur@aur.archlinux.org/omnirec-bin.git aur-omnirec-bin
+   cp packaging/aur/{PKGBUILD,omnirec.desktop,omnirec-bin.install,.SRCINFO} aur-omnirec-bin/
+   cd aur-omnirec-bin
+   git add -A
+   git commit -m "Update to vX.Y.Z"
+   git push
+   ```
 
 ## License
 

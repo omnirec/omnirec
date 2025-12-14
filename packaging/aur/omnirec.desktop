@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=OmniRec
+Comment=High-performance screen, window, and region recording
+Exec=omnirec
+Icon=omnirec
+Terminal=false
+Type=Application
+Categories=AudioVideo;Video;Recorder;
+Keywords=screen;record;capture;video;window;
+StartupWMClass=omnirec
