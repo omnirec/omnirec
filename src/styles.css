@@ -234,6 +234,136 @@ section {
   cursor: not-allowed;
 }
 
+/* Config button - right-aligned in tab bar */
+.mode-btn--config {
+  margin-left: auto;
+  padding: 0.5em 0.8em;
+}
+
+.mode-btn--config .config-icon {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
+/* ===== Configuration View ===== */
+.config-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  margin-bottom: 16px;
+  overflow-y: auto;
+}
+
+.config-group {
+  margin-bottom: 16px;
+}
+
+.config-group__title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0;
+  margin: 0 0 12px 0;
+}
+
+.config-group__content {
+  padding: 0;
+}
+
+.config-item {
+  margin-bottom: 16px;
+}
+
+.config-item:last-child {
+  margin-bottom: 0;
+}
+
+.config-item__label {
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.config-item__input-row {
+  display: flex;
+  gap: 8px;
+}
+
+.config-item__input {
+  flex: 1;
+  background: var(--gray-800);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 0.9rem;
+  font-family: monospace;
+  color: var(--text-primary);
+  transition: border-color 0.2s, background-color 0.2s;
+}
+
+.config-item__input:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+  background: var(--gray-700);
+}
+
+.config-item__input::placeholder {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.config-item__input.has-error {
+  border-color: var(--accent-danger);
+}
+
+.config-item__browse-btn {
+  flex-shrink: 0;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--gray-700);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+
+.config-item__browse-btn:hover:not(:disabled) {
+  background: var(--gray-600);
+  border-color: var(--gray-500);
+}
+
+.config-item__browse-btn svg {
+  width: 18px;
+  height: 18px;
+  color: var(--text-secondary);
+}
+
+.config-item__browse-btn:hover svg {
+  color: var(--text-primary);
+}
+
+.config-item__error {
+  margin: 8px 0 0 0;
+  font-size: 0.8rem;
+  color: var(--accent-danger);
+}
+
+.config-item__hint {
+  margin: 8px 0 0 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
 /* ===== Region Selection ===== */
 .region-selection {
   display: flex;

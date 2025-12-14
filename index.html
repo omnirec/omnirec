@@ -39,6 +39,12 @@
           <button id="mode-window-btn" type="button" class="mode-btn active" role="tab" aria-selected="true">Window</button>
           <button id="mode-region-btn" type="button" class="mode-btn" role="tab" aria-selected="false">Region</button>
           <button id="mode-display-btn" type="button" class="mode-btn" role="tab" aria-selected="false">Display</button>
+          <button id="mode-config-btn" type="button" class="mode-btn mode-btn--config" role="tab" aria-selected="false" title="Settings">
+            <svg class="config-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+          </button>
         </nav>
       </section>
 
@@ -70,6 +76,27 @@
         </div>
         <div id="display-list" class="display-list">
           <p class="loading">Loading displays...</p>
+        </div>
+      </section>
+
+      <section id="config-view" class="config-view hidden">
+        <div class="config-group">
+          <h3 class="config-group__title">Output</h3>
+          <div class="config-group__content">
+            <div class="config-item">
+              <label for="output-dir-input" class="config-item__label">Output Directory</label>
+              <div class="config-item__input-row">
+                <input type="text" id="output-dir-input" class="config-item__input" placeholder="Loading...">
+                <button id="browse-output-dir-btn" type="button" class="config-item__browse-btn" title="Browse...">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                  </svg>
+                </button>
+              </div>
+              <p id="output-dir-error" class="config-item__error hidden"></p>
+              <p class="config-item__hint">Leave empty to use system default</p>
+            </div>
+          </div>
         </div>
       </section>
 

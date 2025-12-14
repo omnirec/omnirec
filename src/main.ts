@@ -32,8 +32,15 @@ interface CaptureRegion {
 }
 
 type CaptureMode = "window" | "region" | "display";
+type ViewMode = CaptureMode | "config";
 type RecordingState = "idle" | "recording" | "saving";
 type OutputFormat = "mp4" | "webm" | "mkv" | "quicktime" | "gif" | "apng" | "webp";
+
+interface AppConfig {
+  output: {
+    directory: string | null;
+  };
+}
 
 interface RecordingResult {
   success: boolean;
@@ -143,6 +150,11 @@ let openSettingsBtn: HTMLButtonElement | null;
 let closeBtn: HTMLButtonElement | null;
 let formatBtnEl: HTMLButtonElement | null;
 let formatDropdownEl: HTMLDivElement | null;
+let modeConfigBtn: HTMLButtonElement | null;
+let configViewEl: HTMLElement | null;
+let outputDirInput: HTMLInputElement | null;
+let browseOutputDirBtn: HTMLButtonElement | null;
+let outputDirErrorEl: HTMLElement | null;
 
 // State
 let captureMode: CaptureMode = "window";
@@ -154,6 +166,8 @@ let currentState: RecordingState = "idle";
 let timerInterval: number | null = null;
 let recordingStartTime: number = 0;
 let selectedFormat: OutputFormat = "mp4";
+let defaultOutputDir: string = "";
+let outputDirSaveTimeout: number | null = null;
 
 // Thumbnail refresh state
 let windowThumbnailRefreshInterval: number | null = null;
@@ -235,6 +249,11 @@ window.addEventListener("DOMContentLoaded", () => {
   closeBtn = document.querySelector("#close-btn");
   formatBtnEl = document.querySelector("#format-btn");
   formatDropdownEl = document.querySelector("#format-dropdown");
+  modeConfigBtn = document.querySelector("#mode-config-btn");
+  configViewEl = document.querySelector("#config-view");
+  outputDirInput = document.querySelector("#output-dir-input");
+  browseOutputDirBtn = document.querySelector("#browse-output-dir-btn");
+  outputDirErrorEl = document.querySelector("#output-dir-error");
 
   // Set up event listeners
   closeBtn?.addEventListener("click", async () => {
@@ -293,9 +312,15 @@ window.addEventListener("DOMContentLoaded", () => {
   recordBtn?.addEventListener("click", handleRecordClick);
   openFolderBtn?.addEventListener("click", handleOpenFolder);
   selectRegionBtn?.addEventListener("click", openRegionSelector);
-  modeWindowBtn?.addEventListener("click", () => setCaptureMode("window"));
-  modeRegionBtn?.addEventListener("click", () => setCaptureMode("region"));
-  modeDisplayBtn?.addEventListener("click", () => setCaptureMode("display"));
+  modeWindowBtn?.addEventListener("click", () => setViewMode("window"));
+  modeRegionBtn?.addEventListener("click", () => setViewMode("region"));
+  modeDisplayBtn?.addEventListener("click", () => setViewMode("display"));
+  modeConfigBtn?.addEventListener("click", () => setViewMode("config"));
+
+  // Config view handlers
+  outputDirInput?.addEventListener("input", handleOutputDirInput);
+  outputDirInput?.addEventListener("blur", handleOutputDirBlur);
+  browseOutputDirBtn?.addEventListener("click", handleBrowseOutputDir);
 
   // Format selector handlers
   formatBtnEl?.addEventListener("click", toggleFormatDropdown);
@@ -356,6 +381,7 @@ window.addEventListener("DOMContentLoaded", () => {
   // Initial load - check permissions first
   checkPermissionsAndLoad();
   loadAppVersion();
+  loadConfig();
 });
 
 // Check screen recording permission and show appropriate UI
@@ -400,21 +426,30 @@ async function loadAppVersion(): Promise<void> {
   }
 }
 
-// Set capture mode
-function setCaptureMode(mode: CaptureMode): void {
+// Set view mode (capture mode or config)
+function setViewMode(mode: ViewMode): void {
   if (currentState !== "idle") return;
 
-  captureMode = mode;
-
-  // Update button states
+  // Update button states for all tabs
   modeWindowBtn?.classList.toggle("active", mode === "window");
   modeRegionBtn?.classList.toggle("active", mode === "region");
   modeDisplayBtn?.classList.toggle("active", mode === "display");
+  modeConfigBtn?.classList.toggle("active", mode === "config");
 
   // Show/hide sections
   windowSelectionEl?.classList.toggle("hidden", mode !== "window");
   regionSelectionEl?.classList.toggle("hidden", mode !== "region");
   displaySelectionEl?.classList.toggle("hidden", mode !== "display");
+  configViewEl?.classList.toggle("hidden", mode !== "config");
+
+  // Show/hide controls section (hidden in config mode)
+  const controlsEl = document.querySelector(".controls");
+  controlsEl?.classList.toggle("hidden", mode === "config");
+
+  // Handle switching to/from capture modes
+  if (mode !== "config") {
+    captureMode = mode;
+  }
 
   // Clear window selection when switching away from window mode
   if (mode !== "window") {
@@ -445,7 +480,10 @@ function setCaptureMode(mode: CaptureMode): void {
     startWindowThumbnailRefresh();
   }
 
-  updateRecordButton();
+  // Update record button only for capture modes
+  if (mode !== "config") {
+    updateRecordButton();
+  }
 }
 
 // Format dropdown functions
@@ -1285,6 +1323,9 @@ function disableSelection(disabled: boolean): void {
   if (modeDisplayBtn) {
     modeDisplayBtn.disabled = disabled;
   }
+  if (modeConfigBtn) {
+    modeConfigBtn.disabled = disabled;
+  }
   if (formatBtnEl) {
     formatBtnEl.disabled = disabled;
     if (disabled) {
@@ -1406,6 +1447,113 @@ function dismissStatus(): void {
     statusOverlayEl?.classList.add("hidden");
     statusOverlayEl?.classList.remove("fade-out");
   }, 200);
+}
+
+// =============================================================================
+// Configuration Functions
+// =============================================================================
+
+// Load configuration and populate UI
+async function loadConfig(): Promise<void> {
+  try {
+    // Load default output directory for placeholder
+    defaultOutputDir = await invoke<string>("get_default_output_directory");
+    
+    // Load saved config
+    const config = await invoke<AppConfig>("get_config");
+    
+    // Update output directory input
+    if (outputDirInput) {
+      outputDirInput.placeholder = defaultOutputDir;
+      outputDirInput.value = config.output.directory || "";
+    }
+    
+    console.log("[Config] Loaded config, default dir:", defaultOutputDir);
+  } catch (error) {
+    console.error("[Config] Failed to load config:", error);
+  }
+}
+
+// Handle input in output directory field (debounced auto-save)
+function handleOutputDirInput(): void {
+  // Clear existing timeout
+  if (outputDirSaveTimeout !== null) {
+    clearTimeout(outputDirSaveTimeout);
+  }
+  
+  // Clear any previous error
+  clearOutputDirError();
+  
+  // Set new timeout for auto-save (500ms debounce)
+  outputDirSaveTimeout = window.setTimeout(() => {
+    saveOutputDirectory();
+  }, 500);
+}
+
+// Handle blur on output directory field (immediate save)
+function handleOutputDirBlur(): void {
+  // Clear pending debounce timeout
+  if (outputDirSaveTimeout !== null) {
+    clearTimeout(outputDirSaveTimeout);
+    outputDirSaveTimeout = null;
+  }
+  
+  // Save immediately on blur
+  saveOutputDirectory();
+}
+
+// Save output directory to config
+async function saveOutputDirectory(): Promise<void> {
+  if (!outputDirInput) return;
+  
+  const directory = outputDirInput.value.trim();
+  
+  try {
+    // Save to backend (validates directory if not empty)
+    await invoke("save_output_directory", { 
+      directory: directory || null 
+    });
+    
+    clearOutputDirError();
+    console.log("[Config] Saved output directory:", directory || "(default)");
+  } catch (error) {
+    showOutputDirError(String(error));
+    console.error("[Config] Failed to save output directory:", error);
+  }
+}
+
+// Handle browse button click
+async function handleBrowseOutputDir(): Promise<void> {
+  try {
+    const selectedPath = await invoke<string | null>("pick_output_directory");
+    
+    if (selectedPath && outputDirInput) {
+      outputDirInput.value = selectedPath;
+      // Save immediately after picker selection
+      await saveOutputDirectory();
+    }
+  } catch (error) {
+    console.error("[Config] Failed to pick directory:", error);
+    setStatus(`Failed to open folder picker: ${error}`, true);
+  }
+}
+
+// Show error message for output directory
+function showOutputDirError(message: string): void {
+  if (outputDirErrorEl) {
+    outputDirErrorEl.textContent = message;
+    outputDirErrorEl.classList.remove("hidden");
+  }
+  outputDirInput?.classList.add("has-error");
+}
+
+// Clear output directory error
+function clearOutputDirError(): void {
+  if (outputDirErrorEl) {
+    outputDirErrorEl.textContent = "";
+    outputDirErrorEl.classList.add("hidden");
+  }
+  outputDirInput?.classList.remove("has-error");
 }
 
 // HTML escape helper

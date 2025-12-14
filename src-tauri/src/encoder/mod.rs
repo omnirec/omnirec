@@ -1,8 +1,8 @@
 //! Video encoding module using FFmpeg via ffmpeg-sidecar.
 
 use crate::capture::CapturedFrame;
+use crate::config::{get_output_dir, load_config};
 use chrono::Local;
-use directories::UserDirs;
 use ffmpeg_sidecar::command::FfmpegCommand;
 use std::io::Write;
 use std::path::PathBuf;
@@ -157,30 +157,22 @@ impl VideoEncoder {
     }
 }
 
-/// Generate a unique output filename in the user's Videos folder.
+/// Generate a unique output filename in the configured or default output directory.
 fn generate_output_path() -> Result<PathBuf, String> {
-    let user_dirs = UserDirs::new().ok_or("Could not determine user directories")?;
-    
-    // Try Videos directory first, fall back to home directory
-    let output_dir = user_dirs
-        .video_dir()
-        .map(|p| p.to_path_buf())
-        .unwrap_or_else(|| {
-            let home = user_dirs.home_dir().to_path_buf();
-            let videos = home.join("Videos");
-            // Try to create Videos directory if it doesn't exist
-            if !videos.exists() {
-                if std::fs::create_dir_all(&videos).is_ok() {
-                    return videos;
-                }
-            }
-            // Fall back to home directory
-            home
-        });
+    // Load config to get output directory preference
+    let config = load_config();
+    let output_dir = get_output_dir(&config)?;
+
+    // Ensure directory exists
+    if !output_dir.exists() {
+        std::fs::create_dir_all(&output_dir)
+            .map_err(|e| format!("Failed to create output directory: {}", e))?;
+    }
 
     let timestamp = Local::now().format("%Y-%m-%d_%H%M%S");
     let filename = format!("recording_{}.mp4", timestamp);
 
+    eprintln!("[Encoder] Output path: {:?}", output_dir.join(&filename));
     Ok(output_dir.join(filename))
 }
 
