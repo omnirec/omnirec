@@ -19,13 +19,21 @@
 //! - Window: `[SELECTION]/window:<window_handle>`
 //! - Region: `[SELECTION]/region:<output>@<x>,<y>,<w>,<h>`
 //!
-//! If no selection is available or the main app isn't running, we exit with
-//! an error, causing XDPH to cancel the portal request.
+//! # Fallback behavior
+//!
+//! If OmniRec is not running or has no active selection, this picker falls back
+//! to the standard `hyprland-share-picker` so that other applications (OBS, Zoom,
+//! Discord, etc.) can still request screen capture.
 
 mod ipc_client;
 
 use ipc_client::{query_selection, IpcResponse};
-use std::process::ExitCode;
+use std::io::{BufRead, BufReader};
+use std::process::{Command, ExitCode, Stdio};
+
+/// Default fallback picker binary name.
+/// Can be overridden via OMNIREC_FALLBACK_PICKER environment variable.
+const DEFAULT_FALLBACK_PICKER: &str = "hyprland-share-picker";
 
 /// Window entry from XDPH's window list.
 #[derive(Debug)]
@@ -100,6 +108,76 @@ fn find_window_handle(windows: &[WindowEntry], hyprland_addr: u64) -> Option<u64
         .map(|w| w.handle_id)
 }
 
+/// Run the fallback picker (standard hyprland-share-picker) and forward its output.
+///
+/// This is called when OmniRec is not running or has no active selection,
+/// allowing other applications to still request screen capture.
+fn run_fallback_picker() -> ExitCode {
+    let picker_binary = std::env::var("OMNIREC_FALLBACK_PICKER")
+        .unwrap_or_else(|_| DEFAULT_FALLBACK_PICKER.to_string());
+
+    eprintln!(
+        "[omnirec-picker] Falling back to standard picker: {}",
+        picker_binary
+    );
+
+    // Execute the standard picker, inheriting all environment variables
+    let mut child = match Command::new(&picker_binary)
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(e) => {
+            eprintln!(
+                "[omnirec-picker] Failed to execute fallback picker '{}': {}",
+                picker_binary, e
+            );
+            if e.kind() == std::io::ErrorKind::NotFound {
+                eprintln!(
+                    "[omnirec-picker] Make sure '{}' is installed and in PATH",
+                    picker_binary
+                );
+            }
+            return ExitCode::FAILURE;
+        }
+    };
+
+    // Forward stdout from the fallback picker to our stdout
+    if let Some(stdout) = child.stdout.take() {
+        let reader = BufReader::new(stdout);
+        for line in reader.lines() {
+            match line {
+                Ok(line) => {
+                    eprintln!("[omnirec-picker] Fallback picker output: {}", line);
+                    println!("{}", line);
+                }
+                Err(e) => {
+                    eprintln!("[omnirec-picker] Error reading fallback picker output: {}", e);
+                }
+            }
+        }
+    }
+
+    // Wait for the fallback picker to exit and return its exit code
+    match child.wait() {
+        Ok(status) => {
+            let code = status.code().unwrap_or(1);
+            eprintln!("[omnirec-picker] Fallback picker exited with code: {}", code);
+            if code == 0 {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::FAILURE
+            }
+        }
+        Err(e) => {
+            eprintln!("[omnirec-picker] Failed to wait for fallback picker: {}", e);
+            ExitCode::FAILURE
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> ExitCode {
     // Log that we were invoked (visible in journalctl)
@@ -110,7 +188,8 @@ async fn main() -> ExitCode {
         Ok(r) => r,
         Err(e) => {
             eprintln!("[omnirec-picker] Failed to query main app: {}", e);
-            return ExitCode::FAILURE;
+            eprintln!("[omnirec-picker] OmniRec may not be running, trying fallback picker");
+            return run_fallback_picker();
         }
     };
 
@@ -207,8 +286,8 @@ async fn main() -> ExitCode {
         }
         IpcResponse::NoSelection => {
             eprintln!("[omnirec-picker] No capture selection available in main app");
-            // Output nothing - XDPH will cancel the request
-            ExitCode::FAILURE
+            eprintln!("[omnirec-picker] Trying fallback picker for user selection");
+            return run_fallback_picker();
         }
         IpcResponse::Error { message } => {
             eprintln!("[omnirec-picker] Error from main app: {}", message);
