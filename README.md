@@ -1,7 +1,7 @@
 <picture>
-  <source srcset="images/omnirec-banner-dark.png" media="(prefers-color-scheme: dark)">
-  <source srcset="images/omnirec-banner-white.png" media="(prefers-color-scheme: light)">
-  <img src="images/omnirec-banner-dark.png" alt="OpenCode logo">
+  <!-- <source srcset="images/omnirec-banner-dark.png" media="(prefers-color-scheme: dark)"> -->
+  <!-- <source srcset="images/omnirec-banner-white.png" media="(prefers-color-scheme: light)"> -->
+  <img src="images/omnirec-banner.png" alt="OpenCode logo">
 </picture>
 
 A high-performance screen, window, and region recording application built with Tauri. Record and share anything — completely free, no cloud account required.
@@ -21,7 +21,7 @@ A high-performance screen, window, and region recording application built with T
 - **No Cloud Required**: All processing happens locally — your recordings stay on your machine
 - **Free & Open Source**: No subscriptions, no accounts, no limits
 
-![Screenshot](images/screenshot.png)
+![Screenshot](images/screenshots.png)
 
 ### Output
 
