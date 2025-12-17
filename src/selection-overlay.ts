@@ -169,48 +169,67 @@ async function emitRegionUpdate(): Promise<void> {
     console.log("Position from Hyprland:", windowX, windowY, windowWidth, "x", windowHeight);
   } catch (e) {
     console.error("Failed to get position from Hyprland:", e);
-    // Fallback to Tauri
-    // NOTE: Tauri returns PhysicalPosition/PhysicalSize which are in device pixels
-    // We need to convert to logical coordinates to match monitor coordinate system
+    // Fallback to Tauri (Windows/macOS)
+    // Tauri returns PhysicalPosition/PhysicalSize - convert to logical coordinates
+    // to match the monitor coordinate system (which is also in logical coordinates)
     const scaleFactor = await currentWindow.scaleFactor();
     const pos = await currentWindow.outerPosition();
-    const size = await currentWindow.innerSize();
+    const outerSize = await currentWindow.outerSize();
+    const innerSize = await currentWindow.innerSize();
     
     console.log("Tauri scaleFactor:", scaleFactor);
     console.log("Tauri outerPosition (physical):", pos.x, pos.y);
-    console.log("Tauri innerSize (physical):", size.width, "x", size.height);
+    console.log("Tauri outerSize (physical):", outerSize.width, "x", outerSize.height);
+    console.log("Tauri innerSize (physical):", innerSize.width, "x", innerSize.height);
     
-    // Convert from physical to logical coordinates
-    windowX = Math.round(pos.x / scaleFactor);
-    windowY = Math.round(pos.y / scaleFactor);
-    windowWidth = Math.round(size.width / scaleFactor);
-    windowHeight = Math.round(size.height / scaleFactor);
+    // On Windows, transparent windows have an invisible DWM frame.
+    // outerPosition is the top-left of this frame, but we need the content area position.
+    // The frame is symmetric left/right, but NOT top/bottom:
+    // - Left/Right: equal padding (shadow on both sides)
+    // - Top: no padding (content starts at outer top)
+    // - Bottom: all the vertical padding (shadow only at bottom)
+    const frameLeftPhysical = Math.round((outerSize.width - innerSize.width) / 2);
+    const frameTopPhysical = 0;  // No top frame on Windows transparent windows
     
-    console.log("Converted to logical:", windowX, windowY, windowWidth, "x", windowHeight);
+    // Content area position in physical pixels
+    const contentX = pos.x + frameLeftPhysical;
+    const contentY = pos.y + frameTopPhysical;
+    
+    console.log("Frame offset (physical):", frameLeftPhysical, "x", frameTopPhysical);
+    console.log("Content position (physical):", contentX, contentY);
+    
+    // Convert to logical coordinates
+    windowX = Math.round(contentX / scaleFactor);
+    windowY = Math.round(contentY / scaleFactor);
+    windowWidth = Math.round(innerSize.width / scaleFactor);
+    windowHeight = Math.round(innerSize.height / scaleFactor);
+    
+    console.log("Content area (logical):", windowX, windowY, windowWidth, "x", windowHeight);
   }
 
   // The actual recording area is inside the border
-  // Hyprland returns physical pixels
-  // Add 1 extra pixel to ensure the border is completely outside the recording area
-  // This accounts for any rounding issues due to scaling
-  const borderOffset = BORDER_WIDTH + 1;
+  // BORDER_WIDTH is in CSS/logical pixels, add 2 extra pixels for safety
+  // At fractional DPI scales (e.g., 150%), rounding errors can cause 1px of border to appear
+  const borderOffset = BORDER_WIDTH + 2;
   const recordX = windowX + borderOffset;
   const recordY = windowY + borderOffset;
   const recordWidth = windowWidth - (borderOffset * 2);
   const recordHeight = windowHeight - (borderOffset * 2);
-
-  console.log("Record area (physical):", recordX, recordY, recordWidth, "x", recordHeight);
+  
+  console.log("=== REGION CALCULATION (logical coords) ===");
+  console.log("Window position:", windowX, windowY);
+  console.log("Window size:", windowWidth, "x", windowHeight);
+  console.log("Border offset:", borderOffset);
+  console.log("Record area:", recordX, recordY, recordWidth, "x", recordHeight);
 
   // Find which monitor the center of the selection is on
   const centerX = recordX + recordWidth / 2;
   const centerY = recordY + recordHeight / 2;
 
-  console.log("Selection window (physical?):", windowX, windowY, windowWidth, "x", windowHeight);
-  console.log("Record area after border offset:", recordX, recordY, recordWidth, "x", recordHeight);
-  console.log("Looking for monitor containing center point:", centerX, centerY);
+  console.log("Center point:", centerX, centerY);
   console.log("Available monitors:");
   for (const m of monitors) {
-    console.log(`  ${m.name}: origin=(${m.x}, ${m.y}) size=${m.width}x${m.height} scale=${m.scale_factor}`);
+    console.log(`  ${m.id}: origin=(${m.x}, ${m.y}) size=${m.width}x${m.height} scale=${m.scale_factor}`);
   }
 
   let monitor = findMonitorAt(centerX, centerY);
@@ -240,13 +259,8 @@ async function emitRegionUpdate(): Promise<void> {
     height: recordHeight,
   };
 
-  console.log("=== REGION CALCULATION ===");
-  console.log("Selected monitor:", monitor.name, `(id=${monitor.id})`);
-  console.log("Monitor origin:", monitor.x, ",", monitor.y);
-  console.log("Monitor size:", monitor.width, "x", monitor.height);
-  console.log("Monitor scale_factor:", monitor.scale_factor);
-  console.log("Record area (screen coords):", recordX, recordY);
-  console.log("Region (monitor-relative):", region.x, ",", region.y, "size:", region.width, "x", region.height);
+  console.log("Selected monitor:", monitor.id, "at", monitor.x, ",", monitor.y);
+  console.log("Region (monitor-relative physical):", region.x, ",", region.y, "size:", region.width, "x", region.height);
   console.log("==========================");
   
   // Emit to main window
@@ -274,6 +288,7 @@ async function closeOverlay(): Promise<void> {
   const mainWindow = await Window.getByLabel("main");
   if (mainWindow) {
     // Send current geometry with the close event so main window can store it
+    // WebviewWindow creation expects logical coordinates, so convert from physical
     try {
       // Try Hyprland IPC first (works on Wayland), fallback to Tauri
       let x: number, y: number, width: number, height: number;
@@ -284,12 +299,15 @@ async function closeOverlay(): Promise<void> {
         width = hw;
         height = hh;
       } catch {
+        // Tauri returns physical pixels, convert to logical for storage
+        const scaleFactor = await currentWindow.scaleFactor();
         const pos = await currentWindow.outerPosition();
         const size = await currentWindow.innerSize();
-        x = pos.x;
-        y = pos.y;
-        width = size.width;
-        height = size.height;
+        x = Math.round(pos.x / scaleFactor);
+        y = Math.round(pos.y / scaleFactor);
+        width = Math.round(size.width / scaleFactor);
+        height = Math.round(size.height / scaleFactor);
+        console.log("Storing logical geometry:", { x, y, width, height }, "from physical, scale:", scaleFactor);
       }
       await mainWindow.emit("region-selector-closed", { x, y, width, height });
     } catch (e) {

@@ -1,6 +1,7 @@
 //! Region recording using Windows.Graphics.Capture API for monitor capture with cropping.
 
 use crate::capture::types::{CapturedFrame, CaptureRegion};
+use crate::capture::windows::monitor_list;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -20,6 +21,7 @@ pub struct RegionCaptureFlags {
     pub frame_tx: mpsc::Sender<CapturedFrame>,
     pub stop_flag: Arc<AtomicBool>,
     pub region: CaptureRegion,
+    pub scale_factor: f64,
 }
 
 /// Frame capture handler for monitor-based region capture.
@@ -27,6 +29,7 @@ struct RegionCaptureHandler {
     frame_tx: mpsc::Sender<CapturedFrame>,
     stop_flag: Arc<AtomicBool>,
     region: CaptureRegion,
+    scale_factor: f64,
     #[allow(dead_code)]
     frame_count: u64,
     #[allow(dead_code)]
@@ -42,6 +45,7 @@ impl GraphicsCaptureApiHandler for RegionCaptureHandler {
             frame_tx: ctx.flags.frame_tx,
             stop_flag: ctx.flags.stop_flag,
             region: ctx.flags.region,
+            scale_factor: ctx.flags.scale_factor,
             frame_count: 0,
             dropped_count: 0,
         })
@@ -67,11 +71,31 @@ impl GraphicsCaptureApiHandler for RegionCaptureHandler {
         // Calculate stride (bytes per row in the buffer)
         let buffer_stride = raw_data.len() / full_height as usize;
 
-        // Validate region bounds
-        let region_x = self.region.x.max(0) as u32;
-        let region_y = self.region.y.max(0) as u32;
-        let region_width = self.region.width.min(full_width.saturating_sub(region_x));
-        let region_height = self.region.height.min(full_height.saturating_sub(region_y));
+        // Region coordinates from the frontend are in logical pixels
+        // Convert to physical pixels for cropping the frame buffer
+        let scale = self.scale_factor;
+        let region_x_physical = ((self.region.x.max(0) as f64) * scale).round() as u32;
+        let region_y_physical = ((self.region.y.max(0) as f64) * scale).round() as u32;
+        let region_width_physical = ((self.region.width as f64) * scale).round() as u32;
+        let region_height_physical = ((self.region.height as f64) * scale).round() as u32;
+
+        // Debug: log frame dimensions on first frame
+        if self.frame_count == 0 {
+            eprintln!("[Windows] First frame received:");
+            eprintln!("[Windows]   Frame dimensions: {}x{}", full_width, full_height);
+            eprintln!("[Windows]   Buffer stride: {} bytes/row", buffer_stride);
+            eprintln!("[Windows]   Region (logical): x={}, y={}, {}x{}", 
+                self.region.x, self.region.y, self.region.width, self.region.height);
+            eprintln!("[Windows]   Region (physical): x={}, y={}, {}x{}", 
+                region_x_physical, region_y_physical, region_width_physical, region_height_physical);
+            eprintln!("[Windows]   Scale factor: {}", scale);
+        }
+
+        // Clamp to frame bounds
+        let region_x = region_x_physical.min(full_width);
+        let region_y = region_y_physical.min(full_height);
+        let region_width = region_width_physical.min(full_width.saturating_sub(region_x));
+        let region_height = region_height_physical.min(full_height.saturating_sub(region_y));
 
         if region_width == 0 || region_height == 0 {
             // Skip invalid frames
@@ -163,10 +187,19 @@ fn crop_frame(
 fn find_monitor_by_id(monitor_id: &str) -> Result<Monitor, String> {
     let monitors = Monitor::enumerate().map_err(|e| format!("Failed to enumerate monitors: {}", e))?;
 
+    eprintln!("[Windows] Looking for monitor with id: {}", monitor_id);
+    eprintln!("[Windows] Available monitors from windows-capture:");
+    
+    for (i, monitor) in monitors.iter().enumerate() {
+        let name = monitor.device_name().unwrap_or_else(|_| "unknown".to_string());
+        eprintln!("[Windows]   [{}] device_name={}", i, name);
+    }
+
     for monitor in monitors {
         // Get device name from monitor
         if let Ok(name) = monitor.device_name() {
             if name == monitor_id {
+                eprintln!("[Windows] Found matching monitor: {}", name);
                 return Ok(monitor);
             }
         }
@@ -190,7 +223,30 @@ pub fn start_region_capture(
         ));
     }
 
-    // Find the monitor
+    // Look up monitor info to get scale factor
+    let monitors = monitor_list::list_monitors();
+    let monitor_info = monitors
+        .iter()
+        .find(|m| m.id == region.monitor_id)
+        .ok_or_else(|| format!("Monitor not found: {}", region.monitor_id))?;
+    let scale_factor = monitor_info.scale_factor;
+
+    eprintln!("[Windows] === REGION CAPTURE DEBUG ===");
+    eprintln!(
+        "[Windows] Input region (logical coords): monitor_id={}, x={}, y={}, {}x{}",
+        region.monitor_id, region.x, region.y, region.width, region.height
+    );
+    eprintln!(
+        "[Windows] Target monitor: pos=({}, {}), size={}x{}, scale={}",
+        monitor_info.x, monitor_info.y, monitor_info.width, monitor_info.height, scale_factor
+    );
+    eprintln!("[Windows] All monitors (logical coords):");
+    for m in &monitors {
+        eprintln!("[Windows]   {} at ({}, {}) {}x{} scale={}", m.id, m.x, m.y, m.width, m.height, m.scale_factor);
+    }
+    eprintln!("[Windows] =============================");
+
+    // Find the monitor for capture
     let monitor = find_monitor_by_id(&region.monitor_id)?;
 
     // Create channel for frames (larger buffer for region capture which may have bursty delivery)
@@ -205,6 +261,7 @@ pub fn start_region_capture(
         frame_tx,
         stop_flag: stop_flag_clone,
         region,
+        scale_factor,
     };
 
     // Configure capture settings
@@ -232,6 +289,37 @@ pub fn start_region_capture(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_monitor_id_matching() {
+        // Compare our monitor enumeration with windows-capture's
+        let our_monitors = monitor_list::list_monitors();
+        let wc_monitors = Monitor::enumerate().expect("Failed to enumerate monitors");
+        
+        println!("\n=== MONITOR ID COMPARISON ===");
+        println!("Our monitors (monitor_list):");
+        for m in &our_monitors {
+            println!("  id='{}', name='{}', pos=({}, {}), size={}x{}", 
+                m.id, m.name, m.x, m.y, m.width, m.height);
+        }
+        
+        println!("\nwindows-capture monitors:");
+        for (i, m) in wc_monitors.iter().enumerate() {
+            let name = m.device_name().unwrap_or_else(|_| "unknown".to_string());
+            println!("  [{}] device_name='{}'", i, name);
+        }
+        
+        // Verify each of our monitors can be found in windows-capture
+        println!("\nMatching test:");
+        for m in &our_monitors {
+            let found = wc_monitors.iter().any(|wc| {
+                wc.device_name().map(|n| n == m.id).unwrap_or(false)
+            });
+            println!("  {} -> {}", m.id, if found { "FOUND" } else { "NOT FOUND" });
+            assert!(found, "Monitor {} not found in windows-capture", m.id);
+        }
+        println!("==============================\n");
+    }
 
     #[test]
     fn test_crop_frame_basic() {

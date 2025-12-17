@@ -69,6 +69,16 @@ The system SHALL define a `MonitorEnumerator` trait that abstracts platform-spec
 - **WHEN** `list_monitors` is called on a multi-monitor system
 - **THEN** the primary monitor appears first in the returned list
 
+#### Scenario: Windows DPI scale factor detection
+
+- **GIVEN** the application is running on Windows
+- **WHEN** `list_monitors` is called
+- **THEN** each `MonitorInfo.scale_factor` reflects the actual Windows DPI scaling
+- **AND** a 100% scaled monitor returns `scale_factor: 1.0`
+- **AND** a 125% scaled monitor returns `scale_factor: 1.25`
+- **AND** a 150% scaled monitor returns `scale_factor: 1.5`
+- **AND** a 200% scaled monitor returns `scale_factor: 2.0`
+
 ### Requirement: Highlight Provider Trait
 
 The system SHALL define a `HighlightProvider` trait that abstracts platform-specific visual highlight rendering for selection feedback.

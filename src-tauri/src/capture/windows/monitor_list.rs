@@ -8,6 +8,7 @@ use windows::Win32::Graphics::Gdi::{
     EnumDisplayDevicesW, EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITORINFOEXW,
     DISPLAY_DEVICEW, DISPLAY_DEVICE_ACTIVE,
 };
+use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 
 /// List all connected monitors.
 pub fn list_monitors() -> Vec<MonitorInfo> {
@@ -59,19 +60,48 @@ unsafe extern "system" fn enum_monitor_callback(
         let display_name = get_display_friendly_name(&device_name)
             .unwrap_or_else(|| format_monitor_name(&device_name, is_primary));
 
+        // Get DPI scale factor for this monitor
+        let scale_factor = get_monitor_scale_factor(hmonitor);
+
+        // Convert from physical to logical coordinates
+        // Windows returns physical coordinates, but we want logical for consistency
+        // with Tauri's coordinate system (which the frontend uses)
+        let logical_x = (rect.left as f64 / scale_factor).round() as i32;
+        let logical_y = (rect.top as f64 / scale_factor).round() as i32;
+        let logical_width = ((rect.right - rect.left) as f64 / scale_factor).round() as u32;
+        let logical_height = ((rect.bottom - rect.top) as f64 / scale_factor).round() as u32;
+
         monitors.push(MonitorInfo {
             id: device_name,
             name: display_name,
-            x: rect.left,
-            y: rect.top,
-            width: (rect.right - rect.left) as u32,
-            height: (rect.bottom - rect.top) as u32,
+            x: logical_x,
+            y: logical_y,
+            width: logical_width,
+            height: logical_height,
             is_primary,
-            scale_factor: 1.0, // TODO: Get actual DPI scale from Windows
+            scale_factor,
         });
     }
 
     BOOL(1) // Continue enumeration
+}
+
+/// Get the DPI scale factor for a monitor.
+/// Returns 1.0 if DPI cannot be determined.
+fn get_monitor_scale_factor(hmonitor: HMONITOR) -> f64 {
+    const DEFAULT_DPI: u32 = 96; // Windows baseline DPI (100% scaling)
+
+    unsafe {
+        let mut dpi_x: u32 = 0;
+        let mut dpi_y: u32 = 0;
+
+        if GetDpiForMonitor(hmonitor, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y).is_ok() {
+            // Use horizontal DPI for scale factor calculation
+            dpi_x as f64 / DEFAULT_DPI as f64
+        } else {
+            1.0 // Fallback to 100% scaling if API fails
+        }
+    }
 }
 
 /// Get friendly display name from device name.
@@ -150,5 +180,45 @@ mod tests {
             assert!(monitor.width > 0, "Monitor width should be positive");
             assert!(monitor.height > 0, "Monitor height should be positive");
         }
+    }
+
+    #[test]
+    fn test_monitor_scale_factor_valid() {
+        let monitors = list_monitors();
+        for monitor in &monitors {
+            // Scale factor should be at least 1.0 (100%)
+            assert!(
+                monitor.scale_factor >= 1.0,
+                "Monitor {} scale factor {} should be >= 1.0",
+                monitor.name,
+                monitor.scale_factor
+            );
+            // Scale factor shouldn't exceed 5.0 (500%) - reasonable upper bound
+            assert!(
+                monitor.scale_factor <= 5.0,
+                "Monitor {} scale factor {} should be <= 5.0",
+                monitor.name,
+                monitor.scale_factor
+            );
+        }
+        // Print full monitor info for debugging
+        println!("\n=== MONITOR INFO DEBUG ===");
+        for monitor in &monitors {
+            println!(
+                "Monitor '{}' (id={}):\n  Position: ({}, {})\n  Size: {}x{} (physical)\n  Logical size: {}x{}\n  Scale: {:.0}% (factor: {})\n  Primary: {}",
+                monitor.name,
+                monitor.id,
+                monitor.x,
+                monitor.y,
+                monitor.width,
+                monitor.height,
+                (monitor.width as f64 / monitor.scale_factor).round() as u32,
+                (monitor.height as f64 / monitor.scale_factor).round() as u32,
+                monitor.scale_factor * 100.0,
+                monitor.scale_factor,
+                monitor.is_primary
+            );
+        }
+        println!("==========================\n");
     }
 }

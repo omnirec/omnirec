@@ -216,16 +216,18 @@ async function closeRegionSelector(): Promise<void> {
   
   try {
     // Get current position and size before closing
+    // Tauri returns physical pixels, convert to logical for WebviewWindow creation
+    const scaleFactor = await regionSelectorWindow.scaleFactor();
     const pos = await regionSelectorWindow.outerPosition();
     const size = await regionSelectorWindow.innerSize();
     
     storedSelectorGeometry = {
-      x: pos.x,
-      y: pos.y,
-      width: size.width,
-      height: size.height,
+      x: Math.round(pos.x / scaleFactor),
+      y: Math.round(pos.y / scaleFactor),
+      width: Math.round(size.width / scaleFactor),
+      height: Math.round(size.height / scaleFactor),
     };
-    console.log("Stored selector geometry:", storedSelectorGeometry);
+    console.log("Stored selector geometry (logical):", storedSelectorGeometry, "from physical, scale:", scaleFactor);
   } catch (e) {
     console.warn("Failed to get selector geometry:", e);
   }
@@ -402,8 +404,10 @@ window.addEventListener("DOMContentLoaded", () => {
   listen<SelectorGeometry | Record<string, never>>("region-selector-closed", (event) => {
     // Store geometry from event payload (sent by selector before closing)
     const payload = event.payload;
+    console.log("region-selector-closed event received:", payload);
     if (payload && 'x' in payload && 'width' in payload) {
       storedSelectorGeometry = payload as SelectorGeometry;
+      console.log("Stored selector geometry from close event:", storedSelectorGeometry);
     }
     regionSelectorWindow = null;
     // Update display to show details/button instead of fullsize preview
@@ -731,17 +735,27 @@ async function openRegionSelector(): Promise<void> {
     let startHeight: number;
     
     if (storedSelectorGeometry) {
-      // Restore previous position and size
+      // Restore previous position and size (already in logical coordinates)
+      console.log("Restoring selector geometry (logical):", storedSelectorGeometry);
       startX = storedSelectorGeometry.x;
       startY = storedSelectorGeometry.y;
       startWidth = storedSelectorGeometry.width;
       startHeight = storedSelectorGeometry.height;
     } else {
+      console.log("No stored geometry, using defaults");
       // Default selection size and position (centered on primary monitor)
+      // Monitor coordinates are physical, convert to logical for WebviewWindow
+      const scale = primaryMonitor.scale_factor;
+      const monitorLogicalX = Math.round(primaryMonitor.x / scale);
+      const monitorLogicalY = Math.round(primaryMonitor.y / scale);
+      const monitorLogicalWidth = Math.round(primaryMonitor.width / scale);
+      const monitorLogicalHeight = Math.round(primaryMonitor.height / scale);
+      
       startWidth = 640;
       startHeight = 480;
-      startX = primaryMonitor.x + Math.floor((primaryMonitor.width - startWidth) / 2);
-      startY = primaryMonitor.y + Math.floor((primaryMonitor.height - startHeight) / 2);
+      startX = monitorLogicalX + Math.floor((monitorLogicalWidth - startWidth) / 2);
+      startY = monitorLogicalY + Math.floor((monitorLogicalHeight - startHeight) / 2);
+      console.log("Default position (logical):", { x: startX, y: startY, width: startWidth, height: startHeight });
     }
 
     // Determine the URL based on environment
