@@ -1,13 +1,16 @@
 //! Recording state management.
 
-use crate::capture::{get_backend, CaptureBackend, CapturedFrame, CaptureRegion};
-use crate::encoder::encode_frames;
+use crate::capture::{
+    get_backend, AudioCaptureBackend, AudioSample, CaptureBackend, CapturedFrame, CaptureRegion,
+};
+use crate::config::load_config;
+use crate::encoder::{encode_frames, encode_frames_with_audio, AudioEncoderConfig};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::{mpsc, Mutex, RwLock};
 
 /// Output format for recordings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -99,6 +102,7 @@ pub struct RecordingResult {
 pub struct RecordingManager {
     state: RwLock<RecordingState>,
     stop_flag: Mutex<Option<Arc<AtomicBool>>>,
+    audio_stop_flag: Mutex<Option<Arc<AtomicBool>>>,
     recording_start: Mutex<Option<Instant>>,
     encoding_task: Mutex<Option<tokio::task::JoinHandle<Result<PathBuf, String>>>>,
     output_format: RwLock<OutputFormat>,
@@ -110,6 +114,7 @@ impl RecordingManager {
         Self {
             state: RwLock::new(RecordingState::Idle),
             stop_flag: Mutex::new(None),
+            audio_stop_flag: Mutex::new(None),
             recording_start: Mutex::new(None),
             encoding_task: Mutex::new(None),
             output_format: RwLock::new(OutputFormat::default()),
@@ -211,17 +216,59 @@ impl RecordingManager {
     /// Common encoding startup logic.
     async fn start_encoding(
         &self,
-        frame_rx: tokio::sync::mpsc::Receiver<CapturedFrame>,
+        frame_rx: mpsc::Receiver<CapturedFrame>,
         stop_flag: Arc<AtomicBool>,
     ) -> Result<(), String> {
-        // Store stop flag
+        // Load audio config
+        let config = load_config();
+        let audio_enabled = config.audio.enabled && config.audio.source_id.is_some();
+
+        // Store video stop flag
         {
             let mut flag = self.stop_flag.lock().await;
             *flag = Some(stop_flag.clone());
         }
 
-        // Start encoding task
-        let encoding_handle = tokio::spawn(encode_frames(frame_rx, stop_flag));
+        // Start encoding task (with or without audio)
+        let encoding_handle = if audio_enabled {
+            // Try to start audio capture
+            let audio_source_id = config.audio.source_id.as_ref().unwrap();
+            eprintln!(
+                "[RecordingManager] Audio enabled, starting capture from source: {}",
+                audio_source_id
+            );
+
+            match self.start_audio_capture(audio_source_id).await {
+                Ok((audio_rx, audio_stop)) => {
+                    // Store audio stop flag
+                    {
+                        let mut flag = self.audio_stop_flag.lock().await;
+                        *flag = Some(audio_stop);
+                    }
+
+                    // Use default audio encoder config (48kHz stereo)
+                    let audio_config = AudioEncoderConfig::default();
+
+                    tokio::spawn(encode_frames_with_audio(
+                        frame_rx,
+                        audio_rx,
+                        stop_flag,
+                        audio_config,
+                    ))
+                }
+                Err(e) => {
+                    eprintln!(
+                        "[RecordingManager] Audio capture failed, recording video only: {}",
+                        e
+                    );
+                    // Fall back to video-only encoding
+                    tokio::spawn(encode_frames(frame_rx, stop_flag))
+                }
+            }
+        } else {
+            eprintln!("[RecordingManager] Audio disabled, recording video only");
+            tokio::spawn(encode_frames(frame_rx, stop_flag))
+        };
 
         {
             let mut task = self.encoding_task.lock().await;
@@ -241,6 +288,17 @@ impl RecordingManager {
         }
 
         Ok(())
+    }
+
+    /// Start audio capture from the specified source.
+    async fn start_audio_capture(
+        &self,
+        source_id: &str,
+    ) -> Result<(mpsc::Receiver<AudioSample>, Arc<AtomicBool>), String> {
+        let backend = get_backend();
+        backend
+            .start_audio_capture(source_id)
+            .map_err(|e| e.to_string())
     }
 
     /// Stop the current recording and save the file.
@@ -263,9 +321,15 @@ impl RecordingManager {
             *state = RecordingState::Saving;
         }
 
-        // Signal stop
+        // Signal stop (both video and audio)
         {
             let flag = self.stop_flag.lock().await;
+            if let Some(ref stop_flag) = *flag {
+                stop_flag.store(true, Ordering::Relaxed);
+            }
+        }
+        {
+            let flag = self.audio_stop_flag.lock().await;
             if let Some(ref stop_flag) = *flag {
                 stop_flag.store(true, Ordering::Relaxed);
             }
@@ -298,6 +362,10 @@ impl RecordingManager {
             *flag = None;
         }
         {
+            let mut flag = self.audio_stop_flag.lock().await;
+            *flag = None;
+        }
+        {
             let mut start = self.recording_start.lock().await;
             *start = None;
         }
@@ -309,6 +377,10 @@ impl RecordingManager {
     async fn cleanup(&self) {
         {
             let mut flag = self.stop_flag.lock().await;
+            *flag = None;
+        }
+        {
+            let mut flag = self.audio_stop_flag.lock().await;
             *flag = None;
         }
         {

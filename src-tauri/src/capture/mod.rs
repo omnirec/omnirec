@@ -17,7 +17,10 @@ pub mod macos;
 
 // Re-export common types for convenience
 pub use error::{CaptureError, EnumerationError};
-pub use types::{CapturedFrame, CaptureRegion, FrameReceiver, MonitorInfo, StopHandle, WindowInfo};
+pub use types::{
+    AudioReceiver, AudioSample, AudioSource, AudioSourceType, CapturedFrame, CaptureRegion,
+    FrameReceiver, MonitorInfo, StopHandle, WindowInfo,
+};
 // Re-export thumbnail utilities (used by platform implementations)
 #[allow(unused_imports)]
 pub use thumbnail::{bgra_to_jpeg_thumbnail, THUMBNAIL_MAX_HEIGHT, THUMBNAIL_MAX_WIDTH, PREVIEW_MAX_WIDTH, PREVIEW_MAX_HEIGHT};
@@ -76,6 +79,24 @@ pub trait CaptureBackend: Send + Sync {
 pub trait HighlightProvider: Send + Sync {
     /// Show a highlight border around the specified area.
     fn show_highlight(&self, x: i32, y: i32, width: i32, height: i32);
+}
+
+/// Trait for audio device enumeration operations.
+pub trait AudioEnumerator: Send + Sync {
+    /// List all available audio sources (inputs and output monitors).
+    fn list_audio_sources(&self) -> Result<Vec<AudioSource>, EnumerationError>;
+}
+
+/// Trait for audio capture operations.
+pub trait AudioCaptureBackend: Send + Sync {
+    /// Start capturing audio from the specified source.
+    ///
+    /// Returns an audio sample receiver and stop handle.
+    /// Audio is captured as 48kHz stereo f32 samples.
+    fn start_audio_capture(
+        &self,
+        source_id: &str,
+    ) -> Result<(AudioReceiver, StopHandle), CaptureError>;
 }
 
 /// Result of a thumbnail capture operation.
@@ -137,4 +158,10 @@ pub fn list_monitors() -> Vec<MonitorInfo> {
 pub fn show_highlight(x: i32, y: i32, width: i32, height: i32) {
     let backend = get_backend();
     backend.show_highlight(x, y, width, height);
+}
+
+/// List all available audio sources.
+pub fn list_audio_sources() -> Vec<AudioSource> {
+    let backend = get_backend();
+    backend.list_audio_sources().unwrap_or_default()
 }

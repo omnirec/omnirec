@@ -41,7 +41,7 @@ The system SHALL maintain a recording state machine with states: Idle, Recording
 
 ### Requirement: Start Recording
 
-The system SHALL begin capturing and encoding video when recording is started.
+The system SHALL begin capturing and encoding video when recording is started, optionally including audio.
 
 #### Scenario: Start recording successfully
 
@@ -66,6 +66,22 @@ The system SHALL begin capturing and encoding video when recording is started.
 - **AND** the state remains Idle
 - **AND** the user is prompted to select a new region
 
+#### Scenario: Start recording with audio
+
+- **WHEN** the user initiates recording
+- **AND** audio recording is enabled
+- **AND** a valid audio source is selected
+- **THEN** audio capture begins from the selected source
+- **AND** audio samples are piped to the FFmpeg encoder process
+
+#### Scenario: Start recording with audio source unavailable
+
+- **WHEN** the user initiates recording
+- **AND** audio recording is enabled
+- **AND** the selected audio source is no longer available
+- **THEN** recording starts without audio
+- **AND** a warning message is displayed indicating audio is unavailable
+
 ### Requirement: Stop Recording
 
 The system SHALL stop capture and finalize the video file when recording is stopped.
@@ -84,9 +100,17 @@ The system SHALL stop capture and finalize the video file when recording is stop
 - **THEN** a notification shows the file path
 - **AND** the user can click to open the containing folder
 
+#### Scenario: Stop recording with audio
+
+- **WHEN** the user stops recording
+- **AND** audio was being captured
+- **THEN** audio capture stops
+- **AND** remaining audio samples are flushed to FFmpeg
+- **AND** the final file contains synchronized audio and video
+
 ### Requirement: Video Output Format
 
-The system SHALL encode captured frames to H.264 video in an MP4 container.
+The system SHALL encode captured frames to H.264 video in an MP4 container, optionally including an audio track.
 
 #### Scenario: Encode to MP4
 
@@ -101,6 +125,22 @@ The system SHALL encode captured frames to H.264 video in an MP4 container.
 - **THEN** the output MP4 file is playable in standard video players
 - **AND** the file contains valid H.264 video stream
 - **AND** the video dimensions match the captured window size
+
+#### Scenario: Encode with audio
+
+- **WHEN** frames are being recorded
+- **AND** audio recording is enabled
+- **AND** an audio source is selected
+- **THEN** audio is encoded using AAC codec
+- **AND** the audio track is muxed into the MP4 container
+- **AND** audio and video are synchronized
+
+#### Scenario: Encode without audio
+
+- **WHEN** frames are being recorded
+- **AND** audio recording is disabled OR no audio source is selected
+- **THEN** the output MP4 contains only the video track
+- **AND** no audio track is present in the container
 
 ### Requirement: Recording UI Feedback
 

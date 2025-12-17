@@ -1,5 +1,6 @@
 //! Windows platform capture implementation.
 
+pub mod audio;
 mod highlight;
 mod monitor_list;
 mod recorder;
@@ -8,8 +9,13 @@ pub mod thumbnail;
 mod window_list;
 
 use crate::capture::error::{CaptureError, EnumerationError};
-use crate::capture::types::{CaptureRegion, FrameReceiver, MonitorInfo, StopHandle, WindowInfo};
-use crate::capture::{CaptureBackend, HighlightProvider, MonitorEnumerator, ThumbnailCapture, ThumbnailResult, WindowEnumerator};
+use crate::capture::types::{
+    AudioReceiver, AudioSource, CaptureRegion, FrameReceiver, MonitorInfo, StopHandle, WindowInfo,
+};
+use crate::capture::{
+    AudioCaptureBackend, AudioEnumerator, CaptureBackend, HighlightProvider, MonitorEnumerator,
+    ThumbnailCapture, ThumbnailResult, WindowEnumerator,
+};
 
 /// Windows platform capture backend.
 pub struct WindowsBackend;
@@ -97,4 +103,24 @@ impl ThumbnailCapture for WindowsBackend {
     ) -> Result<ThumbnailResult, CaptureError> {
         thumbnail::WindowsThumbnailCapture::new().capture_region_preview(monitor_id, x, y, width, height)
     }
+}
+
+impl AudioEnumerator for WindowsBackend {
+    fn list_audio_sources(&self) -> Result<Vec<AudioSource>, EnumerationError> {
+        audio::list_audio_sources()
+    }
+}
+
+impl AudioCaptureBackend for WindowsBackend {
+    fn start_audio_capture(
+        &self,
+        source_id: &str,
+    ) -> Result<(AudioReceiver, StopHandle), CaptureError> {
+        audio::start_audio_capture(source_id)
+    }
+}
+
+/// Initialize the audio capture subsystem.
+pub fn init_audio() -> Result<(), String> {
+    audio::init_audio_backend()
 }

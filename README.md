@@ -15,7 +15,8 @@ A high-performance screen, window, and region recording application built with T
 - **Window Recording**: Capture any application window
 - **Display Recording**: Capture your entire screen
 - **Region Recording**: Select and record a custom region of your screen
-- **MP4 Output**: H.264 encoded video via FFmpeg
+- **Audio Recording**: Capture system audio or microphone input (Linux only)
+- **Multiple Output Formats**: MP4, WebM, MKV, QuickTime, GIF, APNG, WebP
 - **High Performance**: Native Rust backend with efficient frame pipeline
 - **Cross-Platform**: Windows, macOS (12.3+), and Linux (Hyprland)
 - **No Cloud Required**: All processing happens locally — your recordings stay on your machine
@@ -25,18 +26,18 @@ A high-performance screen, window, and region recording application built with T
 
 ### Output
 
-- **Format**: MP4 (H.264)
-- **Frame Rate**: 30 fps (fixed)
-- **Location**: User's Videos folder
-- **Filename**: `recording_YYYY-MM-DD_HHMMSS.mp4`
+- **Formats**: MP4 (default), WebM, MKV, QuickTime (.mov), GIF, Animated PNG, Animated WebP
+- **Video**: H.264 encoded at 30 fps
+- **Audio**: AAC encoded (when audio source selected, Linux only)
+- **Location**: User's Videos folder (configurable)
+- **Filename**: `recording_YYYY-MM-DD_HHMMSS.<ext>`
 
 ### Planned Features
 
 See [docs/requirements.md](docs/requirements.md) for the full roadmap, including:
 
 - Pause/Resume recording
-- Audio capture (system + microphone)
-- Additional output formats (WebM, GIF, APNG, WebP)
+- Audio capture for Windows and macOS
 - Configurable quality and frame rate
 - Global hotkeys
 
@@ -47,7 +48,7 @@ See [docs/requirements.md](docs/requirements.md) for the full roadmap, including
 - **Capture**:
   - Windows: [windows-capture](https://crates.io/crates/windows-capture) (Windows.Graphics.Capture API)
   - macOS: [screencapturekit](https://crates.io/crates/screencapturekit) (ScreenCaptureKit)
-  - Linux: PipeWire + xdg-desktop-portal
+  - Linux: PipeWire + xdg-desktop-portal (video and audio)
 - **Encoding**: [ffmpeg-sidecar](https://crates.io/crates/ffmpeg-sidecar) (auto-downloads FFmpeg)
 - **Build**: Vite
 

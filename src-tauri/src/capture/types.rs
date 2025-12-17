@@ -83,3 +83,38 @@ pub type StopHandle = Arc<AtomicBool>;
 
 /// Receiver for captured frames.
 pub type FrameReceiver = mpsc::Receiver<CapturedFrame>;
+
+/// Information about an audio source (input device or system audio).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AudioSource {
+    /// Unique identifier (PipeWire node ID, WASAPI endpoint ID, etc.)
+    pub id: String,
+    /// Display name for UI
+    pub name: String,
+    /// Type of audio source
+    pub source_type: AudioSourceType,
+}
+
+/// Type of audio source.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AudioSourceType {
+    /// Microphone or other audio input device
+    Input,
+    /// System audio / desktop audio (sink monitor)
+    Output,
+}
+
+/// A captured audio sample buffer.
+#[derive(Clone)]
+pub struct AudioSample {
+    /// Audio data as interleaved f32 samples
+    pub data: Vec<f32>,
+    /// Sample rate in Hz (e.g., 48000)
+    pub sample_rate: u32,
+    /// Number of audio channels (1 = mono, 2 = stereo)
+    pub channels: u32,
+}
+
+/// Receiver for captured audio samples.
+pub type AudioReceiver = mpsc::Receiver<AudioSample>;

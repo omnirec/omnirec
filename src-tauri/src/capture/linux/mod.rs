@@ -8,6 +8,7 @@
 //! The capture flow involves a separate picker service that auto-approves
 //! portal requests based on the user's selection in the main app UI.
 
+pub mod audio;
 pub mod highlight;
 pub mod ipc_server;
 pub mod pipewire_capture;
@@ -17,9 +18,12 @@ pub mod thumbnail;
 
 use crate::capture::error::{CaptureError, EnumerationError};
 use crate::capture::types::{
-    CaptureRegion, FrameReceiver, MonitorInfo, StopHandle, WindowInfo,
+    AudioReceiver, AudioSource, CaptureRegion, FrameReceiver, MonitorInfo, StopHandle, WindowInfo,
 };
-use crate::capture::{CaptureBackend, HighlightProvider, MonitorEnumerator, ThumbnailCapture, ThumbnailResult, WindowEnumerator};
+use crate::capture::{
+    AudioCaptureBackend, AudioEnumerator, CaptureBackend, HighlightProvider, MonitorEnumerator,
+    ThumbnailCapture, ThumbnailResult, WindowEnumerator,
+};
 
 use hyprland::data::Monitors;
 use hyprland::shared::HyprData;
@@ -59,6 +63,13 @@ pub fn get_ipc_state() -> Option<Arc<RwLock<IpcServerState>>> {
 /// This is a no-op if the compositor doesn't support wlr-screencopy.
 pub fn init_screencopy() {
     let _ = screencopy::init();
+}
+
+/// Initialize the audio capture subsystem.
+///
+/// Call this at app startup to enable audio device enumeration and capture.
+pub fn init_audio() -> Result<(), String> {
+    audio::init_audio_backend()
 }
 
 
@@ -478,6 +489,21 @@ impl ThumbnailCapture for LinuxBackend {
     ) -> Result<ThumbnailResult, CaptureError> {
         let thumb_capture = thumbnail::LinuxThumbnailCapture::new();
         thumb_capture.capture_region_preview(monitor_id, x, y, width, height)
+    }
+}
+
+impl AudioEnumerator for LinuxBackend {
+    fn list_audio_sources(&self) -> Result<Vec<AudioSource>, EnumerationError> {
+        audio::list_audio_sources()
+    }
+}
+
+impl AudioCaptureBackend for LinuxBackend {
+    fn start_audio_capture(
+        &self,
+        source_id: &str,
+    ) -> Result<(AudioReceiver, StopHandle), CaptureError> {
+        audio::start_audio_capture(source_id)
     }
 }
 

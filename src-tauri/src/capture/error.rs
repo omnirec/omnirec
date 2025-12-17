@@ -19,6 +19,8 @@ pub enum CaptureError {
     NotImplemented(String),
     /// Capture was cancelled or stopped
     Cancelled,
+    /// Audio-specific error
+    AudioError(String),
 }
 
 impl fmt::Display for CaptureError {
@@ -31,6 +33,7 @@ impl fmt::Display for CaptureError {
             CaptureError::PlatformError(msg) => write!(f, "Platform error: {}", msg),
             CaptureError::NotImplemented(msg) => write!(f, "Not implemented: {}", msg),
             CaptureError::Cancelled => write!(f, "Capture cancelled"),
+            CaptureError::AudioError(msg) => write!(f, "Audio error: {}", msg),
         }
     }
 }

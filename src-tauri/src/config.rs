@@ -19,12 +19,39 @@ pub struct OutputConfig {
     pub directory: Option<String>,
 }
 
+/// Audio-related configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AudioConfig {
+    /// Whether audio recording is enabled.
+    #[serde(default = "default_audio_enabled")]
+    pub enabled: bool,
+    /// Selected audio source ID. None means no audio source selected (disabled).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_id: Option<String>,
+}
+
+fn default_audio_enabled() -> bool {
+    true
+}
+
+impl Default for AudioConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            source_id: None, // No source selected by default - user must choose
+        }
+    }
+}
+
 /// Application configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AppConfig {
     /// Output settings group.
     #[serde(default)]
     pub output: OutputConfig,
+    /// Audio settings group.
+    #[serde(default)]
+    pub audio: AudioConfig,
 }
 
 impl AppConfig {
@@ -163,17 +190,21 @@ mod tests {
     fn test_default_config() {
         let config = AppConfig::default();
         assert!(config.output.directory.is_none());
+        assert!(config.audio.enabled);
+        assert!(config.audio.source_id.is_none());
     }
 
     #[test]
     fn test_config_serialization() {
         let mut config = AppConfig::default();
         config.output.directory = Some("/custom/path".to_string());
+        config.audio.source_id = Some("123".to_string());
         
         let json = serde_json::to_string(&config).unwrap();
         let parsed: AppConfig = serde_json::from_str(&json).unwrap();
         
         assert_eq!(parsed.output.directory, Some("/custom/path".to_string()));
+        assert_eq!(parsed.audio.source_id, Some("123".to_string()));
     }
 
     #[test]
@@ -184,5 +215,24 @@ mod tests {
         
         // Should not contain "directory" key when None
         assert!(!json.contains("directory"));
+    }
+
+    #[test]
+    fn test_audio_config_defaults() {
+        let config = AudioConfig::default();
+        assert!(config.enabled);
+        assert!(config.source_id.is_none());
+    }
+
+    #[test]
+    fn test_audio_config_serialization() {
+        let mut config = AudioConfig::default();
+        config.source_id = Some("456".to_string());
+        
+        let json = serde_json::to_string(&config).unwrap();
+        let parsed: AudioConfig = serde_json::from_str(&json).unwrap();
+        
+        assert!(parsed.enabled);
+        assert_eq!(parsed.source_id, Some("456".to_string()));
     }
 }

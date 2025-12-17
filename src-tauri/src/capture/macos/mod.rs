@@ -5,6 +5,7 @@
 //! - ScreenCaptureKit for high-performance frame capture
 //! - TCC for permission handling
 
+pub mod audio;
 pub mod highlight;
 pub mod monitor_list;
 pub mod recorder;
@@ -13,9 +14,13 @@ pub mod window_list;
 
 use crate::capture::error::{CaptureError, EnumerationError};
 use crate::capture::types::{
-    CaptureRegion, CapturedFrame, FrameReceiver, MonitorInfo, StopHandle, WindowInfo,
+    AudioReceiver, AudioSource, CaptureRegion, CapturedFrame, FrameReceiver, MonitorInfo,
+    StopHandle, WindowInfo,
 };
-use crate::capture::{CaptureBackend, HighlightProvider, MonitorEnumerator, ThumbnailCapture, ThumbnailResult, WindowEnumerator};
+use crate::capture::{
+    AudioCaptureBackend, AudioEnumerator, CaptureBackend, HighlightProvider, MonitorEnumerator,
+    ThumbnailCapture, ThumbnailResult, WindowEnumerator,
+};
 use std::sync::atomic::Ordering;
 use tokio::sync::mpsc;
 
@@ -289,6 +294,26 @@ impl ThumbnailCapture for MacOSBackend {
     ) -> Result<ThumbnailResult, CaptureError> {
         thumbnail::MacOSThumbnailCapture::new().capture_region_preview(monitor_id, x, y, width, height)
     }
+}
+
+impl AudioEnumerator for MacOSBackend {
+    fn list_audio_sources(&self) -> Result<Vec<AudioSource>, EnumerationError> {
+        audio::list_audio_sources()
+    }
+}
+
+impl AudioCaptureBackend for MacOSBackend {
+    fn start_audio_capture(
+        &self,
+        source_id: &str,
+    ) -> Result<(AudioReceiver, StopHandle), CaptureError> {
+        audio::start_audio_capture(source_id)
+    }
+}
+
+/// Initialize the audio capture subsystem.
+pub fn init_audio() -> Result<(), String> {
+    audio::init_audio_backend()
 }
 
 /// Crop a captured frame to a specified region.

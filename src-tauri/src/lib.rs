@@ -5,8 +5,11 @@ mod config;
 mod encoder;
 mod state;
 
-use capture::{list_monitors, list_windows, show_highlight, CaptureRegion, MonitorInfo, WindowInfo, ThumbnailCapture, ThumbnailResult, get_backend};
-use config::{AppConfig, load_config, save_config as save_config_to_disk, validate_directory};
+use capture::{
+    list_monitors, list_windows, show_highlight, AudioSource, CaptureRegion, MonitorInfo,
+    ThumbnailCapture, ThumbnailResult, WindowInfo, get_backend,
+};
+use config::{AppConfig, AudioConfig, load_config, save_config as save_config_to_disk, validate_directory};
 use encoder::ensure_ffmpeg_blocking;
 use state::{OutputFormat, RecordingManager, RecordingResult, RecordingState};
 use std::sync::Arc;
@@ -72,6 +75,11 @@ impl AppState {
             
             // Pre-initialize screencopy for faster first thumbnail
             linux::init_screencopy();
+            
+            // Initialize audio backend
+            if let Err(e) = linux::init_audio() {
+                eprintln!("[AppState] Failed to init audio backend: {}", e);
+            }
         }
 
         // Load configuration
@@ -671,6 +679,43 @@ async fn get_region_preview(
 }
 
 // =============================================================================
+// Audio Commands
+// =============================================================================
+
+/// Get list of available audio sources.
+#[tauri::command]
+fn get_audio_sources() -> Vec<AudioSource> {
+    capture::list_audio_sources()
+}
+
+/// Get current audio configuration.
+#[tauri::command]
+async fn get_audio_config(state: State<'_, AppState>) -> Result<AudioConfig, String> {
+    let config = state.app_config.lock().await;
+    Ok(config.audio.clone())
+}
+
+/// Save audio configuration.
+#[tauri::command]
+async fn save_audio_config(
+    enabled: bool,
+    source_id: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let mut config = state.app_config.lock().await;
+    
+    config.audio.enabled = enabled;
+    config.audio.source_id = source_id;
+    
+    // Save to disk
+    save_config_to_disk(&config)?;
+    
+    eprintln!("[save_audio_config] Saved audio config: enabled={}, source_id={:?}", 
+        config.audio.enabled, config.audio.source_id);
+    Ok(())
+}
+
+// =============================================================================
 // Configuration Commands
 // =============================================================================
 
@@ -678,6 +723,7 @@ async fn get_region_preview(
 #[derive(serde::Serialize)]
 pub struct ConfigResponse {
     output: OutputConfigResponse,
+    audio: AudioConfigResponse,
 }
 
 #[derive(serde::Serialize)]
@@ -685,11 +731,21 @@ pub struct OutputConfigResponse {
     directory: Option<String>,
 }
 
+#[derive(serde::Serialize)]
+pub struct AudioConfigResponse {
+    enabled: bool,
+    source_id: Option<String>,
+}
+
 impl From<&AppConfig> for ConfigResponse {
     fn from(config: &AppConfig) -> Self {
         Self {
             output: OutputConfigResponse {
                 directory: config.output.directory.clone(),
+            },
+            audio: AudioConfigResponse {
+                enabled: config.audio.enabled,
+                source_id: config.audio.source_id.clone(),
             },
         }
     }
@@ -789,6 +845,10 @@ pub fn run() {
             get_window_thumbnail,
             get_display_thumbnail,
             get_region_preview,
+            // Audio commands
+            get_audio_sources,
+            get_audio_config,
+            save_audio_config,
             // Configuration commands
             get_config,
             save_output_directory,

@@ -98,6 +98,28 @@
             </div>
           </div>
         </div>
+
+        <div class="config-group">
+          <h3 class="config-group__title">Audio</h3>
+          <div class="config-group__content">
+            <div class="config-item">
+              <label for="audio-source-select" class="config-item__label">Audio Source</label>
+              <div class="config-item__input-row">
+                <select id="audio-source-select" class="config-item__select">
+                  <option value="">None (no audio)</option>
+                </select>
+                <button id="refresh-audio-btn" type="button" class="config-item__browse-btn" title="Refresh audio devices">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="23 4 23 10 17 10"></polyline>
+                    <polyline points="1 20 1 14 7 14"></polyline>
+                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                  </svg>
+                </button>
+              </div>
+              <p class="config-item__hint">Select an audio source to record sound with your video</p>
+            </div>
+          </div>
+        </div>
       </section>
 
       <section class="controls">
