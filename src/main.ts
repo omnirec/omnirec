@@ -97,7 +97,8 @@ function setCachedThumbnail(key: string, data: string): void {
   thumbnailCache.set(key, { data, timestamp: Date.now() });
 }
 
-// Thumbnail request queue - serialize requests to avoid portal conflicts
+// Thumbnail request queue - serialize requests to avoid portal conflicts on Linux
+// On Windows/macOS, requests are processed in parallel for faster loading
 type ThumbnailRequest = {
   type: "window" | "display";
   id: string | number;
@@ -106,16 +107,23 @@ type ThumbnailRequest = {
 const thumbnailQueue: ThumbnailRequest[] = [];
 let thumbnailQueueProcessing = false;
 
+// Track pending parallel requests to avoid duplicates
+const pendingThumbnails = new Set<HTMLImageElement>();
+
 async function processThumbnailQueue(): Promise<void> {
   if (thumbnailQueueProcessing) return;
   thumbnailQueueProcessing = true;
 
-  while (thumbnailQueue.length > 0) {
-    const request = thumbnailQueue.shift()!;
-    
-    // Skip if element is no longer in DOM
-    if (!document.contains(request.imgElement)) continue;
+  // Collect all pending requests
+  const requests = [...thumbnailQueue];
+  thumbnailQueue.length = 0;
 
+  // Filter out requests for elements no longer in DOM
+  const validRequests = requests.filter(r => document.contains(r.imgElement));
+
+  // Process all requests in parallel - Windows/macOS don't have portal serialization issues
+  // and even on Linux, thumbnail capture uses screencopy which doesn't conflict
+  const promises = validRequests.map(async (request) => {
     try {
       if (request.type === "window") {
         await loadWindowThumbnailDirect(request.id as number, request.imgElement);
@@ -124,18 +132,30 @@ async function processThumbnailQueue(): Promise<void> {
       }
     } catch (error) {
       console.error(`Failed to load ${request.type} thumbnail:`, error);
+    } finally {
+      pendingThumbnails.delete(request.imgElement);
     }
-  }
+  });
+
+  await Promise.all(promises);
 
   thumbnailQueueProcessing = false;
+
+  // Process any new requests that came in while we were processing
+  if (thumbnailQueue.length > 0) {
+    processThumbnailQueue();
+  }
 }
 
 function queueThumbnailRequest(request: ThumbnailRequest): void {
   // Don't queue duplicates for the same element
+  if (pendingThumbnails.has(request.imgElement)) return;
+  
   const exists = thumbnailQueue.some(
     (r) => r.imgElement === request.imgElement
   );
   if (!exists) {
+    pendingThumbnails.add(request.imgElement);
     thumbnailQueue.push(request);
     processThumbnailQueue();
   }
@@ -1015,13 +1035,15 @@ async function loadDisplays(): Promise<void> {
     }
 
     // Load thumbnails now that items are in DOM
-    for (const display of displays) {
-      const item = displayListEl.querySelector(`[data-id="${display.id}"]`);
-      const img = item?.querySelector<HTMLImageElement>(".display-item__thumb-img");
-      if (img) {
-        loadDisplayThumbnail(display.id, img);
+    // Use DOM traversal instead of querySelector to avoid issues with special characters in IDs
+    const items = displayListEl.querySelectorAll<HTMLElement>(".display-item");
+    items.forEach((item) => {
+      const monitorId = item.dataset.id;
+      const img = item.querySelector<HTMLImageElement>(".display-item__thumb-img");
+      if (img && monitorId) {
+        loadDisplayThumbnail(monitorId, img);
       }
-    }
+    });
 
     // Start auto-refresh for thumbnails
     startDisplayThumbnailRefresh();
@@ -1094,7 +1116,7 @@ function createDisplayItem(display: MonitorInfo): HTMLElement {
   return item;
 }
 
-// Load a display thumbnail (queued to serialize portal requests)
+// Load a display thumbnail (queued for parallel processing)
 function loadDisplayThumbnail(monitorId: string, imgElement: HTMLImageElement): void {
   const cacheKey = `display:${monitorId}`;
   const cached = getCachedThumbnail(cacheKey);
@@ -1105,7 +1127,6 @@ function loadDisplayThumbnail(monitorId: string, imgElement: HTMLImageElement): 
     return;
   }
 
-  // Queue the request to avoid concurrent portal sessions
   queueThumbnailRequest({ type: "display", id: monitorId, imgElement });
 }
 

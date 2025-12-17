@@ -180,22 +180,6 @@ The system SHALL implement thumbnail capture on Linux/Wayland using the wlr-scre
 - **AND** the frontend displays a placeholder image
 - **AND** no crash or hang occurs
 
-### Requirement: Windows/macOS Thumbnail Stubs
-
-The system SHALL provide stub implementations for Windows and macOS that return "not implemented" errors.
-
-#### Scenario: Thumbnail on Windows (stub)
-
-- **WHEN** any thumbnail capture is requested on Windows
-- **THEN** the backend returns `Err(CaptureError::NotImplemented)`
-- **AND** the frontend displays a placeholder for all items
-
-#### Scenario: Thumbnail on macOS (stub)
-
-- **WHEN** any thumbnail capture is requested on macOS
-- **THEN** the backend returns `Err(CaptureError::NotImplemented)`
-- **AND** the frontend displays a placeholder for all items
-
 ### Requirement: Screencopy Protocol Support
 
 The system SHALL support the `wlr-screencopy-unstable-v1` Wayland protocol for efficient single-frame capture on wlroots compositors.
@@ -220,4 +204,14 @@ The system SHALL support the `wlr-screencopy-unstable-v1` Wayland protocol for e
 - **WHEN** capturing via screencopy
 - **THEN** the overlay_cursor parameter is set to 1 (include cursor)
 - **AND** the captured frame includes the cursor if visible in the output
+
+### Requirement: macOS Thumbnail Stub
+
+The system SHALL provide a stub implementation for macOS that returns "not implemented" errors until full implementation is completed.
+
+#### Scenario: Thumbnail on macOS (stub)
+
+- **WHEN** any thumbnail capture is requested on macOS
+- **THEN** the backend returns `Err(CaptureError::NotImplemented)`
+- **AND** the frontend displays a placeholder for all items
 
