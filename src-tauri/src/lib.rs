@@ -700,18 +700,22 @@ async fn get_audio_config(state: State<'_, AppState>) -> Result<AudioConfig, Str
 async fn save_audio_config(
     enabled: bool,
     source_id: Option<String>,
+    microphone_id: Option<String>,
+    echo_cancellation: bool,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     let mut config = state.app_config.lock().await;
     
     config.audio.enabled = enabled;
     config.audio.source_id = source_id;
+    config.audio.microphone_id = microphone_id;
+    config.audio.echo_cancellation = echo_cancellation;
     
     // Save to disk
     save_config_to_disk(&config)?;
     
-    eprintln!("[save_audio_config] Saved audio config: enabled={}, source_id={:?}", 
-        config.audio.enabled, config.audio.source_id);
+    eprintln!("[save_audio_config] Saved audio config: enabled={}, source_id={:?}, mic_id={:?}, aec={}", 
+        config.audio.enabled, config.audio.source_id, config.audio.microphone_id, config.audio.echo_cancellation);
     Ok(())
 }
 
@@ -735,6 +739,8 @@ pub struct OutputConfigResponse {
 pub struct AudioConfigResponse {
     enabled: bool,
     source_id: Option<String>,
+    microphone_id: Option<String>,
+    echo_cancellation: bool,
 }
 
 impl From<&AppConfig> for ConfigResponse {
@@ -746,6 +752,8 @@ impl From<&AppConfig> for ConfigResponse {
             audio: AudioConfigResponse {
                 enabled: config.audio.enabled,
                 source_id: config.audio.source_id.clone(),
+                microphone_id: config.audio.microphone_id.clone(),
+                echo_cancellation: config.audio.echo_cancellation,
             },
         }
     }

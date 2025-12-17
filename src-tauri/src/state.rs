@@ -221,7 +221,9 @@ impl RecordingManager {
     ) -> Result<(), String> {
         // Load audio config
         let config = load_config();
-        let audio_enabled = config.audio.enabled && config.audio.source_id.is_some();
+        let has_system_audio = config.audio.enabled && config.audio.source_id.is_some();
+        let has_microphone = config.audio.enabled && config.audio.microphone_id.is_some();
+        let audio_enabled = has_system_audio || has_microphone;
 
         // Store video stop flag
         {
@@ -231,14 +233,22 @@ impl RecordingManager {
 
         // Start encoding task (with or without audio)
         let encoding_handle = if audio_enabled {
-            // Try to start audio capture
-            let audio_source_id = config.audio.source_id.as_ref().unwrap();
+            // Log audio sources
             eprintln!(
-                "[RecordingManager] Audio enabled, starting capture from source: {}",
-                audio_source_id
+                "[RecordingManager] Audio enabled - system: {:?}, mic: {:?}, AEC: {}",
+                config.audio.source_id,
+                config.audio.microphone_id,
+                config.audio.echo_cancellation
             );
 
-            match self.start_audio_capture(audio_source_id).await {
+            match self
+                .start_audio_capture_dual(
+                    config.audio.source_id.as_deref(),
+                    config.audio.microphone_id.as_deref(),
+                    config.audio.echo_cancellation,
+                )
+                .await
+            {
                 Ok((audio_rx, audio_stop)) => {
                     // Store audio stop flag
                     {
@@ -290,14 +300,16 @@ impl RecordingManager {
         Ok(())
     }
 
-    /// Start audio capture from the specified source.
-    async fn start_audio_capture(
+    /// Start audio capture from up to two sources with optional AEC.
+    async fn start_audio_capture_dual(
         &self,
-        source_id: &str,
+        system_source_id: Option<&str>,
+        mic_source_id: Option<&str>,
+        aec_enabled: bool,
     ) -> Result<(mpsc::Receiver<AudioSample>, Arc<AtomicBool>), String> {
         let backend = get_backend();
         backend
-            .start_audio_capture(source_id)
+            .start_audio_capture_dual(system_source_id, mic_source_id, aec_enabled)
             .map_err(|e| e.to_string())
     }
 

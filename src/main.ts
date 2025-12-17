@@ -45,6 +45,8 @@ interface AudioSource {
 interface AudioConfig {
   enabled: boolean;
   source_id: string | null;
+  microphone_id: string | null;
+  echo_cancellation: boolean;
 }
 
 interface AppConfig {
@@ -54,6 +56,8 @@ interface AppConfig {
   audio: {
     enabled: boolean;
     source_id: string | null;
+    microphone_id: string | null;
+    echo_cancellation: boolean;
   };
 }
 
@@ -171,6 +175,9 @@ let outputDirInput: HTMLInputElement | null;
 let browseOutputDirBtn: HTMLButtonElement | null;
 let outputDirErrorEl: HTMLElement | null;
 let audioSourceSelect: HTMLSelectElement | null;
+let micSourceSelect: HTMLSelectElement | null;
+let aecCheckbox: HTMLInputElement | null;
+let aecConfigItem: HTMLElement | null;
 let refreshAudioBtn: HTMLButtonElement | null;
 
 // State
@@ -272,6 +279,9 @@ window.addEventListener("DOMContentLoaded", () => {
   browseOutputDirBtn = document.querySelector("#browse-output-dir-btn");
   outputDirErrorEl = document.querySelector("#output-dir-error");
   audioSourceSelect = document.querySelector("#audio-source-select");
+  micSourceSelect = document.querySelector("#mic-source-select");
+  aecCheckbox = document.querySelector("#aec-checkbox");
+  aecConfigItem = document.querySelector("#aec-config-item");
   refreshAudioBtn = document.querySelector("#refresh-audio-btn");
 
   // Set up event listeners
@@ -340,7 +350,9 @@ window.addEventListener("DOMContentLoaded", () => {
   outputDirInput?.addEventListener("input", handleOutputDirInput);
   outputDirInput?.addEventListener("blur", handleOutputDirBlur);
   browseOutputDirBtn?.addEventListener("click", handleBrowseOutputDir);
-  audioSourceSelect?.addEventListener("change", handleAudioSourceChange);
+  audioSourceSelect?.addEventListener("change", handleAudioConfigChange);
+  micSourceSelect?.addEventListener("change", handleAudioConfigChange);
+  aecCheckbox?.addEventListener("change", handleAudioConfigChange);
   refreshAudioBtn?.addEventListener("click", loadAudioSources);
 
   // Format selector handlers
@@ -1586,7 +1598,7 @@ function clearOutputDirError(): void {
 
 // Load available audio sources
 async function loadAudioSources(): Promise<void> {
-  if (!audioSourceSelect) return;
+  if (!audioSourceSelect || !micSourceSelect) return;
   
   try {
     const sources = await invoke<AudioSource[]>("get_audio_sources");
@@ -1594,75 +1606,87 @@ async function loadAudioSources(): Promise<void> {
     // Get current audio config to preserve selection
     const audioConfig = await invoke<AudioConfig>("get_audio_config");
     
-    // Clear existing options and optgroups, keeping only the first "None" option
-    const firstOption = audioSourceSelect.options[0];
-    audioSourceSelect.innerHTML = "";
-    if (firstOption) {
-      audioSourceSelect.appendChild(firstOption);
-    }
-    
     // Group sources by type
     const inputSources = sources.filter(s => s.source_type === "input");
     const outputSources = sources.filter(s => s.source_type === "output");
     
-    // Add input sources (microphones)
-    if (inputSources.length > 0) {
-      const inputGroup = document.createElement("optgroup");
-      inputGroup.label = "Input Devices";
-      for (const source of inputSources) {
-        const option = document.createElement("option");
-        option.value = source.id;
-        option.textContent = source.name;
-        inputGroup.appendChild(option);
-      }
-      audioSourceSelect.appendChild(inputGroup);
+    // Populate system audio dropdown (output sources only)
+    audioSourceSelect.innerHTML = '<option value="">None (no system audio)</option>';
+    for (const source of outputSources) {
+      const option = document.createElement("option");
+      option.value = source.id;
+      option.textContent = source.name;
+      audioSourceSelect.appendChild(option);
     }
     
-    // Add output sources (system audio)
-    if (outputSources.length > 0) {
-      const outputGroup = document.createElement("optgroup");
-      outputGroup.label = "System Audio";
-      for (const source of outputSources) {
-        const option = document.createElement("option");
-        option.value = source.id;
-        option.textContent = source.name;
-        outputGroup.appendChild(option);
-      }
-      audioSourceSelect.appendChild(outputGroup);
+    // Populate microphone dropdown (input sources only)
+    micSourceSelect.innerHTML = '<option value="">None (no microphone)</option>';
+    for (const source of inputSources) {
+      const option = document.createElement("option");
+      option.value = source.id;
+      option.textContent = source.name;
+      micSourceSelect.appendChild(option);
     }
     
-    // Restore previous selection if still available
+    // Restore previous system audio selection if still available
     if (audioConfig.source_id) {
       audioSourceSelect.value = audioConfig.source_id;
-      // If the value wasn't set (source no longer available), fall back to none
       if (audioSourceSelect.value !== audioConfig.source_id) {
         audioSourceSelect.value = "";
-        // Save the cleared selection
-        await invoke("save_audio_config", { 
-          enabled: true, 
-          sourceId: null 
-        });
       }
     }
     
-    console.log("[Audio] Loaded", sources.length, "audio sources");
+    // Restore previous microphone selection if still available
+    if (audioConfig.microphone_id) {
+      micSourceSelect.value = audioConfig.microphone_id;
+      if (micSourceSelect.value !== audioConfig.microphone_id) {
+        micSourceSelect.value = "";
+      }
+    }
+    
+    // Restore AEC checkbox state
+    if (aecCheckbox) {
+      aecCheckbox.checked = audioConfig.echo_cancellation;
+    }
+    
+    // Update AEC visibility (only show when mic is selected)
+    updateAecVisibility();
+    
+    console.log("[Audio] Loaded", sources.length, "audio sources (", 
+      inputSources.length, "inputs,", outputSources.length, "outputs)");
   } catch (error) {
     console.error("[Audio] Failed to load audio sources:", error);
   }
 }
 
-// Handle audio source selection change
-async function handleAudioSourceChange(): Promise<void> {
-  if (!audioSourceSelect) return;
+// Update AEC checkbox visibility based on microphone selection
+function updateAecVisibility(): void {
+  if (!aecConfigItem || !micSourceSelect) return;
+  
+  const hasMic = micSourceSelect.value !== "";
+  aecConfigItem.classList.toggle("hidden", !hasMic);
+}
+
+// Handle any audio configuration change
+async function handleAudioConfigChange(): Promise<void> {
+  if (!audioSourceSelect || !micSourceSelect || !aecCheckbox) return;
   
   const sourceId = audioSourceSelect.value || null;
+  const microphoneId = micSourceSelect.value || null;
+  const echoCancellation = aecCheckbox.checked;
+  
+  // Update AEC visibility
+  updateAecVisibility();
   
   try {
     await invoke("save_audio_config", {
       enabled: true,
       sourceId,
+      microphoneId,
+      echoCancellation,
     });
-    console.log("[Audio] Saved audio source:", sourceId || "(none)");
+    console.log("[Audio] Saved config: system=", sourceId || "(none)", 
+      ", mic=", microphoneId || "(none)", ", aec=", echoCancellation);
   } catch (error) {
     console.error("[Audio] Failed to save audio config:", error);
   }

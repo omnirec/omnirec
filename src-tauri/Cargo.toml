@@ -66,6 +66,9 @@ windows = { version = "0.58", features = [
 # Portal client for screencast requests
 ashpd = { version = "0.9", default-features = false, features = ["tokio"] }
 
+# Acoustic Echo Cancellation - WebRTC AEC3 port
+aec3 = "0.1"
+
 # Hyprland IPC for window/monitor enumeration
 hyprland = "0.4.0-beta.3"
 

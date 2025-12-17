@@ -103,10 +103,10 @@
           <h3 class="config-group__title">Audio</h3>
           <div class="config-group__content">
             <div class="config-item">
-              <label for="audio-source-select" class="config-item__label">Audio Source</label>
+              <label for="audio-source-select" class="config-item__label">System Audio</label>
               <div class="config-item__input-row">
                 <select id="audio-source-select" class="config-item__select">
-                  <option value="">None (no audio)</option>
+                  <option value="">None (no system audio)</option>
                 </select>
                 <button id="refresh-audio-btn" type="button" class="config-item__browse-btn" title="Refresh audio devices">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -116,7 +116,23 @@
                   </svg>
                 </button>
               </div>
-              <p class="config-item__hint">Select an audio source to record sound with your video</p>
+              <p class="config-item__hint">Capture audio from apps (e.g., Zoom, Teams)</p>
+            </div>
+            <div class="config-item">
+              <label for="mic-source-select" class="config-item__label">Microphone</label>
+              <div class="config-item__input-row">
+                <select id="mic-source-select" class="config-item__select">
+                  <option value="">None (no microphone)</option>
+                </select>
+              </div>
+              <p class="config-item__hint">Capture your voice (mixed with system audio)</p>
+            </div>
+            <div class="config-item config-item--checkbox" id="aec-config-item">
+              <label class="config-item__checkbox-label">
+                <input type="checkbox" id="aec-checkbox" checked />
+                <span>Echo Cancellation</span>
+              </label>
+              <p class="config-item__hint">Remove echo when using speakers with microphone</p>
             </div>
           </div>
         </div>

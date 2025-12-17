@@ -25,12 +25,22 @@ pub struct AudioConfig {
     /// Whether audio recording is enabled.
     #[serde(default = "default_audio_enabled")]
     pub enabled: bool,
-    /// Selected audio source ID. None means no audio source selected (disabled).
+    /// Selected system audio source ID (output monitor). None means no system audio selected.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_id: Option<String>,
+    /// Selected microphone source ID. None means no microphone selected.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub microphone_id: Option<String>,
+    /// Whether echo cancellation is enabled for microphone input.
+    #[serde(default = "default_echo_cancellation")]
+    pub echo_cancellation: bool,
 }
 
 fn default_audio_enabled() -> bool {
+    true
+}
+
+fn default_echo_cancellation() -> bool {
     true
 }
 
@@ -39,6 +49,8 @@ impl Default for AudioConfig {
         Self {
             enabled: true,
             source_id: None, // No source selected by default - user must choose
+            microphone_id: None, // No microphone selected by default
+            echo_cancellation: true, // AEC enabled by default when mic is used
         }
     }
 }
@@ -192,6 +204,8 @@ mod tests {
         assert!(config.output.directory.is_none());
         assert!(config.audio.enabled);
         assert!(config.audio.source_id.is_none());
+        assert!(config.audio.microphone_id.is_none());
+        assert!(config.audio.echo_cancellation);
     }
 
     #[test]
@@ -222,17 +236,35 @@ mod tests {
         let config = AudioConfig::default();
         assert!(config.enabled);
         assert!(config.source_id.is_none());
+        assert!(config.microphone_id.is_none());
+        assert!(config.echo_cancellation);
     }
 
     #[test]
     fn test_audio_config_serialization() {
         let mut config = AudioConfig::default();
         config.source_id = Some("456".to_string());
+        config.microphone_id = Some("789".to_string());
+        config.echo_cancellation = false;
         
         let json = serde_json::to_string(&config).unwrap();
         let parsed: AudioConfig = serde_json::from_str(&json).unwrap();
         
         assert!(parsed.enabled);
         assert_eq!(parsed.source_id, Some("456".to_string()));
+        assert_eq!(parsed.microphone_id, Some("789".to_string()));
+        assert!(!parsed.echo_cancellation);
+    }
+
+    #[test]
+    fn test_audio_config_backward_compatible() {
+        // Test that old config without new fields loads correctly
+        let json = r#"{"enabled": true, "source_id": "123"}"#;
+        let parsed: AudioConfig = serde_json::from_str(json).unwrap();
+        
+        assert!(parsed.enabled);
+        assert_eq!(parsed.source_id, Some("123".to_string()));
+        assert!(parsed.microphone_id.is_none());
+        assert!(parsed.echo_cancellation); // default value
     }
 }

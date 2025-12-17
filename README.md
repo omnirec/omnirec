@@ -15,7 +15,7 @@ A high-performance screen, window, and region recording application built with T
 - **Window Recording**: Capture any application window
 - **Display Recording**: Capture your entire screen
 - **Region Recording**: Select and record a custom region of your screen
-- **Audio Recording**: Capture system audio or microphone input (Linux only)
+- **Audio Recording**: Capture system audio, microphone, or both with echo cancellation (Linux only)
 - **Multiple Output Formats**: MP4, WebM, MKV, QuickTime, GIF, APNG, WebP
 - **High Performance**: Native Rust backend with efficient frame pipeline
 - **Cross-Platform**: Windows, macOS (12.3+), and Linux (Hyprland)
@@ -28,9 +28,16 @@ A high-performance screen, window, and region recording application built with T
 
 - **Formats**: MP4 (default), WebM, MKV, QuickTime (.mov), GIF, Animated PNG, Animated WebP
 - **Video**: H.264 encoded at 30 fps
-- **Audio**: AAC encoded (when audio source selected, Linux only)
+- **Audio**: AAC encoded, supports dual-source mixing with AEC (Linux only)
 - **Location**: User's Videos folder (configurable)
 - **Filename**: `recording_YYYY-MM-DD_HHMMSS.<ext>`
+
+### Audio Features (Linux Only)
+
+- **System Audio**: Capture audio from applications (Zoom, Teams, media players, etc.)
+- **Microphone Input**: Record your voice alongside system audio
+- **Dual-Source Mixing**: Combine system audio and microphone into a single track
+- **Echo Cancellation (AEC)**: Automatically removes speaker output picked up by the microphone, preventing echo in recordings when using speakers instead of headphones
 
 ### Planned Features
 

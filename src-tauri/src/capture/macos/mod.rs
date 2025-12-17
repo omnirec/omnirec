@@ -311,6 +311,30 @@ impl AudioCaptureBackend for MacOSBackend {
     }
 }
 
+// Extension methods for cross-platform API compatibility
+impl MacOSBackend {
+    /// Start audio capture from up to two sources with optional AEC.
+    ///
+    /// Note: Dual-source mixing with AEC is currently only implemented on Linux.
+    /// On macOS, this falls back to capturing only the system audio source.
+    pub fn start_audio_capture_dual(
+        &self,
+        system_source_id: Option<&str>,
+        _mic_source_id: Option<&str>,
+        _aec_enabled: bool,
+    ) -> Result<(AudioReceiver, StopHandle), CaptureError> {
+        // TODO: Implement dual-source mixing with AEC on macOS
+        // For now, just capture the system audio source
+        if let Some(source_id) = system_source_id {
+            audio::start_audio_capture(source_id)
+        } else {
+            Err(CaptureError::AudioError(
+                "No audio source specified".to_string(),
+            ))
+        }
+    }
+}
+
 /// Initialize the audio capture subsystem.
 pub fn init_audio() -> Result<(), String> {
     audio::init_audio_backend()

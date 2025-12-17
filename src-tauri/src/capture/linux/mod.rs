@@ -507,6 +507,25 @@ impl AudioCaptureBackend for LinuxBackend {
     }
 }
 
+// Extension methods for Linux-specific audio capture features
+impl LinuxBackend {
+    /// Start audio capture from up to two sources with optional AEC.
+    ///
+    /// - `system_source_id`: System audio (output monitor) source ID, or None
+    /// - `mic_source_id`: Microphone source ID, or None
+    /// - `aec_enabled`: Whether to apply acoustic echo cancellation
+    ///
+    /// Returns an audio sample receiver and stop handle.
+    pub fn start_audio_capture_dual(
+        &self,
+        system_source_id: Option<&str>,
+        mic_source_id: Option<&str>,
+        aec_enabled: bool,
+    ) -> Result<(AudioReceiver, StopHandle), CaptureError> {
+        audio::start_audio_capture_dual(system_source_id, mic_source_id, aec_enabled)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

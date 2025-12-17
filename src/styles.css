@@ -412,6 +412,33 @@ section {
   color: var(--text-muted);
 }
 
+/* Config checkbox item */
+.config-item--checkbox {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.config-item--checkbox.hidden {
+  display: none;
+}
+
+.config-item__checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+}
+
+.config-item__checkbox-label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent-primary);
+  cursor: pointer;
+}
+
 /* ===== Region Selection ===== */
 .region-selection {
   display: flex;
