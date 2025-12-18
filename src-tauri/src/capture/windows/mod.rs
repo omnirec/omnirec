@@ -124,17 +124,20 @@ impl AudioCaptureBackend for WindowsBackend {
 impl WindowsBackend {
     /// Start audio capture from up to two sources with optional AEC.
     ///
-    /// Note: Dual-source mixing with AEC is currently only implemented on Linux.
-    /// On Windows, this falls back to capturing only the system audio source.
+    /// Note: Dual-source mixing with AEC is not yet implemented on Windows.
+    /// Currently captures only the first specified source (system audio preferred).
+    /// Full dual-source mixing will be implemented in a future change.
     pub fn start_audio_capture_dual(
         &self,
         system_source_id: Option<&str>,
-        _mic_source_id: Option<&str>,
+        mic_source_id: Option<&str>,
         _aec_enabled: bool,
     ) -> Result<(AudioReceiver, StopHandle), CaptureError> {
-        // TODO: Implement dual-source mixing with AEC on Windows
-        // For now, just capture the system audio source
+        // TODO: Implement dual-source mixing with AEC on Windows (add-windows-dual-audio-mixing)
+        // For now, capture only one source: prefer system audio if specified
         if let Some(source_id) = system_source_id {
+            audio::start_audio_capture(source_id)
+        } else if let Some(source_id) = mic_source_id {
             audio::start_audio_capture(source_id)
         } else {
             Err(CaptureError::AudioError(
