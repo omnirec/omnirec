@@ -40,11 +40,11 @@
   --gray-50: #f5f5f6;
 
   /* Semantic colors - dark */
-  --bg-gradient-start: #1a1a1f;
-  --bg-gradient-end: #0f0f12;
-  --bg-surface: var(--gray-950);
+  --bg-gradient-start: #18181d;
+  --bg-gradient-end: #32323c;
+  --bg-surface: var(--gray-850);
   --bg-surface-hover: var(--gray-700);
-  --bg-surface-elevated: var(--gray-700);
+  --bg-surface-elevated: var(--gray-800);
   --text-primary: var(--gray-100);
   --text-secondary: var(--gray-400);
   --text-muted: var(--gray-500);
@@ -126,7 +126,7 @@ html, body {
   padding: 0;
   height: 100vh;
   overflow: hidden;
-  background: linear-gradient(180deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%);
+  background: linear-gradient(135deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%);
 }
 
 /* Make window draggable by default, except interactive elements */
@@ -723,10 +723,11 @@ section {
   flex-shrink: 0;
   width: 160px;
   height: 90px;
-  border-radius: 4px;
+  border-radius: 6px;
   overflow: hidden;
   background: var(--bg-surface-elevated);
   position: relative;
+  border: 1px solid var(--border-color);
 }
 
 .window-item__thumb-img {
@@ -847,10 +848,11 @@ section {
   flex-shrink: 0;
   width: 160px;
   height: 90px;
-  border-radius: 4px;
+  border-radius: 6px;
   overflow: hidden;
   background: var(--bg-surface-elevated);
   position: relative;
+  border: 1px solid var(--border-color);
 }
 
 .display-item__thumb-img {
@@ -964,8 +966,8 @@ button:disabled {
 }
 
 #record-btn:disabled {
-  background-color: var(--border-color);
-  color: var(--text-muted);
+  background-color: var(--gray-600);
+  color: var(--gray-400);
 }
 
 #record-btn.recording {
