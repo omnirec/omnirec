@@ -3086,6 +3086,7 @@ dependencies = [
  "directories",
  "dispatch",
  "ffmpeg-sidecar",
+ "foreign-types",
  "hyprland",
  "image",
  "libc",

@@ -76,8 +76,10 @@ pub fn list_windows() -> Vec<WindowInfo> {
             handle: window.window_id as isize,
             title,
             process_name,
-            x: window.x as i32,
-            y: window.y as i32,
+            // Note: SCWindow doesn't expose x/y position in screencapturekit 0.2.x
+            // Window position isn't needed for capture (CGWindowListCreateImage uses window_id)
+            x: 0,
+            y: 0,
             width: window.width as u32,
             height: window.height as u32,
         });
