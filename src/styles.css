@@ -255,21 +255,23 @@ section {
   margin-bottom: 16px;
   overflow-y: auto;
   overflow-x: hidden;
+  padding-right: 8px;
+  -webkit-app-region: no-drag;
 }
 
 .config-group {
-  margin-bottom: 16px;
+  margin-bottom: 12px;
   min-width: 0;
 }
 
 .config-group__title {
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   font-weight: 600;
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   padding: 0;
-  margin: 0 0 12px 0;
+  margin: 0 0 6px 0;
 }
 
 .config-group__content {
@@ -277,7 +279,7 @@ section {
 }
 
 .config-item {
-  margin-bottom: 16px;
+  margin-bottom: 10px;
   min-width: 0;
 }
 
@@ -287,10 +289,10 @@ section {
 
 .config-item__label {
   display: block;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   font-weight: 500;
   color: var(--text-primary);
-  margin-bottom: 8px;
+  margin-bottom: 4px;
 }
 
 .config-item__input-row {
@@ -305,8 +307,8 @@ section {
   background: var(--gray-800);
   border: 1px solid var(--border-color);
   border-radius: 6px;
-  padding: 10px 12px;
-  font-size: 0.9rem;
+  padding: 8px 10px;
+  font-size: 0.85rem;
   font-family: monospace;
   color: var(--text-primary);
   transition: border-color 0.2s, background-color 0.2s;
@@ -336,16 +338,16 @@ section {
   background: var(--gray-800);
   border: 1px solid var(--border-color);
   border-radius: 6px;
-  padding: 10px 12px;
-  font-size: 0.9rem;
+  padding: 8px 10px;
+  font-size: 0.85rem;
   color: var(--text-primary);
   cursor: pointer;
   transition: border-color 0.2s, background-color 0.2s;
   appearance: none;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
   background-repeat: no-repeat;
-  background-position: right 12px center;
-  padding-right: 36px;
+  background-position: right 10px center;
+  padding-right: 32px;
   text-overflow: ellipsis;
   overflow: hidden;
   white-space: nowrap;
@@ -372,8 +374,8 @@ section {
 
 .config-item__browse-btn {
   flex-shrink: 0;
-  width: 42px;
-  height: 42px;
+  width: 36px;
+  height: 36px;
   padding: 0;
   display: flex;
   align-items: center;
@@ -391,8 +393,8 @@ section {
 }
 
 .config-item__browse-btn svg {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   color: var(--text-secondary);
 }
 
@@ -401,14 +403,14 @@ section {
 }
 
 .config-item__error {
-  margin: 8px 0 0 0;
-  font-size: 0.8rem;
+  margin: 1px 0 0 0;
+  font-size: 0.75rem;
   color: var(--accent-danger);
 }
 
 .config-item__hint {
-  margin: 8px 0 0 0;
-  font-size: 0.8rem;
+  margin: 1px 0 0 0;
+  font-size: 0.75rem;
   color: var(--text-muted);
 }
 
@@ -416,7 +418,7 @@ section {
 .config-item--checkbox {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 0;
 }
 
 .config-item--checkbox.hidden {
@@ -426,9 +428,9 @@ section {
 .config-item__checkbox-label {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 5px;
   cursor: pointer;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   color: var(--text-primary);
 }
 
@@ -437,6 +439,10 @@ section {
   height: 16px;
   accent-color: var(--accent-primary);
   cursor: pointer;
+}
+
+.config-item--checkbox .config-item__hint {
+  margin-top: -2px;
 }
 
 /* ===== Region Selection ===== */
