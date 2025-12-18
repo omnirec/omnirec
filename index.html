@@ -101,7 +101,8 @@
         <div class="config-group">
           <h3 class="config-group__title">Audio</h3>
           <div class="config-group__content">
-            <div class="config-item">
+            <!-- System audio dropdown (shown on Linux/Windows) -->
+            <div class="config-item" id="audio-source-config-item">
               <label for="audio-source-select" class="config-item__label">System Audio</label>
               <div class="config-item__input-row">
                 <select id="audio-source-select" class="config-item__select">
@@ -116,6 +117,14 @@
                 </button>
               </div>
               <p class="config-item__hint">Capture audio from apps (e.g., Zoom, Teams)</p>
+            </div>
+            <!-- System audio checkbox (shown on macOS only) -->
+            <div class="config-item config-item--checkbox hidden" id="macos-system-audio-config-item">
+              <label class="config-item__checkbox-label">
+                <input type="checkbox" id="macos-system-audio-checkbox" />
+                <span>Record System Audio</span>
+              </label>
+              <p class="config-item__hint" id="macos-system-audio-hint">Capture all system audio (requires macOS 13+)</p>
             </div>
             <div class="config-item">
               <label for="mic-source-select" class="config-item__label">Microphone</label>

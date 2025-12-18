@@ -15,7 +15,7 @@ A high-performance screen, window, and region recording application built with T
 - **Window Recording**: Capture any application window
 - **Display Recording**: Capture your entire screen
 - **Region Recording**: Select and record a custom region of your screen
-- **Audio Recording**: Capture system audio or microphone (Windows and Linux; dual-source mixing with AEC on Linux only)
+- **Audio Recording**: Capture system audio or microphone (Windows, macOS 13+, and Linux; dual-source mixing with AEC on Linux only)
 - **Multiple Output Formats**: MP4, WebM, MKV, QuickTime, GIF, APNG, WebP
 - **High Performance**: Native Rust backend with efficient frame pipeline
 - **Cross-Platform**: Windows, macOS (12.3+), and Linux (Hyprland)
@@ -34,17 +34,19 @@ A high-performance screen, window, and region recording application built with T
 
 ### Audio Features
 
-- **System Audio**: Capture audio from applications (Zoom, Teams, media players, etc.) — Windows and Linux
+- **System Audio**: Capture audio from applications (Zoom, Teams, media players, etc.) — Windows, macOS 13+, and Linux
 - **Microphone Input**: Record your voice alongside system audio — Windows and Linux
 - **Dual-Source Mixing**: Combine system audio and microphone into a single track (Linux only)
 - **Echo Cancellation (AEC)**: Automatically removes speaker output picked up by the microphone, preventing echo in recordings when using speakers instead of headphones (Linux only)
+
+> **Note**: macOS system audio capture requires macOS 13 (Ventura) or later due to ScreenCaptureKit API requirements.
 
 ### Planned Features
 
 See [docs/requirements.md](docs/requirements.md) for the full roadmap, including:
 
 - Pause/Resume recording
-- Audio capture for macOS
+- Microphone capture and dual-source mixing for macOS
 - Dual-source audio mixing for Windows
 - Configurable quality and frame rate
 - Global hotkeys
@@ -69,7 +71,8 @@ See [docs/requirements.md](docs/requirements.md) for the full roadmap, including
 
 ### macOS Requirements
 
-- macOS 12.3 (Monterey) or later (ScreenCaptureKit requirement)
+- macOS 12.3 (Monterey) or later for screen/window capture (ScreenCaptureKit requirement)
+- macOS 13 (Ventura) or later for system audio capture
 - Screen Recording permission (granted via System Settings > Privacy & Security)
 
 ### Linux/Wayland Additional Requirements

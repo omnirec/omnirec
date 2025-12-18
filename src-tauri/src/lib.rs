@@ -688,6 +688,39 @@ fn get_audio_sources() -> Vec<AudioSource> {
     capture::list_audio_sources()
 }
 
+/// Check if macOS system audio capture is available (requires macOS 13+).
+/// Returns true on macOS 13+ with ScreenCaptureKit audio support, false otherwise.
+/// On non-macOS platforms, returns false.
+#[tauri::command]
+fn is_system_audio_available() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        capture::macos::audio::is_system_audio_available()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        false
+    }
+}
+
+/// Get the current platform name.
+/// Returns "macos", "linux", or "windows".
+#[tauri::command]
+fn get_platform() -> String {
+    #[cfg(target_os = "macos")]
+    {
+        "macos".to_string()
+    }
+    #[cfg(target_os = "linux")]
+    {
+        "linux".to_string()
+    }
+    #[cfg(target_os = "windows")]
+    {
+        "windows".to_string()
+    }
+}
+
 /// Get current audio configuration.
 #[tauri::command]
 async fn get_audio_config(state: State<'_, AppState>) -> Result<AudioConfig, String> {
@@ -910,6 +943,8 @@ pub fn run() {
             get_audio_sources,
             get_audio_config,
             save_audio_config,
+            is_system_audio_available,
+            get_platform,
             // Configuration commands
             get_config,
             save_output_directory,

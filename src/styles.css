@@ -467,6 +467,10 @@ section {
   color: var(--text-muted);
 }
 
+.config-item__hint--warning {
+  color: var(--accent-warning, #f59e0b);
+}
+
 /* Config checkbox item */
 .config-item--checkbox {
   display: flex;

@@ -203,6 +203,14 @@ let aecCheckbox: HTMLInputElement | null;
 let aecConfigItem: HTMLElement | null;
 let refreshAudioBtn: HTMLButtonElement | null;
 let themeSelect: HTMLSelectElement | null;
+let macosSystemAudioCheckbox: HTMLInputElement | null;
+let macosSystemAudioConfigItem: HTMLElement | null;
+let macosSystemAudioHint: HTMLElement | null;
+let audioSourceConfigItem: HTMLElement | null;
+
+// Platform state
+let currentPlatform: "macos" | "linux" | "windows" = "linux";
+let macosSystemAudioAvailable = false;
 
 // State
 let captureMode: CaptureMode = "window";
@@ -312,6 +320,10 @@ window.addEventListener("DOMContentLoaded", () => {
   aecConfigItem = document.querySelector("#aec-config-item");
   refreshAudioBtn = document.querySelector("#refresh-audio-btn");
   themeSelect = document.querySelector("#theme-select");
+  macosSystemAudioCheckbox = document.querySelector("#macos-system-audio-checkbox");
+  macosSystemAudioConfigItem = document.querySelector("#macos-system-audio-config-item");
+  macosSystemAudioHint = document.querySelector("#macos-system-audio-hint");
+  audioSourceConfigItem = document.querySelector("#audio-source-config-item");
 
   // Set up event listeners
   closeBtn?.addEventListener("click", async () => {
@@ -382,6 +394,7 @@ window.addEventListener("DOMContentLoaded", () => {
   aecCheckbox?.addEventListener("change", handleAudioConfigChange);
   refreshAudioBtn?.addEventListener("click", loadAudioSources);
   themeSelect?.addEventListener("change", handleThemeChange);
+  macosSystemAudioCheckbox?.addEventListener("change", handleMacosSystemAudioChange);
 
   // Format selector handlers
   formatBtnEl?.addEventListener("click", toggleFormatDropdown);
@@ -1749,6 +1762,10 @@ async function loadAudioSources(): Promise<void> {
   if (!audioSourceSelect || !micSourceSelect) return;
   
   try {
+    // Detect platform and system audio availability
+    currentPlatform = await invoke<"macos" | "linux" | "windows">("get_platform");
+    macosSystemAudioAvailable = await invoke<boolean>("is_system_audio_available");
+    
     const sources = await invoke<AudioSource[]>("get_audio_sources");
     
     // Get current audio config to preserve selection
@@ -1758,30 +1775,68 @@ async function loadAudioSources(): Promise<void> {
     const inputSources = sources.filter(s => s.source_type === "input");
     const outputSources = sources.filter(s => s.source_type === "output");
     
-    // Populate system audio dropdown (output sources only)
-    audioSourceSelect.innerHTML = '<option value="">None (no system audio)</option>';
-    for (const source of outputSources) {
-      const option = document.createElement("option");
-      option.value = source.id;
-      option.textContent = source.name;
-      audioSourceSelect.appendChild(option);
+    // Handle macOS-specific UI
+    if (currentPlatform === "macos") {
+      // Hide the system audio dropdown on macOS
+      audioSourceConfigItem?.classList.add("hidden");
+      
+      // Show the macOS system audio checkbox
+      macosSystemAudioConfigItem?.classList.remove("hidden");
+      
+      // Update checkbox state and hint based on availability
+      if (macosSystemAudioCheckbox) {
+        if (macosSystemAudioAvailable) {
+          macosSystemAudioCheckbox.disabled = false;
+          // Restore checkbox state from config (source_id "system" means enabled)
+          macosSystemAudioCheckbox.checked = audioConfig.source_id === "system";
+        } else {
+          // Disable checkbox on macOS < 13
+          macosSystemAudioCheckbox.disabled = true;
+          macosSystemAudioCheckbox.checked = false;
+        }
+      }
+      
+      // Update hint text based on availability
+      if (macosSystemAudioHint) {
+        if (macosSystemAudioAvailable) {
+          macosSystemAudioHint.textContent = "Capture all system audio during recording";
+        } else {
+          macosSystemAudioHint.textContent = "Requires macOS 13 (Ventura) or later";
+          macosSystemAudioHint.classList.add("config-item__hint--warning");
+        }
+      }
+    } else {
+      // Show the system audio dropdown on Linux/Windows
+      audioSourceConfigItem?.classList.remove("hidden");
+      
+      // Hide the macOS checkbox
+      macosSystemAudioConfigItem?.classList.add("hidden");
+      
+      // Populate system audio dropdown (output sources only)
+      audioSourceSelect.innerHTML = '<option value="">None (no system audio)</option>';
+      for (const source of outputSources) {
+        const option = document.createElement("option");
+        option.value = source.id;
+        option.textContent = source.name;
+        audioSourceSelect.appendChild(option);
+      }
+      
+      // Restore previous system audio selection if still available
+      if (audioConfig.source_id && audioConfig.source_id !== "system") {
+        audioSourceSelect.value = audioConfig.source_id;
+        if (audioSourceSelect.value !== audioConfig.source_id) {
+          audioSourceSelect.value = "";
+        }
+      }
     }
     
-    // Populate microphone dropdown (input sources only)
+    // Populate microphone dropdown (input sources only) - all platforms
     micSourceSelect.innerHTML = '<option value="">None (no microphone)</option>';
     for (const source of inputSources) {
       const option = document.createElement("option");
       option.value = source.id;
       option.textContent = source.name;
       micSourceSelect.appendChild(option);
-    }
-    
-    // Restore previous system audio selection if still available
-    if (audioConfig.source_id) {
-      audioSourceSelect.value = audioConfig.source_id;
-      if (audioSourceSelect.value !== audioConfig.source_id) {
-        audioSourceSelect.value = "";
-      }
     }
     
     // Restore previous microphone selection if still available
@@ -1800,6 +1855,7 @@ async function loadAudioSources(): Promise<void> {
     // Update AEC visibility (only show when mic is selected)
     updateAecVisibility();
     
+    console.log("[Audio] Platform:", currentPlatform, ", macOS system audio available:", macosSystemAudioAvailable);
     console.log("[Audio] Loaded", sources.length, "audio sources (", 
       inputSources.length, "inputs,", outputSources.length, "outputs)");
   } catch (error) {
@@ -1837,6 +1893,26 @@ async function handleAudioConfigChange(): Promise<void> {
       ", mic=", microphoneId || "(none)", ", aec=", echoCancellation);
   } catch (error) {
     console.error("[Audio] Failed to save audio config:", error);
+  }
+}
+
+// Handle macOS system audio checkbox change
+async function handleMacosSystemAudioChange(): Promise<void> {
+  if (!macosSystemAudioCheckbox) return;
+  
+  const enabled = macosSystemAudioCheckbox.checked;
+  
+  try {
+    // On macOS, we use a special "system" source ID to indicate system audio capture
+    await invoke("save_audio_config", {
+      enabled: true,
+      sourceId: enabled ? "system" : null,
+      microphoneId: micSourceSelect?.value || null,
+      echoCancellation: aecCheckbox?.checked ?? false,
+    });
+    console.log("[Audio] macOS system audio:", enabled ? "enabled" : "disabled");
+  } catch (error) {
+    console.error("[Audio] Failed to save macOS audio config:", error);
   }
 }
 

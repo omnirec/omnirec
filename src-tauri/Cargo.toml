@@ -107,8 +107,12 @@ wayland-protocols-wlr = { version = "0.3", features = ["client"] }
 # Cocoa for NSWindow transparency
 cocoa = "0.26"
 
-# ScreenCaptureKit bindings for frame capture
+# ScreenCaptureKit bindings for frame and audio capture
 screencapturekit = "0.2"
+screencapturekit-sys = "0.2"
+
+# Core Audio for audio device enumeration
+coreaudio-sys = "0.2"
 
 # Core Graphics for window/display enumeration
 core-graphics = "0.24"
