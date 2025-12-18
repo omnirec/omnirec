@@ -11,6 +11,56 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
+/// Theme mode for the application appearance.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ThemeMode {
+    /// Automatically follow system preference
+    #[default]
+    Auto,
+    /// Always use light theme
+    Light,
+    /// Always use dark theme
+    Dark,
+}
+
+impl ThemeMode {
+    /// Convert from string representation.
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "auto" => Some(Self::Auto),
+            "light" => Some(Self::Light),
+            "dark" => Some(Self::Dark),
+            _ => None,
+        }
+    }
+
+    /// Convert to string representation.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Light => "light",
+            Self::Dark => "dark",
+        }
+    }
+}
+
+/// Appearance-related configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppearanceConfig {
+    /// Theme mode: auto, light, or dark.
+    #[serde(default)]
+    pub theme: ThemeMode,
+}
+
+impl Default for AppearanceConfig {
+    fn default() -> Self {
+        Self {
+            theme: ThemeMode::Auto,
+        }
+    }
+}
+
 /// Output-related configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct OutputConfig {
@@ -64,6 +114,9 @@ pub struct AppConfig {
     /// Audio settings group.
     #[serde(default)]
     pub audio: AudioConfig,
+    /// Appearance settings group.
+    #[serde(default)]
+    pub appearance: AppearanceConfig,
 }
 
 impl AppConfig {
@@ -266,5 +319,59 @@ mod tests {
         assert_eq!(parsed.source_id, Some("123".to_string()));
         assert!(parsed.microphone_id.is_none());
         assert!(parsed.echo_cancellation); // default value
+    }
+
+    #[test]
+    fn test_theme_mode_default() {
+        let config = AppearanceConfig::default();
+        assert_eq!(config.theme, ThemeMode::Auto);
+    }
+
+    #[test]
+    fn test_theme_mode_from_str() {
+        assert_eq!(ThemeMode::from_str("auto"), Some(ThemeMode::Auto));
+        assert_eq!(ThemeMode::from_str("light"), Some(ThemeMode::Light));
+        assert_eq!(ThemeMode::from_str("dark"), Some(ThemeMode::Dark));
+        assert_eq!(ThemeMode::from_str("AUTO"), Some(ThemeMode::Auto));
+        assert_eq!(ThemeMode::from_str("invalid"), None);
+    }
+
+    #[test]
+    fn test_theme_mode_as_str() {
+        assert_eq!(ThemeMode::Auto.as_str(), "auto");
+        assert_eq!(ThemeMode::Light.as_str(), "light");
+        assert_eq!(ThemeMode::Dark.as_str(), "dark");
+    }
+
+    #[test]
+    fn test_appearance_config_serialization() {
+        let mut config = AppearanceConfig::default();
+        config.theme = ThemeMode::Light;
+        
+        let json = serde_json::to_string(&config).unwrap();
+        let parsed: AppearanceConfig = serde_json::from_str(&json).unwrap();
+        
+        assert_eq!(parsed.theme, ThemeMode::Light);
+    }
+
+    #[test]
+    fn test_app_config_with_appearance() {
+        let mut config = AppConfig::default();
+        config.appearance.theme = ThemeMode::Dark;
+        
+        let json = serde_json::to_string(&config).unwrap();
+        let parsed: AppConfig = serde_json::from_str(&json).unwrap();
+        
+        assert_eq!(parsed.appearance.theme, ThemeMode::Dark);
+    }
+
+    #[test]
+    fn test_app_config_backward_compatible_no_appearance() {
+        // Test that old config without appearance field loads correctly
+        let json = r#"{"output": {}, "audio": {"enabled": true}}"#;
+        let parsed: AppConfig = serde_json::from_str(json).unwrap();
+        
+        // Should use default appearance
+        assert_eq!(parsed.appearance.theme, ThemeMode::Auto);
     }
 }

@@ -49,6 +49,8 @@ interface AudioConfig {
   echo_cancellation: boolean;
 }
 
+type ThemeMode = "auto" | "light" | "dark";
+
 interface AppConfig {
   output: {
     directory: string | null;
@@ -58,6 +60,9 @@ interface AppConfig {
     source_id: string | null;
     microphone_id: string | null;
     echo_cancellation: boolean;
+  };
+  appearance: {
+    theme: ThemeMode;
   };
 }
 
@@ -197,6 +202,7 @@ let micSourceSelect: HTMLSelectElement | null;
 let aecCheckbox: HTMLInputElement | null;
 let aecConfigItem: HTMLElement | null;
 let refreshAudioBtn: HTMLButtonElement | null;
+let themeSelect: HTMLSelectElement | null;
 
 // State
 let captureMode: CaptureMode = "window";
@@ -210,6 +216,10 @@ let recordingStartTime: number = 0;
 let selectedFormat: OutputFormat = "mp4";
 let defaultOutputDir: string = "";
 let outputDirSaveTimeout: number | null = null;
+
+// Theme state
+let currentThemeMode: ThemeMode = "auto";
+let systemThemeMediaQuery: MediaQueryList | null = null;
 
 // Thumbnail refresh state
 let windowThumbnailRefreshInterval: number | null = null;
@@ -301,6 +311,7 @@ window.addEventListener("DOMContentLoaded", () => {
   aecCheckbox = document.querySelector("#aec-checkbox");
   aecConfigItem = document.querySelector("#aec-config-item");
   refreshAudioBtn = document.querySelector("#refresh-audio-btn");
+  themeSelect = document.querySelector("#theme-select");
 
   // Set up event listeners
   closeBtn?.addEventListener("click", async () => {
@@ -370,6 +381,7 @@ window.addEventListener("DOMContentLoaded", () => {
   micSourceSelect?.addEventListener("change", handleAudioConfigChange);
   aecCheckbox?.addEventListener("change", handleAudioConfigChange);
   refreshAudioBtn?.addEventListener("click", loadAudioSources);
+  themeSelect?.addEventListener("change", handleThemeChange);
 
   // Format selector handlers
   formatBtnEl?.addEventListener("click", toggleFormatDropdown);
@@ -1628,7 +1640,16 @@ async function loadConfig(): Promise<void> {
       outputDirInput.value = config.output.directory || "";
     }
     
-    console.log("[Config] Loaded config, default dir:", defaultOutputDir);
+    // Initialize theme with saved preference
+    const themeMode = config.appearance?.theme || "auto";
+    initTheme(themeMode);
+    
+    // Update theme selector to match
+    if (themeSelect) {
+      themeSelect.value = themeMode;
+    }
+    
+    console.log("[Config] Loaded config, default dir:", defaultOutputDir, ", theme:", themeMode);
     
     // Load audio sources and restore selection
     await loadAudioSources();
@@ -1816,6 +1837,79 @@ async function handleAudioConfigChange(): Promise<void> {
       ", mic=", microphoneId || "(none)", ", aec=", echoCancellation);
   } catch (error) {
     console.error("[Audio] Failed to save audio config:", error);
+  }
+}
+
+// =============================================================================
+// Theme Functions
+// =============================================================================
+
+// Get the system's preferred color scheme
+function getSystemTheme(): "light" | "dark" {
+  return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+}
+
+// Determine the effective theme based on mode and system preference
+function getEffectiveTheme(mode: ThemeMode): "light" | "dark" {
+  if (mode === "auto") {
+    return getSystemTheme();
+  }
+  return mode;
+}
+
+// Apply the theme to the document
+function applyTheme(theme: "light" | "dark"): void {
+  const root = document.documentElement;
+  
+  // Remove existing theme classes
+  root.classList.remove("theme-light", "theme-dark");
+  
+  // Add the new theme class
+  root.classList.add(`theme-${theme}`);
+  
+  console.log("[Theme] Applied theme:", theme);
+}
+
+// Initialize theme system
+function initTheme(mode: ThemeMode): void {
+  currentThemeMode = mode;
+  
+  // Apply initial theme
+  const effectiveTheme = getEffectiveTheme(mode);
+  applyTheme(effectiveTheme);
+  
+  // Set up system theme change listener
+  systemThemeMediaQuery = window.matchMedia("(prefers-color-scheme: light)");
+  systemThemeMediaQuery.addEventListener("change", handleSystemThemeChange);
+}
+
+// Handle system theme change
+function handleSystemThemeChange(): void {
+  // Only respond if in auto mode
+  if (currentThemeMode === "auto") {
+    const effectiveTheme = getEffectiveTheme("auto");
+    applyTheme(effectiveTheme);
+    console.log("[Theme] System theme changed, applied:", effectiveTheme);
+  }
+}
+
+// Handle theme selector change
+async function handleThemeChange(): Promise<void> {
+  if (!themeSelect) return;
+  
+  const newMode = themeSelect.value as ThemeMode;
+  currentThemeMode = newMode;
+  
+  // Apply the theme immediately
+  const effectiveTheme = getEffectiveTheme(newMode);
+  applyTheme(effectiveTheme);
+  
+  // Save to backend
+  try {
+    await invoke("save_theme", { theme: newMode });
+    console.log("[Theme] Saved theme mode:", newMode);
+  } catch (error) {
+    console.error("[Theme] Failed to save theme:", error);
   }
 }
 

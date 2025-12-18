@@ -9,7 +9,7 @@ use capture::{
     list_monitors, list_windows, show_highlight, AudioSource, CaptureRegion, MonitorInfo,
     ThumbnailCapture, ThumbnailResult, WindowInfo, get_backend,
 };
-use config::{AppConfig, AudioConfig, load_config, save_config as save_config_to_disk, validate_directory};
+use config::{AppConfig, AppearanceConfig, AudioConfig, ThemeMode, load_config, save_config as save_config_to_disk, validate_directory};
 use encoder::ensure_ffmpeg_blocking;
 use state::{OutputFormat, RecordingManager, RecordingResult, RecordingState};
 use std::sync::Arc;
@@ -728,6 +728,7 @@ async fn save_audio_config(
 pub struct ConfigResponse {
     output: OutputConfigResponse,
     audio: AudioConfigResponse,
+    appearance: AppearanceConfigResponse,
 }
 
 #[derive(serde::Serialize)]
@@ -743,6 +744,11 @@ pub struct AudioConfigResponse {
     echo_cancellation: bool,
 }
 
+#[derive(serde::Serialize)]
+pub struct AppearanceConfigResponse {
+    theme: String,
+}
+
 impl From<&AppConfig> for ConfigResponse {
     fn from(config: &AppConfig) -> Self {
         Self {
@@ -754,6 +760,9 @@ impl From<&AppConfig> for ConfigResponse {
                 source_id: config.audio.source_id.clone(),
                 microphone_id: config.audio.microphone_id.clone(),
                 echo_cancellation: config.audio.echo_cancellation,
+            },
+            appearance: AppearanceConfigResponse {
+                theme: config.appearance.theme.as_str().to_string(),
             },
         }
     }
@@ -825,6 +834,25 @@ async fn validate_output_directory(directory: String) -> Result<(), String> {
     validate_directory(&directory)
 }
 
+/// Save the theme mode setting.
+#[tauri::command]
+async fn save_theme(
+    theme: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let theme_mode = ThemeMode::from_str(&theme)
+        .ok_or_else(|| format!("Invalid theme mode: {}", theme))?;
+
+    let mut config = state.app_config.lock().await;
+    config.appearance.theme = theme_mode;
+    
+    // Save to disk
+    save_config_to_disk(&config)?;
+    
+    eprintln!("[save_theme] Saved theme: {}", config.appearance.theme.as_str());
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -863,6 +891,7 @@ pub fn run() {
             get_default_output_directory,
             pick_output_directory,
             validate_output_directory,
+            save_theme,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
