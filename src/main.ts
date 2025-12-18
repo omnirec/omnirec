@@ -169,8 +169,6 @@ let regionDisplayEl: HTMLElement | null;
 let displaySelectionEl: HTMLElement | null;
 let displayListEl: HTMLElement | null;
 let recordBtn: HTMLButtonElement | null;
-let refreshBtn: HTMLButtonElement | null;
-let refreshDisplaysBtn: HTMLButtonElement | null;
 let selectRegionBtn: HTMLButtonElement | null;
 let modeWindowBtn: HTMLButtonElement | null;
 let modeRegionBtn: HTMLButtonElement | null;
@@ -276,8 +274,6 @@ window.addEventListener("DOMContentLoaded", () => {
   displaySelectionEl = document.querySelector("#display-selection");
   displayListEl = document.querySelector("#display-list");
   recordBtn = document.querySelector("#record-btn");
-  refreshBtn = document.querySelector("#refresh-btn");
-  refreshDisplaysBtn = document.querySelector("#refresh-displays-btn");
 
   selectRegionBtn = document.querySelector("#select-region-btn");
   modeWindowBtn = document.querySelector("#mode-window-btn");
@@ -357,9 +353,7 @@ window.addEventListener("DOMContentLoaded", () => {
       dismissResult();
     }
   });
-  refreshBtn?.addEventListener("click", loadWindows);
   openSettingsBtn?.addEventListener("click", handleOpenSettings);
-  refreshDisplaysBtn?.addEventListener("click", loadDisplays);
   recordBtn?.addEventListener("click", handleRecordClick);
   openFolderBtn?.addEventListener("click", handleOpenFolder);
   selectRegionBtn?.addEventListener("click", openRegionSelector);
@@ -932,18 +926,70 @@ function stopWindowThumbnailRefresh(): void {
   }
 }
 
-// Refresh all visible window thumbnails
-function refreshWindowThumbnails(): void {
-  const items = document.querySelectorAll(".window-item");
-  items.forEach((item) => {
-    const handle = parseInt(item.getAttribute("data-handle") || "0", 10);
-    const img = item.querySelector<HTMLImageElement>(".window-item__thumb-img");
-    if (img && handle) {
-      // Clear cache for this item to force refresh
-      thumbnailCache.delete(`window:${handle}`);
-      loadWindowThumbnail(handle, img);
+// Refresh window list and thumbnails (incremental update)
+async function refreshWindowThumbnails(): Promise<void> {
+  if (!windowListEl) return;
+
+  try {
+    const windows = await invoke<WindowInfo[]>("get_windows");
+    const newHandles = new Set(windows.map(w => w.handle));
+
+    // Get current items in the DOM
+    const existingItems = windowListEl.querySelectorAll<HTMLElement>(".window-item");
+    const existingHandles = new Set<number>();
+
+    // Remove items that no longer exist
+    existingItems.forEach((item) => {
+      const handle = parseInt(item.dataset.handle || "0", 10);
+      if (!newHandles.has(handle)) {
+        item.remove();
+        // Clear selection if removed window was selected
+        if (selectedWindow?.handle === handle) {
+          selectedWindow = null;
+          updateRecordButton();
+        }
+      } else {
+        existingHandles.add(handle);
+      }
+    });
+
+    // Handle empty state
+    if (windows.length === 0) {
+      if (!windowListEl.querySelector(".empty")) {
+        windowListEl.innerHTML = '<p class="empty">No capturable windows found</p>';
+      }
+      return;
     }
-  });
+
+    // Remove empty message if present
+    const emptyMsg = windowListEl.querySelector(".empty");
+    if (emptyMsg) emptyMsg.remove();
+
+    // Add new items that don't exist yet
+    for (const win of windows) {
+      if (!existingHandles.has(win.handle)) {
+        const item = createWindowItem(win);
+        windowListEl.appendChild(item);
+        // Load thumbnail for the new item
+        const img = item.querySelector<HTMLImageElement>(".window-item__thumb-img");
+        if (img) {
+          loadWindowThumbnail(win.handle, img);
+        }
+      }
+    }
+
+    // Refresh thumbnails for existing items
+    existingHandles.forEach((handle) => {
+      thumbnailCache.delete(`window:${handle}`);
+      const item = windowListEl!.querySelector(`[data-handle="${handle}"]`);
+      const img = item?.querySelector<HTMLImageElement>(".window-item__thumb-img");
+      if (img) {
+        loadWindowThumbnail(handle, img);
+      }
+    });
+  } catch (error) {
+    console.error("Error refreshing windows:", error);
+  }
 }
 
 // Create a window list item element
@@ -1073,18 +1119,70 @@ function stopDisplayThumbnailRefresh(): void {
   }
 }
 
-// Refresh all visible display thumbnails
-function refreshDisplayThumbnails(): void {
-  const items = document.querySelectorAll(".display-item");
-  items.forEach((item) => {
-    const monitorId = item.getAttribute("data-id");
-    const img = item.querySelector<HTMLImageElement>(".display-item__thumb-img");
-    if (img && monitorId) {
-      // Clear cache for this item to force refresh
-      thumbnailCache.delete(`display:${monitorId}`);
-      loadDisplayThumbnail(monitorId, img);
+// Refresh display list and thumbnails (incremental update)
+async function refreshDisplayThumbnails(): Promise<void> {
+  if (!displayListEl) return;
+
+  try {
+    const displays = await invoke<MonitorInfo[]>("get_monitors");
+    const newIds = new Set(displays.map(d => d.id));
+
+    // Get current items in the DOM
+    const existingItems = displayListEl.querySelectorAll<HTMLElement>(".display-item");
+    const existingIds = new Set<string>();
+
+    // Remove items that no longer exist
+    existingItems.forEach((item) => {
+      const id = item.dataset.id;
+      if (!id || !newIds.has(id)) {
+        item.remove();
+        // Clear selection if removed display was selected
+        if (selectedDisplay?.id === id) {
+          selectedDisplay = null;
+          updateRecordButton();
+        }
+      } else {
+        existingIds.add(id);
+      }
+    });
+
+    // Handle empty state
+    if (displays.length === 0) {
+      if (!displayListEl.querySelector(".empty")) {
+        displayListEl.innerHTML = '<p class="empty">No displays found</p>';
+      }
+      return;
     }
-  });
+
+    // Remove empty message if present
+    const emptyMsg = displayListEl.querySelector(".empty");
+    if (emptyMsg) emptyMsg.remove();
+
+    // Add new items that don't exist yet
+    for (const display of displays) {
+      if (!existingIds.has(display.id)) {
+        const item = createDisplayItem(display);
+        displayListEl.appendChild(item);
+        // Load thumbnail for the new item
+        const img = item.querySelector<HTMLImageElement>(".display-item__thumb-img");
+        if (img) {
+          loadDisplayThumbnail(display.id, img);
+        }
+      }
+    }
+
+    // Refresh thumbnails for existing items
+    existingIds.forEach((id) => {
+      thumbnailCache.delete(`display:${id}`);
+      const item = displayListEl!.querySelector(`[data-id="${id}"]`);
+      const img = item?.querySelector<HTMLImageElement>(".display-item__thumb-img");
+      if (img) {
+        loadDisplayThumbnail(id, img);
+      }
+    });
+  } catch (error) {
+    console.error("Error refreshing displays:", error);
+  }
 }
 
 // Create a display list item element
@@ -1372,12 +1470,6 @@ function updateTimerDisplay(): void {
 
 // Disable/enable selection during recording
 function disableSelection(disabled: boolean): void {
-  if (refreshBtn) {
-    refreshBtn.disabled = disabled;
-  }
-  if (refreshDisplaysBtn) {
-    refreshDisplaysBtn.disabled = disabled;
-  }
   const currentSelectRegionBtn = document.querySelector<HTMLButtonElement>("#select-region-btn");
   if (currentSelectRegionBtn) {
     currentSelectRegionBtn.disabled = disabled;
