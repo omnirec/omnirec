@@ -537,6 +537,7 @@ fn run_capture_loop(
 }
 
 /// Create a WAVEFORMATEX structure for the requested format.
+#[allow(dead_code)]
 fn create_wave_format(sample_rate: u32, channels: u16, is_float: bool) -> WAVEFORMATEX {
     let bits_per_sample: u16 = if is_float { 32 } else { 16 };
     let block_align = channels * (bits_per_sample / 8);
@@ -611,6 +612,752 @@ fn convert_samples_to_f32(
     }
 
     output
+}
+
+// ============================================================================
+// Resampling Support
+// ============================================================================
+
+/// Simple linear resampler for converting audio between sample rates.
+///
+/// Uses linear interpolation which is sufficient for speech/voice audio.
+/// For music-quality resampling, a more sophisticated algorithm would be needed.
+struct Resampler {
+    source_rate: u32,
+    target_rate: u32,
+    buffer: Vec<f32>,
+    position: f64,
+}
+
+impl Resampler {
+    fn new(source_rate: u32, target_rate: u32) -> Self {
+        Self {
+            source_rate,
+            target_rate,
+            buffer: Vec::new(),
+            position: 0.0,
+        }
+    }
+
+    /// Process input samples and return resampled output.
+    ///
+    /// Input samples should be interleaved stereo.
+    fn process(&mut self, samples: &[f32], channels: usize) -> Vec<f32> {
+        self.buffer.extend_from_slice(samples);
+
+        let ratio = self.source_rate as f64 / self.target_rate as f64;
+        let input_frames = self.buffer.len() / channels;
+        let output_frames = ((input_frames as f64 - self.position) / ratio) as usize;
+
+        if output_frames == 0 {
+            return Vec::new();
+        }
+
+        let mut output = Vec::with_capacity(output_frames * channels);
+
+        for _ in 0..output_frames {
+            let src_frame = self.position as usize;
+            let frac = self.position - src_frame as f64;
+
+            for ch in 0..channels {
+                let idx0 = src_frame * channels + ch;
+                let idx1 = (src_frame + 1) * channels + ch;
+
+                let sample = if idx1 < self.buffer.len() {
+                    self.buffer[idx0] * (1.0 - frac as f32) + self.buffer[idx1] * frac as f32
+                } else if idx0 < self.buffer.len() {
+                    self.buffer[idx0]
+                } else {
+                    0.0
+                };
+                output.push(sample);
+            }
+
+            self.position += ratio;
+        }
+
+        let consumed_frames = self.position as usize;
+        if consumed_frames > 0 {
+            let consumed_samples = consumed_frames * channels;
+            if consumed_samples < self.buffer.len() {
+                self.buffer.drain(0..consumed_samples);
+                self.position -= consumed_frames as f64;
+            } else {
+                self.buffer.clear();
+                self.position = 0.0;
+            }
+        }
+
+        output
+    }
+}
+
+// ============================================================================
+// Dual Audio Capture with Mixing and AEC
+// ============================================================================
+
+use aec3::voip::VoipAec3;
+use std::sync::mpsc as std_mpsc;
+use std::sync::Mutex;
+
+/// AEC3 frame size: 10ms at 48kHz = 480 samples per channel
+const AEC_FRAME_SAMPLES: usize = 480;
+
+/// Samples from a stream thread to the mixer
+struct StreamSamples {
+    /// The audio samples
+    samples: Vec<f32>,
+    /// Whether this stream is loopback (system audio) - used for AEC routing
+    is_loopback: bool,
+}
+
+/// Audio mixer for combining samples from two streams with optional AEC.
+///
+/// This struct is NOT Send because VoipAec3 is not Send.
+/// It must be used only in the mixer thread.
+///
+/// Key insight for AEC: The render (system audio) must be fed to AEC BEFORE
+/// the corresponding capture (mic) is processed. This is because AEC needs
+/// to know what audio was played through speakers before it can identify
+/// and remove that audio from the microphone signal.
+struct AudioMixer {
+    /// Buffer for capture samples (microphone/input)
+    capture_buffer: Vec<f32>,
+    /// Buffer for render samples (system audio) - fed to AEC render path
+    render_buffer: Vec<f32>,
+    /// Buffer for render samples to mix with processed capture
+    render_mix_buffer: Vec<f32>,
+    /// Number of active streams (1 or 2)
+    num_streams: usize,
+    /// Channels per stream (always 2 for stereo)
+    channels: u16,
+    /// Output sender to the async channel
+    output_tx: mpsc::Sender<AudioSample>,
+    /// Flag to enable/disable AEC
+    aec_enabled: bool,
+    /// AEC3 instance (created when 2 streams active and AEC enabled)
+    aec: Option<VoipAec3>,
+}
+
+impl AudioMixer {
+    fn new(output_tx: mpsc::Sender<AudioSample>, aec_enabled: bool) -> Self {
+        Self {
+            capture_buffer: Vec::new(),
+            render_buffer: Vec::new(),
+            render_mix_buffer: Vec::new(),
+            num_streams: 0,
+            channels: 2,
+            output_tx,
+            aec_enabled,
+            aec: None,
+        }
+    }
+
+    fn set_num_streams(&mut self, num: usize) {
+        self.num_streams = num;
+        self.capture_buffer.clear();
+        self.render_buffer.clear();
+        self.render_mix_buffer.clear();
+
+        eprintln!(
+            "[AudioMixer] set_num_streams({}), aec_enabled={}",
+            num, self.aec_enabled
+        );
+
+        // Create AEC3 pipeline when we have 2 streams and AEC is enabled
+        if num == 2 && self.aec_enabled {
+            // Initial delay hint: start with 0ms and let AEC adapt
+            match VoipAec3::builder(48000, self.channels as usize, self.channels as usize)
+                .enable_high_pass(true)
+                .initial_delay_ms(0)
+                .build()
+            {
+                Ok(aec) => {
+                    eprintln!(
+                        "[AudioMixer] AEC3 initialized: 48kHz, {} channels, {}ms frames (frame_size={})",
+                        self.channels,
+                        AEC_FRAME_SAMPLES * 1000 / 48000,
+                        AEC_FRAME_SAMPLES * self.channels as usize
+                    );
+                    self.aec = Some(aec);
+                }
+                Err(e) => {
+                    eprintln!("[AudioMixer] Failed to initialize AEC3: {:?}", e);
+                    self.aec = None;
+                }
+            }
+        } else {
+            if num == 2 {
+                eprintln!("[AudioMixer] Two streams but AEC disabled");
+            }
+            self.aec = None;
+        }
+    }
+
+    /// Add samples from a stream, routing based on source type.
+    /// - Loopback (system audio) is fed IMMEDIATELY to AEC render path
+    /// - Non-loopback (mic) is buffered and processed when enough data available
+    fn push_samples(&mut self, samples: &[f32], is_loopback: bool) {
+        if self.num_streams == 1 {
+            // Single stream - send directly (no AEC possible)
+            let sample = AudioSample {
+                data: samples.to_vec(),
+                sample_rate: TARGET_SAMPLE_RATE,
+                channels: self.channels as u32,
+            };
+            let _ = self.output_tx.blocking_send(sample);
+            return;
+        }
+
+        // Two streams mode
+        let frame_size = AEC_FRAME_SAMPLES * self.channels as usize;
+
+        if is_loopback {
+            // System audio (render) - feed to AEC immediately in frame-sized chunks
+            // This is critical: AEC needs to see render BEFORE corresponding capture
+            self.render_buffer.extend_from_slice(samples);
+            // Also keep a copy for mixing
+            self.render_mix_buffer.extend_from_slice(samples);
+
+            // Feed render frames to AEC immediately
+            if let Some(ref mut aec) = self.aec {
+                while self.render_buffer.len() >= frame_size {
+                    let render_frame: Vec<f32> = self.render_buffer.drain(0..frame_size).collect();
+                    if let Err(e) = aec.handle_render_frame(&render_frame) {
+                        eprintln!("[AudioMixer] AEC3 handle_render_frame error: {:?}", e);
+                    }
+                }
+            }
+        } else {
+            // Microphone (capture) - buffer and process
+            self.capture_buffer.extend_from_slice(samples);
+            self.process_capture();
+        }
+    }
+
+    /// Process buffered capture samples through AEC
+    fn process_capture(&mut self) {
+        let frame_size = AEC_FRAME_SAMPLES * self.channels as usize;
+
+        // Process capture frames when we have enough data from both sources
+        while self.capture_buffer.len() >= frame_size && self.render_mix_buffer.len() >= frame_size {
+            let capture_frame: Vec<f32> = self.capture_buffer.drain(0..frame_size).collect();
+            let render_frame: Vec<f32> = self.render_mix_buffer.drain(0..frame_size).collect();
+
+            // Apply AEC if enabled and we have an AEC instance
+            let processed_capture = if self.aec_enabled {
+                if let Some(ref mut aec) = self.aec {
+                    let mut out = vec![0.0f32; capture_frame.len()];
+
+                    match aec.process_capture_frame(&capture_frame, false, &mut out) {
+                        Ok(_metrics) => out,
+                        Err(e) => {
+                            eprintln!("[AudioMixer] AEC3 process_capture_frame error: {:?}", e);
+                            capture_frame
+                        }
+                    }
+                } else {
+                    capture_frame
+                }
+            } else {
+                capture_frame
+            };
+
+            // Mix processed capture with system audio using soft clipping
+            // Soft clip prevents harsh distortion while preserving dynamics
+            let output: Vec<f32> = processed_capture
+                .iter()
+                .zip(render_frame.iter())
+                .map(|(&capture, &render)| {
+                    let sum = capture + render;
+                    // Soft clip: tanh-style saturation for values beyond [-1, 1]
+                    if sum > 1.0 {
+                        1.0 - (-2.0 * (sum - 1.0)).exp() * 0.5
+                    } else if sum < -1.0 {
+                        -1.0 + (-2.0 * (-sum - 1.0)).exp() * 0.5
+                    } else {
+                        sum
+                    }
+                })
+                .collect();
+
+            // Send mixed output
+            let sample = AudioSample {
+                data: output,
+                sample_rate: TARGET_SAMPLE_RATE,
+                channels: self.channels as u32,
+            };
+            let _ = self.output_tx.blocking_send(sample);
+        }
+    }
+}
+
+/// Manager for multiple capture streams
+struct MultiCaptureManager {
+    /// Stream 1 thread handle and stop flag (microphone)
+    stream1: Option<(thread::JoinHandle<()>, Arc<AtomicBool>)>,
+    /// Stream 2 thread handle and stop flag (system audio)
+    stream2: Option<(thread::JoinHandle<()>, Arc<AtomicBool>)>,
+    /// Mixer thread handle
+    mixer_thread: Option<thread::JoinHandle<()>>,
+    /// Stop flag for mixer thread
+    mixer_stop: Arc<AtomicBool>,
+}
+
+impl MultiCaptureManager {
+    fn new(
+        mic_source_id: Option<String>,
+        sys_source_id: Option<String>,
+        aec_enabled: bool,
+        output_tx: mpsc::Sender<AudioSample>,
+    ) -> Result<Self, CaptureError> {
+        // Create channel for stream samples to mixer
+        let (stream_tx, stream_rx) = std_mpsc::channel::<StreamSamples>();
+
+        // Count streams
+        let num_streams = mic_source_id.is_some() as usize + sys_source_id.is_some() as usize;
+        if num_streams == 0 {
+            return Err(CaptureError::AudioError(
+                "No audio source specified".to_string(),
+            ));
+        }
+
+        let mixer_stop = Arc::new(AtomicBool::new(false));
+        let mixer_stop_clone = Arc::clone(&mixer_stop);
+
+        // Spawn mixer thread
+        let mixer_thread = thread::spawn(move || {
+            run_mixer_thread(stream_rx, output_tx, num_streams, aec_enabled, mixer_stop_clone);
+        });
+
+        let mut stream1 = None;
+        let mut stream2 = None;
+
+        // Start microphone capture (stream 1) if specified
+        if let Some(device_id) = mic_source_id {
+            let stop_flag = Arc::new(AtomicBool::new(false));
+            let stop_flag_clone = Arc::clone(&stop_flag);
+            let tx = stream_tx.clone();
+
+            let handle = thread::spawn(move || {
+                run_stream_capture(device_id, false, 1, tx, stop_flag_clone);
+            });
+
+            stream1 = Some((handle, stop_flag));
+        }
+
+        // Start system audio capture (stream 2) if specified
+        if let Some(device_id) = sys_source_id {
+            let stop_flag = Arc::new(AtomicBool::new(false));
+            let stop_flag_clone = Arc::clone(&stop_flag);
+            let tx = stream_tx;
+
+            let handle = thread::spawn(move || {
+                run_stream_capture(device_id, true, 2, tx, stop_flag_clone);
+            });
+
+            stream2 = Some((handle, stop_flag));
+        }
+
+        eprintln!(
+            "[Audio] Started dual capture: {} streams, AEC={}",
+            num_streams, aec_enabled
+        );
+
+        Ok(Self {
+            stream1,
+            stream2,
+            mixer_thread: Some(mixer_thread),
+            mixer_stop,
+        })
+    }
+}
+
+impl Drop for MultiCaptureManager {
+    fn drop(&mut self) {
+        eprintln!("[Audio] Stopping dual capture...");
+
+        // Signal streams to stop
+        if let Some((_, ref stop_flag)) = self.stream1 {
+            stop_flag.store(true, Ordering::SeqCst);
+        }
+        if let Some((_, ref stop_flag)) = self.stream2 {
+            stop_flag.store(true, Ordering::SeqCst);
+        }
+
+        // Wait for stream threads to finish
+        if let Some((handle, _)) = self.stream1.take() {
+            let _ = handle.join();
+        }
+        if let Some((handle, _)) = self.stream2.take() {
+            let _ = handle.join();
+        }
+
+        // Stop mixer thread
+        self.mixer_stop.store(true, Ordering::SeqCst);
+        if let Some(handle) = self.mixer_thread.take() {
+            let _ = handle.join();
+        }
+
+        eprintln!("[Audio] Dual capture stopped");
+    }
+}
+
+/// Run the mixer thread that combines samples from capture threads
+fn run_mixer_thread(
+    stream_rx: std_mpsc::Receiver<StreamSamples>,
+    output_tx: mpsc::Sender<AudioSample>,
+    num_streams: usize,
+    aec_enabled: bool,
+    stop_flag: Arc<AtomicBool>,
+) {
+    eprintln!("[AudioMixer] Mixer thread started");
+
+    let mut mixer = AudioMixer::new(output_tx, aec_enabled);
+    mixer.set_num_streams(num_streams);
+
+    loop {
+        if stop_flag.load(Ordering::Relaxed) {
+            break;
+        }
+
+        // Receive samples with timeout to allow checking stop flag
+        // Route based on source type (loopback vs mic), not stream index
+        match stream_rx.recv_timeout(std::time::Duration::from_millis(100)) {
+            Ok(stream_samples) => {
+                mixer.push_samples(&stream_samples.samples, stream_samples.is_loopback);
+            }
+            Err(std_mpsc::RecvTimeoutError::Timeout) => {
+                // Continue, will check stop flag
+            }
+            Err(std_mpsc::RecvTimeoutError::Disconnected) => {
+                eprintln!("[AudioMixer] Stream channels disconnected");
+                break;
+            }
+        }
+    }
+
+    eprintln!("[AudioMixer] Mixer thread exited");
+}
+
+/// Run capture for a single stream
+fn run_stream_capture(
+    device_id: String,
+    is_loopback: bool,
+    stream_index: usize,
+    stream_tx: std_mpsc::Sender<StreamSamples>,
+    stop_flag: Arc<AtomicBool>,
+) {
+    eprintln!(
+        "[Audio] Stream {} capture thread started (device={}, loopback={})",
+        stream_index,
+        device_id,
+        is_loopback
+    );
+
+    // Initialize COM for this thread
+    unsafe {
+        let hr = CoInitializeEx(None, COINIT_MULTITHREADED);
+        if hr.is_err() && hr.0 != 1 {
+            eprintln!(
+                "[Audio] Stream {} failed to initialize COM: {:?}",
+                stream_index, hr
+            );
+            return;
+        }
+    }
+
+    // Run capture loop
+    if let Err(e) = run_stream_capture_loop(&device_id, is_loopback, stream_index, &stream_tx, &stop_flag) {
+        eprintln!("[Audio] Stream {} capture error: {}", stream_index, e);
+    }
+
+    // Uninitialize COM
+    unsafe {
+        CoUninitialize();
+    }
+
+    eprintln!("[Audio] Stream {} capture thread exited", stream_index);
+}
+
+/// Inner capture loop for a single stream (COM already initialized)
+fn run_stream_capture_loop(
+    device_id: &str,
+    is_loopback: bool,
+    stream_index: usize,
+    stream_tx: &std_mpsc::Sender<StreamSamples>,
+    stop_flag: &Arc<AtomicBool>,
+) -> Result<(), String> {
+    unsafe {
+        // Create device enumerator
+        let enumerator: IMMDeviceEnumerator =
+            CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)
+                .map_err(|e| format!("Failed to create device enumerator: {}", e))?;
+
+        // Get device by ID
+        let device_id_wide: Vec<u16> = device_id.encode_utf16().chain(std::iter::once(0)).collect();
+        let device: IMMDevice = enumerator
+            .GetDevice(PCWSTR(device_id_wide.as_ptr()))
+            .map_err(|e| format!("Failed to get device: {}", e))?;
+
+        // Activate audio client
+        let audio_client: IAudioClient = device
+            .Activate(CLSCTX_ALL, None)
+            .map_err(|e| format!("Failed to activate audio client: {}", e))?;
+
+        // Get mix format
+        let mix_format_ptr = audio_client
+            .GetMixFormat()
+            .map_err(|e| format!("Failed to get mix format: {}", e))?;
+
+        let device_format = AudioFormat::from_waveformatex(mix_format_ptr);
+        eprintln!(
+            "[Audio] Stream {} device format: {}Hz, {} channels, {} bits, float={}",
+            stream_index,
+            device_format.sample_rate,
+            device_format.channels,
+            device_format.bits_per_sample,
+            device_format.is_float
+        );
+
+        // Create event for buffer notification
+        let event: HANDLE = CreateEventW(None, false, false, PWSTR::null())
+            .map_err(|e| format!("Failed to create event: {}", e))?;
+
+        // Initialize audio client
+        let stream_flags = if is_loopback {
+            AUDCLNT_STREAMFLAGS_LOOPBACK | AUDCLNT_STREAMFLAGS_EVENTCALLBACK
+        } else {
+            AUDCLNT_STREAMFLAGS_EVENTCALLBACK
+        };
+
+        let buffer_duration: i64 = 1_000_000; // 100ms
+
+        audio_client
+            .Initialize(
+                AUDCLNT_SHAREMODE_SHARED,
+                stream_flags,
+                buffer_duration,
+                0,
+                mix_format_ptr,
+                None,
+            )
+            .map_err(|e| format!("Failed to initialize audio client: {}", e))?;
+
+        let capture_format = device_format.clone();
+        CoTaskMemFree(Some(mix_format_ptr as *const _));
+
+        // Get capture client
+        let capture_client: IAudioCaptureClient = audio_client
+            .GetService()
+            .map_err(|e| format!("Failed to get capture client: {}", e))?;
+
+        // Set event handle
+        audio_client
+            .SetEventHandle(event)
+            .map_err(|e| format!("Failed to set event handle: {}", e))?;
+
+        // Create resampler if device sample rate differs from target
+        let mut resampler = if capture_format.sample_rate != TARGET_SAMPLE_RATE {
+            eprintln!(
+                "[Audio] Stream {} resampling {}Hz -> {}Hz",
+                stream_index, capture_format.sample_rate, TARGET_SAMPLE_RATE
+            );
+            Some(Resampler::new(capture_format.sample_rate, TARGET_SAMPLE_RATE))
+        } else {
+            None
+        };
+
+        // Start capturing
+        audio_client
+            .Start()
+            .map_err(|e| format!("Failed to start audio capture: {}", e))?;
+
+        eprintln!("[Audio] Stream {} capture started", stream_index);
+
+        // Capture loop
+        loop {
+            if stop_flag.load(Ordering::Relaxed) {
+                break;
+            }
+
+            // Wait for buffer event
+            let wait_result = WaitForSingleObject(event, 100);
+            if wait_result.0 == 258 {
+                // WAIT_TIMEOUT - continue to check stop flag
+                continue;
+            }
+
+            // Get available frames
+            let packet_length = match capture_client.GetNextPacketSize() {
+                Ok(len) => len,
+                Err(e) => {
+                    eprintln!(
+                        "[Audio] Stream {} GetNextPacketSize failed: {:?}",
+                        stream_index, e
+                    );
+                    break;
+                }
+            };
+
+            let mut current_packet_length = packet_length;
+            while current_packet_length > 0 {
+                let mut buffer_ptr: *mut u8 = std::ptr::null_mut();
+                let mut num_frames: u32 = 0;
+                let mut flags: u32 = 0;
+
+                let result = capture_client.GetBuffer(
+                    &mut buffer_ptr,
+                    &mut num_frames,
+                    &mut flags,
+                    None,
+                    None,
+                );
+
+                if result.is_err() {
+                    break;
+                }
+
+                let is_silent = (flags & 0x2) != 0;
+
+                if num_frames > 0 && !buffer_ptr.is_null() {
+                    let samples = if is_silent {
+                        vec![0.0f32; num_frames as usize * TARGET_CHANNELS as usize]
+                    } else {
+                        convert_samples_to_f32(
+                            buffer_ptr,
+                            num_frames as usize,
+                            capture_format.channels,
+                            capture_format.bits_per_sample,
+                            capture_format.is_float,
+                        )
+                    };
+
+                    // Apply resampling if needed (device rate -> 48kHz)
+                    let final_samples = if let Some(ref mut rs) = resampler {
+                        let resampled = rs.process(&samples, TARGET_CHANNELS as usize);
+                        if resampled.is_empty() {
+                            // Resampler buffering, no output yet
+                            let _ = capture_client.ReleaseBuffer(num_frames);
+                            current_packet_length = match capture_client.GetNextPacketSize() {
+                                Ok(len) => len,
+                                Err(_) => break,
+                            };
+                            continue;
+                        }
+                        resampled
+                    } else {
+                        samples
+                    };
+
+                    // Send to mixer thread with loopback flag for proper AEC routing
+                    if stream_tx
+                        .send(StreamSamples {
+                            samples: final_samples,
+                            is_loopback,
+                        })
+                        .is_err()
+                    {
+                        let _ = capture_client.ReleaseBuffer(num_frames);
+                        break;
+                    }
+                }
+
+                let _ = capture_client.ReleaseBuffer(num_frames);
+
+                current_packet_length = match capture_client.GetNextPacketSize() {
+                    Ok(len) => len,
+                    Err(_) => break,
+                };
+            }
+        }
+
+        let _ = audio_client.Stop();
+    }
+
+    Ok(())
+}
+
+/// Start audio capture from two sources (system audio + microphone) with optional AEC.
+///
+/// This function spawns:
+/// - Two WASAPI capture threads (one for each source)
+/// - One mixer thread that combines the streams with optional AEC
+///
+/// Returns an audio sample receiver and stop handle.
+pub fn start_audio_capture_dual(
+    system_source_id: Option<&str>,
+    mic_source_id: Option<&str>,
+    aec_enabled: bool,
+) -> Result<(AudioReceiver, StopHandle), CaptureError> {
+    eprintln!(
+        "[Audio] Starting dual capture: system={:?}, mic={:?}, aec={}",
+        system_source_id, mic_source_id, aec_enabled
+    );
+
+    // Verify sources exist and determine device IDs
+    let sources = list_audio_sources().map_err(|e| {
+        CaptureError::AudioError(format!("Failed to enumerate audio sources: {:?}", e))
+    })?;
+
+    let sys_id = if let Some(id) = system_source_id {
+        let source = sources
+            .iter()
+            .find(|s| s.id == id)
+            .ok_or_else(|| CaptureError::AudioError(format!("System audio device not found: {}", id)))?;
+        if source.source_type != AudioSourceType::Output {
+            return Err(CaptureError::AudioError(format!(
+                "Device {} is not an output device for system audio capture",
+                id
+            )));
+        }
+        Some(id.to_string())
+    } else {
+        None
+    };
+
+    let mic_id = if let Some(id) = mic_source_id {
+        let source = sources
+            .iter()
+            .find(|s| s.id == id)
+            .ok_or_else(|| CaptureError::AudioError(format!("Microphone device not found: {}", id)))?;
+        if source.source_type != AudioSourceType::Input {
+            return Err(CaptureError::AudioError(format!(
+                "Device {} is not an input device for microphone capture",
+                id
+            )));
+        }
+        Some(id.to_string())
+    } else {
+        None
+    };
+
+    // Create output channel
+    let (tx, rx) = mpsc::channel(256);
+
+    // Create stop flag
+    let stop_flag = Arc::new(AtomicBool::new(false));
+    let stop_flag_clone = Arc::clone(&stop_flag);
+
+    // Create capture manager (spawns threads)
+    let manager = MultiCaptureManager::new(mic_id, sys_id, aec_enabled, tx)?;
+
+    // Wrap manager in Arc<Mutex> so we can drop it when stop flag is set
+    let manager = Arc::new(Mutex::new(Some(manager)));
+    let manager_clone = Arc::clone(&manager);
+
+    // Spawn cleanup thread that watches the stop flag
+    thread::spawn(move || {
+        while !stop_flag_clone.load(Ordering::Relaxed) {
+            thread::sleep(std::time::Duration::from_millis(100));
+        }
+        // Drop the manager to stop all capture threads
+        if let Ok(mut guard) = manager_clone.lock() {
+            *guard = None;
+        }
+    });
+
+    Ok((rx, stop_flag))
 }
 
 /// Initialize the audio backend.
@@ -809,5 +1556,183 @@ mod tests {
         // For loopback capture, we might get 0 samples if nothing is playing
         // Just verify we didn't crash
         eprintln!("[Test] Integration test passed");
+    }
+
+    #[test]
+    fn test_audio_mixer_single_stream_mic() {
+        // Test single-stream mode (mic only) - samples should pass through directly
+        let (tx, mut rx) = mpsc::channel(16);
+        let mut mixer = AudioMixer::new(tx, false);
+        mixer.set_num_streams(1);
+
+        // Push some mic samples (is_loopback=false means mic)
+        let samples = vec![0.5f32, -0.5, 0.25, -0.25];
+        mixer.push_samples(&samples, false);
+
+        // Should receive them directly (try_recv returns Result<T, TryRecvError>)
+        let sample = rx.try_recv().expect("Should receive samples in single-stream mode");
+        assert_eq!(sample.data.len(), 4);
+        assert!((sample.data[0] - 0.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_audio_mixer_single_stream_sys() {
+        // Test single-stream mode (system audio only)
+        let (tx, mut rx) = mpsc::channel(16);
+        let mut mixer = AudioMixer::new(tx, false);
+        mixer.set_num_streams(1);
+
+        // is_loopback=true means system audio
+        let samples = vec![0.3f32, -0.3, 0.15, -0.15];
+        mixer.push_samples(&samples, true);
+
+        let sample = rx.try_recv().expect("Should receive samples in single-stream mode");
+        assert_eq!(sample.data.len(), 4);
+    }
+
+    #[test]
+    fn test_audio_mixer_dual_stream_mixing() {
+        // Test dual-stream mixing without AEC
+        // Note: Mixer uses frame-based processing (AEC_FRAME_SAMPLES * 2 channels = 960 samples)
+        let (tx, mut rx) = mpsc::channel(16);
+        let mut mixer = AudioMixer::new(tx, false); // AEC disabled
+        mixer.set_num_streams(2);
+
+        // Create full frame of samples (480 samples * 2 channels = 960)
+        let frame_size = 480 * 2;
+        let capture_samples: Vec<f32> = vec![0.4f32; frame_size]; // mic
+        let render_samples: Vec<f32> = vec![0.2f32; frame_size];  // system audio
+
+        // Push system audio first (is_loopback=true), then mic (is_loopback=false)
+        mixer.push_samples(&render_samples, true);
+        mixer.push_samples(&capture_samples, false);
+
+        // Should receive mixed samples
+        let sample = rx.try_recv().expect("Should receive mixed samples");
+        
+        // Mixed output should be 0.4 + 0.2 = 0.6 (with soft clipping, values < 1.0 pass through)
+        assert_eq!(sample.data.len(), frame_size);
+        assert!((sample.data[0] - 0.6).abs() < 0.001, "Mixed sample should be 0.6, got {}", sample.data[0]);
+    }
+
+    #[test]
+    fn test_audio_mixer_clipping_protection() {
+        // Test that mixing uses soft clipping to prevent harsh distortion
+        // Note: Mixer uses frame-based processing (480 samples * 2 channels = 960)
+        let (tx, mut rx) = mpsc::channel(16);
+        let mut mixer = AudioMixer::new(tx, false); // AEC disabled
+        mixer.set_num_streams(2);
+
+        // Full frame of samples at full volume (would clip without protection)
+        let frame_size = 480 * 2;
+        let capture_samples: Vec<f32> = vec![1.0f32; frame_size];
+        let render_samples: Vec<f32> = vec![1.0f32; frame_size];
+
+        // Push system audio first, then mic
+        mixer.push_samples(&render_samples, true);
+        mixer.push_samples(&capture_samples, false);
+
+        let sample = rx.try_recv().expect("Should receive samples");
+        
+        // With soft clipping: sum = 2.0, output = 1.0 - exp(-2.0) * 0.5 ≈ 0.932
+        // Values should be in valid range and soft-clipped (not hard-clamped to 1.0)
+        for &s in &sample.data {
+            assert!(s <= 1.0, "Sample should be <= 1.0, got {}", s);
+            assert!(s >= -1.0, "Sample should be >= -1.0, got {}", s);
+            // Soft clipping produces values < 1.0 for inputs > 1.0
+            assert!(s > 0.9, "Soft-clipped sample should be > 0.9, got {}", s);
+        }
+    }
+
+    #[test]
+    fn test_audio_mixer_aec_frame_alignment() {
+        // Test that AEC mode waits for full frames (480 samples * 2 channels = 960)
+        let (tx, mut rx) = mpsc::channel(16);
+        let mut mixer = AudioMixer::new(tx, true); // AEC enabled
+        mixer.set_num_streams(2);
+
+        // Push less than a full frame
+        let small_capture = vec![0.1f32; 100];
+        let small_render = vec![0.2f32; 100];
+
+        mixer.push_samples(&small_render, true);  // system audio first
+        mixer.push_samples(&small_capture, false); // then mic
+
+        // Should NOT receive anything yet (need 960 samples)
+        assert!(rx.try_recv().is_err(), "Should not receive samples before full frame");
+
+        // Push more to reach full frame
+        let more_capture = vec![0.1f32; 860];
+        let more_render = vec![0.2f32; 860];
+
+        mixer.push_samples(&more_render, true);
+        mixer.push_samples(&more_capture, false);
+
+        // NOW should receive
+        assert!(rx.try_recv().is_ok(), "Should receive samples after full frame");
+    }
+
+    #[test]
+    fn test_dual_capture_api() {
+        // Test that the dual capture API can be called
+        // This is a basic API test - actual capture requires real devices
+        let sources = list_audio_sources().expect("Failed to enumerate audio sources");
+        
+        // Find an output and input device
+        let output = sources.iter().find(|s| s.source_type == AudioSourceType::Output);
+        let input = sources.iter().find(|s| s.source_type == AudioSourceType::Input);
+        
+        if output.is_none() || input.is_none() {
+            eprintln!("[Test] Need both output and input devices for dual capture test");
+            return;
+        }
+        
+        let sys_id = &output.unwrap().id;
+        let mic_id = &input.unwrap().id;
+        
+        eprintln!("[Test] Testing dual capture with:");
+        eprintln!("  System: {}", output.unwrap().name);
+        eprintln!("  Mic: {}", input.unwrap().name);
+        
+        // Start dual capture
+        let result = start_audio_capture_dual(Some(sys_id), Some(mic_id), true);
+        if let Err(ref e) = result {
+            eprintln!("[Test] Dual capture start error (may be expected): {:?}", e);
+            return;
+        }
+        
+        let (mut rx, stop_flag) = result.unwrap();
+        
+        // Capture briefly
+        let start = std::time::Instant::now();
+        let mut samples_received = 0u64;
+        
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .unwrap();
+        
+        rt.block_on(async {
+            while start.elapsed().as_millis() < 500 {
+                match tokio::time::timeout(
+                    std::time::Duration::from_millis(100),
+                    rx.recv()
+                ).await {
+                    Ok(Some(sample)) => {
+                        samples_received += sample.data.len() as u64;
+                    }
+                    Ok(None) => break,
+                    Err(_) => {}
+                }
+            }
+        });
+        
+        stop_flag.store(true, Ordering::Relaxed);
+        
+        // Give threads time to stop
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        
+        eprintln!("[Test] Dual capture received {} samples", samples_received);
+        eprintln!("[Test] Dual capture test passed");
     }
 }

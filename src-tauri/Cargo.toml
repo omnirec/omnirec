@@ -51,6 +51,9 @@ base64 = "0.22"
 # Screen capture using Windows.Graphics.Capture API
 windows-capture = "1"
 
+# Acoustic Echo Cancellation - WebRTC AEC3 port (pure Rust, cross-platform)
+aec3 = "0.1"
+
 # Windows APIs for window enumeration, highlight, and audio
 windows = { version = "0.58", features = [
     "Win32_Foundation",
