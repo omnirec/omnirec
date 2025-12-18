@@ -104,6 +104,9 @@ wayland-protocols-wlr = { version = "0.3", features = ["client"] }
 
 # macOS-specific dependencies
 [target.'cfg(target_os = "macos")'.dependencies]
+# Cocoa for NSWindow transparency
+cocoa = "0.26"
+
 # ScreenCaptureKit bindings for frame capture
 screencapturekit = "0.2"
 

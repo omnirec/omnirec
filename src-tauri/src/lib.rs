@@ -853,12 +853,37 @@ async fn save_theme(
     Ok(())
 }
 
+/// Configure macOS window to have rounded corners.
+#[cfg(target_os = "macos")]
+fn setup_macos_window(app: &tauri::App) {
+    use tauri::Manager;
+    
+    if let Some(window) = app.get_webview_window("main") {
+        use cocoa::appkit::{NSColor, NSWindow};
+        use cocoa::base::nil;
+        
+        let ns_window = window.ns_window().unwrap() as cocoa::base::id;
+        unsafe {
+            ns_window.setBackgroundColor_(NSColor::clearColor(nil));
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn setup_macos_window(_app: &tauri::App) {
+    // No-op on other platforms
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState::new())
+        .setup(|app| {
+            setup_macos_window(app);
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             get_windows,
             get_monitors,

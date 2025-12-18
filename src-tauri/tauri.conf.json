@@ -19,7 +19,10 @@
         "width": 500,
         "height": 650,
         "resizable": false,
-        "decorations": false
+        "maximizable": false,
+        "decorations": false,
+        "transparent": true,
+        "backgroundColor": [0, 0, 0, 0]
       }
     ],
     "security": {

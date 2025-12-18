@@ -1859,13 +1859,14 @@ function getEffectiveTheme(mode: ThemeMode): "light" | "dark" {
 
 // Apply the theme to the document
 function applyTheme(theme: "light" | "dark"): void {
-  const root = document.documentElement;
+  // Apply theme to body (not documentElement/html) to allow transparent window background
+  const body = document.body;
   
   // Remove existing theme classes
-  root.classList.remove("theme-light", "theme-dark");
+  body.classList.remove("theme-light", "theme-dark");
   
   // Add the new theme class
-  root.classList.add(`theme-${theme}`);
+  body.classList.add(`theme-${theme}`);
   
   console.log("[Theme] Applied theme:", theme);
 }

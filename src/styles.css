@@ -1,4 +1,5 @@
 /* ===== CSS Custom Properties - Theme System ===== */
+/* Shared properties on :root - NO background here to allow transparent window */
 :root {
   /* Accent colors (shared between themes) */
   --accent-primary: #3b82f6;
@@ -23,8 +24,9 @@
 }
 
 /* ===== Dark Theme (Default) ===== */
-:root,
-:root.theme-dark {
+/* Theme variables applied to body to keep html/root transparent */
+body,
+body.theme-dark {
   /* Cool gray palette - dark */
   --gray-950: #0a0a0b;
   --gray-900: #131316;
@@ -58,11 +60,10 @@
   --select-arrow-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
 
   color: var(--text-primary);
-  background: linear-gradient(180deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%);
 }
 
 /* ===== Light Theme ===== */
-:root.theme-light {
+body.theme-light {
   /* Cool gray palette - light (inverted) */
   --gray-950: #f8f9fa;
   --gray-900: #f1f3f5;
@@ -97,7 +98,6 @@
   --select-arrow-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%235c6370' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
 
   color: var(--text-primary);
-  background: linear-gradient(135deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%);
 }
 
 * {
@@ -121,22 +121,27 @@ img {
   pointer-events: none;
 }
 
-html, body {
+html,
+body {
   margin: 0;
   padding: 0;
-  height: 100vh;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+}
+
+/* App container with gradient and rounded corners */
+.app-container {
+  height: 100%;
+  border-radius: 10px;
   overflow: hidden;
   background: linear-gradient(135deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%);
+  /* macOS-style window border */
+  border: 0.5px solid rgba(128, 128, 128, 0.4);
+  box-sizing: border-box;
 }
 
-/* Make window draggable by default, except interactive elements */
-body {
-  -webkit-app-region: drag;
-}
-
-button, input, select, textarea, a, .window-list, .display-list, .region-display, .mode-toggle {
-  -webkit-app-region: no-drag;
-}
+/* Window dragging is handled by data-tauri-drag-region attribute in HTML */
 
 /* ===== Close Button ===== */
 .close-btn {
@@ -305,7 +310,6 @@ section {
   overflow-y: auto;
   overflow-x: hidden;
   padding-right: 8px;
-  -webkit-app-region: no-drag;
 }
 
 .config-group {

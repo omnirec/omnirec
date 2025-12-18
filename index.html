@@ -9,10 +9,11 @@
   </head>
 
   <body>
+    <div class="app-container" data-tauri-drag-region>
     <button id="close-btn" class="close-btn" type="button" title="Close">&times;</button>
     <div id="status-overlay" class="status-overlay hidden"></div>
-    <main class="container">
-      <header class="app-header">
+    <main class="container" data-tauri-drag-region>
+      <header class="app-header" data-tauri-drag-region>
         <img src="/src/assets/omnirec-logo-transparent-dark.png" alt="OmniRec" class="app-logo" />
         <span id="app-version" class="app-version"></span>
       </header>
@@ -204,5 +205,6 @@
       </section>
       </div><!-- end capture-ui -->
     </main>
+    </div><!-- end app-container -->
   </body>
 </html>
