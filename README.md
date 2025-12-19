@@ -87,6 +87,26 @@ chmod +x OmniRec-*.AppImage
 # Debian/Ubuntu
 sudo dpkg -i omnirec_*.deb
 ```
+
+## Development
+
+### Prerequisites
+
+- [Node.js](https://nodejs.org/) (LTS recommended)
+- [pnpm](https://pnpm.io/) (optional)
+- [Rust](https://rustup.rs/)
+- [ImageMagick](https://imagemagick.org/script/download.php) (for icon generation)
+
+### Regenerating Icons
+
+To regenerate all application icons from the source SVG (`images/omnirec-icon.svg`):
+
+```bash
+pnpm icons:generate
+```
+
+This script uses ImageMagick to convert the SVG to a high-resolution PNG, then generates all platform-specific icons (Windows .ico, macOS .icns, iOS, Android, and various PNG sizes) using Tauri's built-in icon generator.
+
 ## License
 
 [MIT](LICENSE)
