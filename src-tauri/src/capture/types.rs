@@ -111,8 +111,10 @@ pub struct AudioSample {
     /// Audio data as interleaved f32 samples
     pub data: Vec<f32>,
     /// Sample rate in Hz (e.g., 48000)
+    #[allow(dead_code)]
     pub sample_rate: u32,
     /// Number of audio channels (1 = mono, 2 = stereo)
+    #[allow(dead_code)]
     pub channels: u32,
 }
 

@@ -9,7 +9,7 @@ use capture::{
     list_monitors, list_windows, show_highlight, AudioSource, CaptureRegion, MonitorInfo,
     ThumbnailCapture, ThumbnailResult, WindowInfo, get_backend,
 };
-use config::{AppConfig, AppearanceConfig, AudioConfig, ThemeMode, load_config, save_config as save_config_to_disk, validate_directory};
+use config::{AppConfig, AudioConfig, ThemeMode, load_config, save_config as save_config_to_disk, validate_directory};
 use encoder::ensure_ffmpeg_blocking;
 use state::{OutputFormat, RecordingManager, RecordingResult, RecordingState};
 use std::sync::Arc;
@@ -620,14 +620,9 @@ async fn get_window_thumbnail(window_handle: isize) -> Result<Option<ThumbnailRe
     let backend = get_backend();
     match backend.capture_window_thumbnail(window_handle) {
         Ok(result) => Ok(Some(result.into())),
-        Err(e) => {
-            // Return None for NotImplemented errors (expected on Windows/macOS)
-            // Return error for other failures
-            if matches!(e, capture::CaptureError::NotImplemented(_)) {
-                Ok(None)
-            } else {
-                Ok(None) // Fail gracefully - show placeholder
-            }
+        Err(_) => {
+            // Fail gracefully - show placeholder for any error
+            Ok(None)
         }
     }
 }
@@ -642,12 +637,8 @@ async fn get_display_thumbnail(monitor_id: String) -> Result<Option<ThumbnailRes
         Ok(result) => Ok(Some(result.into())),
         Err(e) => {
             eprintln!("[get_display_thumbnail] Error: {}", e);
-            // Return None for NotImplemented errors (expected on Windows/macOS)
-            if matches!(e, capture::CaptureError::NotImplemented(_)) {
-                Ok(None)
-            } else {
-                Ok(None) // Fail gracefully - show placeholder
-            }
+            // Fail gracefully - show placeholder for any error
+            Ok(None)
         }
     }
 }
@@ -668,12 +659,8 @@ async fn get_region_preview(
         Ok(result) => Ok(Some(result.into())),
         Err(e) => {
             eprintln!("[get_region_preview] Error: {}", e);
-            // Return None for NotImplemented errors (expected on Windows/macOS)
-            if matches!(e, capture::CaptureError::NotImplemented(_)) {
-                Ok(None)
-            } else {
-                Ok(None) // Fail gracefully - show placeholder
-            }
+            // Fail gracefully - show placeholder for any error
+            Ok(None)
         }
     }
 }

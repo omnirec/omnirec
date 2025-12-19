@@ -38,6 +38,7 @@ pub struct VideoEncoder {
     output_path: PathBuf,
     width: u32,
     height: u32,
+    #[allow(dead_code)]
     audio_config: Option<AudioEncoderConfig>,
 }
 
@@ -282,6 +283,7 @@ impl AudioEncoder {
     }
 
     /// Get the output path (for cleanup if encoding is cancelled).
+    #[allow(dead_code)]
     pub fn output_path(&self) -> &PathBuf {
         &self.output_path
     }
@@ -702,10 +704,11 @@ pub fn ensure_ffmpeg_blocking() -> Result<(), String> {
 }
 
 use crate::state::OutputFormat;
+use std::path::Path;
 
 /// Transcode a source MP4 file to the specified output format.
 /// Returns the path to the transcoded file.
-pub fn transcode_video(source_path: &PathBuf, format: OutputFormat) -> Result<PathBuf, String> {
+pub fn transcode_video(source_path: &Path, format: OutputFormat) -> Result<PathBuf, String> {
     // Generate output path with new extension
     let output_path = source_path.with_extension(format.extension());
     
@@ -721,7 +724,7 @@ pub fn transcode_video(source_path: &PathBuf, format: OutputFormat) -> Result<Pa
     match format {
         OutputFormat::Mp4 => {
             // No transcoding needed for MP4
-            return Ok(source_path.clone());
+            return Ok(source_path.to_path_buf());
         }
         OutputFormat::WebM => {
             // VP9 codec with good quality

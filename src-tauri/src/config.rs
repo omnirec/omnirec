@@ -204,13 +204,15 @@ pub fn get_default_output_dir() -> Result<PathBuf, String> {
             let home = user_dirs.home_dir().to_path_buf();
             let videos = home.join("Videos");
             // Try to create Videos directory if it doesn't exist
-            if !videos.exists() {
-                if fs::create_dir_all(&videos).is_ok() {
-                    return videos;
-                }
+            if !videos.exists() && fs::create_dir_all(&videos).is_ok() {
+                return videos;
             }
-            // Fall back to home directory
-            home
+            // Fall back to home directory if Videos exists or creation failed
+            if videos.exists() {
+                videos
+            } else {
+                home
+            }
         });
 
     Ok(output_dir)
@@ -295,10 +297,12 @@ mod tests {
 
     #[test]
     fn test_audio_config_serialization() {
-        let mut config = AudioConfig::default();
-        config.source_id = Some("456".to_string());
-        config.microphone_id = Some("789".to_string());
-        config.echo_cancellation = false;
+        let config = AudioConfig {
+            source_id: Some("456".to_string()),
+            microphone_id: Some("789".to_string()),
+            echo_cancellation: false,
+            ..Default::default()
+        };
         
         let json = serde_json::to_string(&config).unwrap();
         let parsed: AudioConfig = serde_json::from_str(&json).unwrap();
@@ -345,8 +349,9 @@ mod tests {
 
     #[test]
     fn test_appearance_config_serialization() {
-        let mut config = AppearanceConfig::default();
-        config.theme = ThemeMode::Light;
+        let config = AppearanceConfig {
+            theme: ThemeMode::Light,
+        };
         
         let json = serde_json::to_string(&config).unwrap();
         let parsed: AppearanceConfig = serde_json::from_str(&json).unwrap();

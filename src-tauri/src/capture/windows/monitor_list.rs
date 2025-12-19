@@ -107,8 +107,10 @@ fn get_monitor_scale_factor(hmonitor: HMONITOR) -> f64 {
 /// Get friendly display name from device name.
 fn get_display_friendly_name(device_name: &str) -> Option<String> {
     unsafe {
-        let mut device = DISPLAY_DEVICEW::default();
-        device.cb = std::mem::size_of::<DISPLAY_DEVICEW>() as u32;
+        let mut device = DISPLAY_DEVICEW {
+            cb: std::mem::size_of::<DISPLAY_DEVICEW>() as u32,
+            ..Default::default()
+        };
 
         let mut index = 0u32;
         while EnumDisplayDevicesW(None, index, &mut device, 0).as_bool() {
@@ -144,7 +146,7 @@ fn get_display_friendly_name(device_name: &str) -> Option<String> {
 fn format_monitor_name(device_name: &str, is_primary: bool) -> String {
     let suffix = if is_primary { " (Primary)" } else { "" };
     // Extract display number from device name like "\\\\.\\DISPLAY1"
-    if let Some(num) = device_name.chars().filter(|c| c.is_ascii_digit()).collect::<String>().parse::<u32>().ok() {
+    if let Ok(num) = device_name.chars().filter(|c| c.is_ascii_digit()).collect::<String>().parse::<u32>() {
         format!("Display {}{}", num, suffix)
     } else {
         format!("{}{}", device_name, suffix)

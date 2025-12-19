@@ -55,7 +55,7 @@ unsafe extern "system" fn enum_window_callback(hwnd: HWND, lparam: LPARAM) -> BO
 
     // Skip windows that are owned by another window (child windows)
     if let Ok(owner) = GetWindow(hwnd, GW_OWNER) {
-        if owner.0 != std::ptr::null_mut() {
+        if !owner.0.is_null() {
             return BOOL(1);
         }
     }

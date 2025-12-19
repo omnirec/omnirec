@@ -50,14 +50,14 @@ impl CaptureBackend for WindowsBackend {
         &self,
         window_handle: isize,
     ) -> Result<(FrameReceiver, StopHandle), CaptureError> {
-        recorder::start_capture(window_handle).map_err(|e| CaptureError::PlatformError(e))
+        recorder::start_capture(window_handle).map_err(CaptureError::PlatformError)
     }
 
     fn start_region_capture(
         &self,
         region: CaptureRegion,
     ) -> Result<(FrameReceiver, StopHandle), CaptureError> {
-        region::start_region_capture(region).map_err(|e| CaptureError::PlatformError(e))
+        region::start_region_capture(region).map_err(CaptureError::PlatformError)
     }
 
     fn start_display_capture(
@@ -74,7 +74,7 @@ impl CaptureBackend for WindowsBackend {
             width,
             height,
         };
-        region::start_region_capture(region).map_err(|e| CaptureError::PlatformError(e))
+        region::start_region_capture(region).map_err(CaptureError::PlatformError)
     }
 }
 
@@ -150,6 +150,7 @@ impl WindowsBackend {
 }
 
 /// Initialize the audio capture subsystem.
+#[allow(dead_code)]
 pub fn init_audio() -> Result<(), String> {
     audio::init_audio_backend()
 }

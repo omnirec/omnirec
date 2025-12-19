@@ -176,7 +176,7 @@ fn crop_frame(
             output.extend_from_slice(&data[src_start..src_end]);
         } else {
             // Fill with black if out of bounds
-            output.extend(std::iter::repeat(0u8).take(output_row_bytes));
+            output.extend(std::iter::repeat_n(0u8, output_row_bytes));
         }
     }
 

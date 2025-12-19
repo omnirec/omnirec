@@ -1363,6 +1363,7 @@ pub fn start_audio_capture_dual(
 /// Initialize the audio backend.
 ///
 /// For Windows, verifies that COM can be initialized and audio devices are accessible.
+#[allow(dead_code)]
 pub fn init_audio_backend() -> Result<(), String> {
     eprintln!("[Audio] Initializing Windows WASAPI audio backend");
 

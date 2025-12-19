@@ -1,7 +1,7 @@
 //! Recording state management.
 
 use crate::capture::{
-    get_backend, AudioCaptureBackend, AudioSample, CaptureBackend, CapturedFrame, CaptureRegion,
+    get_backend, AudioSample, CaptureBackend, CapturedFrame, CaptureRegion,
 };
 use crate::config::load_config;
 use crate::encoder::{encode_frames, encode_frames_with_audio, AudioEncoderConfig};

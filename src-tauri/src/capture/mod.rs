@@ -18,7 +18,7 @@ pub mod macos;
 // Re-export common types for convenience
 pub use error::{CaptureError, EnumerationError};
 pub use types::{
-    AudioReceiver, AudioSample, AudioSource, AudioSourceType, CapturedFrame, CaptureRegion,
+    AudioReceiver, AudioSample, AudioSource, CapturedFrame, CaptureRegion,
     FrameReceiver, MonitorInfo, StopHandle, WindowInfo,
 };
 // Re-export thumbnail utilities (used by platform implementations)
@@ -88,6 +88,7 @@ pub trait AudioEnumerator: Send + Sync {
 }
 
 /// Trait for audio capture operations.
+#[allow(dead_code)]
 pub trait AudioCaptureBackend: Send + Sync {
     /// Start capturing audio from the specified source.
     ///
