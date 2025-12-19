@@ -34,12 +34,19 @@ This is a Tauri v2 desktop application for high-performance screen/window/region
 ## Development Commands
 
 ```bash
-pnpm tauri dev         # Run development build
-pnpm tauri build       # Production build
+
+# backend commands (run from the src-tauri directory)
+cargo build
 cargo test             # Run Rust tests (from src-tauri/)
 cargo clippy           # Lint Rust code
+
+# general commands
 pnpm build             # Build frontend only
+
+pnpm tauri build       # Production build (rarely needed)
 ```
+
+Never run `pnpm tauri dev` - user will run this manually.
 
 ## Linting Requirements
 
@@ -62,55 +69,12 @@ cd src-picker && cargo test --all-features
 
 The CI workflow enforces these checks on all platforms. Code that passes locally but has linting warnings will fail in CI due to the `-D warnings` flag, which promotes all warnings to errors.
 
-Common clippy issues to watch for:
-- Unused imports or dead code
-- Redundant closures (use function references instead)
-- `&PathBuf` parameters (prefer `&Path`)
-- Comparing pointers with `null` (use `.is_null()`)
-- Field reassignment after `Default::default()` (use struct initialization syntax)
-
 ## Code Guidelines
-
-### Rust (Backend)
-
-- Performance is critical; avoid unnecessary allocations in hot paths
-- Use `Result<T, E>` for fallible operations; avoid `unwrap()` in production code
-- Document Tauri commands with `///` doc comments
-- Keep recording logic in dedicated modules, separate from Tauri bindings
-- Use `tokio` for async operations where appropriate
-
-### TypeScript (Frontend)
-
-- Use strict TypeScript; no `any` types without justification
-- Communicate with backend via `@tauri-apps/api` invoke/events
-- Keep UI responsive; long operations should show progress
-- Handle all error cases from backend commands
 
 ### Cross-Platform
 
-- Test changes on Windows, macOS, and Linux when possible
 - Use conditional compilation (`#[cfg(...)]`) for platform-specific Rust code
 - Abstract platform differences behind common interfaces
-
-## Performance Considerations
-
-- Recording should use minimal CPU; prefer GPU acceleration where available
-- Encoding happens on background threads
-- Frontend updates during recording should be throttled
-- Monitor memory usage; avoid frame buffer accumulation
-
-## Privacy Requirements
-
-- No network calls except user-initiated (e.g., checking for updates if user opts in)
-- No telemetry or analytics
-- All processing happens locally
-- Recordings never leave the user's machine unless they explicitly share
-
-## Testing
-
-- Add unit tests for new Rust functions
-- Test Tauri commands with integration tests
-- Verify recording quality manually on all target platform
 
 ## Documentation and Notes
 
