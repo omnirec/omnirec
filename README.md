@@ -1,281 +1,92 @@
 <picture>
   <!-- <source srcset="images/omnirec-banner-dark.png" media="(prefers-color-scheme: dark)"> -->
   <!-- <source srcset="images/omnirec-banner-white.png" media="(prefers-color-scheme: light)"> -->
-  <img src="images/omnirec-banner.png" alt="OpenCode logo">
+  <img src="images/omnirec-banner.png" alt="OmniRec logo">
 </picture>
 
-A high-performance screen, window, and region recording application built with Tauri. Record and share anything — completely free, no cloud account required.
+<p align="center"><i>The universal screen recorder for every desktop</i></p>
+
+<p align="center">
+  <a href="#"><img src="https://img.shields.io/github/actions/workflow/status/user/omnirec/build.yml?label=build" alt="Build Status"></a>
+  <a href="#"><img src="https://img.shields.io/github/actions/workflow/status/user/omnirec/test.yml?label=tests" alt="Test Status"></a>
+  <a href="#"><img src="https://img.shields.io/github/v/release/user/omnirec" alt="Release"></a>
+  <a href="#"><img src="https://img.shields.io/github/license/user/omnirec" alt="License"></a>
+  <a href="#"><img src="https://img.shields.io/aur/version/omnirec-bin" alt="AUR Version"></a>
+</p>
+
+<picture><img src="images/omnirec-screenshots.gif"></picture>
 
 ---
 
-> **Status**: Early Alpha — Windows, macOS (12.3+), and Linux/Wayland (Hyprland) supported. Core recording functionality works, but many planned features are not yet implemented.
+## Key Features
 
-## Current Features
+- 🖥️ **Universal Capture** — Record any window, entire display, or custom screen region
+- 🔊 **Audio Recording** — Capture system audio, microphone, or both with dual-source mixing
+- 🔇 **Echo Cancellation** — Built-in AEC removes speaker feedback when recording with a microphone
+- 📦 **Multiple Formats** — Export to MP4, WebM, MKV, QuickTime, GIF, APNG, or WebP
+- 🌍 **Cross-Platform** — Works on Windows, macOS (12.3+), and Linux (Hyprland/Wayland)
+- 🔒 **Privacy-First** — All processing happens locally — your recordings never leave your machine
+- 💚 **Free & Open Source** — No subscriptions, no accounts, no limits
 
-- **Window Recording**: Capture any application window
-- **Display Recording**: Capture your entire screen
-- **Region Recording**: Select and record a custom region of your screen
-- **Audio Recording**: Capture system audio or microphone (Windows, macOS 13+, and Linux; dual-source mixing with AEC on Linux only)
-- **Multiple Output Formats**: MP4, WebM, MKV, QuickTime, GIF, APNG, WebP
-- **High Performance**: Native Rust backend with efficient frame pipeline
-- **Cross-Platform**: Windows, macOS (12.3+), and Linux (Hyprland)
-- **No Cloud Required**: All processing happens locally — your recordings stay on your machine
-- **Free & Open Source**: No subscriptions, no accounts, no limits
+## Coming Soon
 
-![Screenshot](images/screenshots.png)
+- 🗣️ **Voice Transcription** — Streaming speech-to-text for automatic captions and searchable recordings
+- ⌨️ **Global Hotkeys** — Start, stop, and pause recordings from anywhere with customizable shortcuts
+- 💻 **Command Line Interface** — Scriptable recording for automation and power users
 
-### Output
+## Use Cases
 
-- **Formats**: MP4 (default), WebM, MKV, QuickTime (.mov), GIF, Animated PNG, Animated WebP
-- **Video**: H.264 encoded at 30 fps
-- **Audio**: AAC encoded (Windows and Linux); dual-source mixing with AEC on Linux
-- **Location**: User's Videos folder (configurable)
-- **Filename**: `recording_YYYY-MM-DD_HHMMSS.<ext>`
+| | Use Case | Description |
+|---|----------|-------------|
+| 📹 | **Record Meetings** | Capture video calls from Zoom, Teams, or Google Meet with system audio and microphone. Echo cancellation prevents feedback when using speakers. |
+| 🎓 | **Create Tutorials** | Record step-by-step walkthroughs of software, websites, or workflows with voiceover narration. |
+| 🎮 | **Capture Gameplay** | Record gaming sessions with system audio for sharing highlights or streaming clips. |
+| 🐛 | **Bug Reporting** | Quickly capture and share screen recordings to demonstrate issues to developers or support teams. |
 
-### Audio Features
+## Supported Platforms
 
-- **System Audio**: Capture audio from applications (Zoom, Teams, media players, etc.) — Windows, macOS 13+, and Linux
-- **Microphone Input**: Record your voice alongside system audio — Windows and Linux
-- **Dual-Source Mixing**: Combine system audio and microphone into a single track (Linux only)
-- **Echo Cancellation (AEC)**: Automatically removes speaker output picked up by the microphone, preventing echo in recordings when using speakers instead of headphones (Linux only)
+| Platform | Version |
+|----------|---------|
+| Windows | 10, 11 |
+| macOS | 12.3+ |
+| Linux | Arch, Debian, Ubuntu, Fedora, and others |
 
-> **Note**: macOS system audio capture requires macOS 13 (Ventura) or later due to ScreenCaptureKit API requirements.
+**Linux Desktop Environments** (Wayland): Hyprland, GNOME, KDE
 
-### Planned Features
+## Installation
 
-See [docs/requirements.md](docs/requirements.md) for the full roadmap, including:
+### Windows
 
-- Pause/Resume recording
-- Microphone capture and dual-source mixing for macOS
-- Dual-source audio mixing for Windows
-- Configurable quality and frame rate
-- Global hotkeys
+Download the latest `.msi` installer from the [Releases](https://github.com/user/omnirec/releases) page.
 
-## Tech Stack
+### macOS
 
-- **Frontend**: Vanilla TypeScript, HTML, CSS
-- **Backend**: Rust + Tauri v2
-- **Capture**:
-  - Windows: [windows-capture](https://crates.io/crates/windows-capture) (Windows.Graphics.Capture API)
-  - macOS: [screencapturekit](https://crates.io/crates/screencapturekit) (ScreenCaptureKit)
-  - Linux: PipeWire + xdg-desktop-portal (video and audio)
-- **Encoding**: [ffmpeg-sidecar](https://crates.io/crates/ffmpeg-sidecar) (auto-downloads FFmpeg)
-- **Build**: Vite
+Download the latest `.dmg` from the [Releases](https://github.com/user/omnirec/releases) page, open it, and drag OmniRec to your Applications folder.
 
-## Prerequisites
+> **Note**: On first launch, grant Screen Recording permission in System Settings > Privacy & Security.
 
-- [Node.js](https://nodejs.org/) (v18+)
-- [pnpm](https://pnpm.io/)
-- [Rust](https://www.rust-lang.org/tools/install)
-- [Tauri Prerequisites](https://tauri.app/v2/start/prerequisites/) (Windows: WebView2, VS Build Tools)
-
-### macOS Requirements
-
-- macOS 12.3 (Monterey) or later for screen/window capture (ScreenCaptureKit requirement)
-- macOS 13 (Ventura) or later for system audio capture
-- Screen Recording permission (granted via System Settings > Privacy & Security)
-
-### Linux/Wayland Additional Requirements
-
-For Linux (Hyprland compositor only):
-
-- Hyprland compositor
-- xdg-desktop-portal
-- PipeWire
-
-## Development Setup
+### Linux (Arch/AUR)
 
 ```bash
-# Install dependencies
-pnpm install
-
-# Run in development mode
-pnpm tauri dev
-
-# Build for production
-pnpm tauri build
-```
-
-## Linux Installation (Hyprland)
-
-### Option A: Install from AUR (Recommended)
-
-For Arch Linux users, install from the AUR:
-
-```bash
-# Using an AUR helper (e.g., yay, paru)
+# Using an AUR helper
 yay -S omnirec-bin
 
-# Or manually
-git clone https://aur.archlinux.org/omnirec-bin.git
-cd omnirec-bin
-makepkg -si
+# Or with paru
+paru -S omnirec-bin
 ```
 
-After installation, configure portal routing for Hyprland:
+### Linux (Other Distros)
+
+Download the latest `.AppImage` or `.deb` from the [Releases](https://github.com/user/omnirec/releases) page.
 
 ```bash
-mkdir -p ~/.config/xdg-desktop-portal
-echo -e '[preferred]\ndefault=hyprland;gtk' > ~/.config/xdg-desktop-portal/hyprland-portals.conf
-systemctl --user restart xdg-desktop-portal
+# AppImage
+chmod +x OmniRec-*.AppImage
+./OmniRec-*.AppImage
+
+# Debian/Ubuntu
+sudo dpkg -i omnirec_*.deb
 ```
-
-### Option B: Build from Source
-
-The Linux version requires a separate picker service that integrates with xdg-desktop-portal. This allows the app to capture screens without showing the default portal picker dialog.
-
-#### 1. Build the Picker Service
-
-```bash
-cd src-picker
-cargo build --release
-```
-
-#### 2. Install the Picker Binary
-
-```bash
-# System-wide (requires root)
-sudo cp target/release/omnirec-picker /usr/local/bin/
-
-# Or user-local
-mkdir -p ~/.local/bin
-cp target/release/omnirec-picker ~/.local/bin/
-```
-
-#### 3. Install Portal Configuration
-
-```bash
-# Portal registration (requires root)
-sudo cp resources/linux/omnirec.portal /usr/share/xdg-desktop-portal/portals/
-```
-
-#### 4. Configure Portal Routing for Hyprland
-
-```bash
-mkdir -p ~/.config/xdg-desktop-portal
-cp resources/linux/hyprland-portals.conf ~/.config/xdg-desktop-portal/
-```
-
-#### 5. Install and Enable the Systemd Service
-
-```bash
-mkdir -p ~/.config/systemd/user
-cp resources/linux/omnirec-picker.service ~/.config/systemd/user/
-
-# If installed to ~/.local/bin, edit the service file:
-# Change ExecStart=%h/.local/bin/omnirec-picker
-
-systemctl --user daemon-reload
-systemctl --user enable --now omnirec-picker
-```
-
-#### 6. Restart xdg-desktop-portal
-
-```bash
-systemctl --user restart xdg-desktop-portal
-```
-
-### Verifying the Installation
-
-Check that the picker service is running:
-
-```bash
-systemctl --user status omnirec-picker
-```
-
-Check that it registered on D-Bus:
-
-```bash
-busctl --user list | grep omnirec
-```
-
-### Troubleshooting
-
-**Picker service won't start:**
-- Check logs: `journalctl --user -u omnirec-picker -f`
-- Ensure `HYPRLAND_INSTANCE_SIGNATURE` is set (only works under Hyprland)
-
-**Portal still shows system picker:**
-- Verify `hyprland-portals.conf` is in place
-- Restart xdg-desktop-portal: `systemctl --user restart xdg-desktop-portal`
-- Check portal config: `cat ~/.config/xdg-desktop-portal/hyprland-portals.conf`
-
-**IPC connection failed:**
-- Ensure the main app is running before initiating capture
-- Check socket exists: `ls $XDG_RUNTIME_DIR/omnirec/`
-
-## Recommended IDE Setup
-
-- [VS Code](https://code.visualstudio.com/)
-- [Tauri Extension](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode)
-- [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
-
-## Project Structure
-
-```
-omnirec/
-├── src/                    # Frontend TypeScript/HTML/CSS
-│   ├── main.ts             # Main application logic
-│   ├── selection-overlay.ts # Region selection UI
-│   └── styles.css          # App styles (dark mode support)
-├── src-tauri/              # Rust backend
-│   └── src/
-│       ├── lib.rs          # Tauri commands
-│       ├── state.rs        # Recording state management
-│       ├── capture/        # Window/region capture modules
-│       │   ├── windows/    # Windows-specific capture
-│       │   ├── linux/      # Linux/Wayland capture
-│       │   └── macos/      # macOS ScreenCaptureKit capture
-│       └── encoder/        # FFmpeg encoding
-├── src-picker/             # Linux portal picker service
-│   └── src/
-│       ├── main.rs         # D-Bus service entry point
-│       ├── portal_backend.rs # ScreenCast interface
-│       └── ipc_client.rs   # IPC to main app
-├── resources/
-│   └── linux/              # Linux installation files
-├── docs/                   # Documentation
-│   └── requirements.md     # Full project requirements
-├── openspec/               # Project specifications
-└── package.json            # Node.js dependencies
-```
-
-## Documentation
-
-- [Requirements](docs/requirements.md) - Full project requirements and specifications
-
-## AUR Publishing (Maintainers)
-
-To publish a new version to the AUR:
-
-1. Update version in `packaging/aur/PKGBUILD`:
-   ```bash
-   pkgver=X.Y.Z
-   pkgrel=1
-   ```
-
-2. Update the sha256sum for the release tarball:
-   ```bash
-   # Download the release and compute checksum
-   sha256sum omnirec-X.Y.Z-linux-x86_64.tar.gz
-   ```
-
-3. Generate `.SRCINFO`:
-   ```bash
-   cd packaging/aur
-   makepkg --printsrcinfo > .SRCINFO
-   ```
-
-4. Clone the AUR repository and update:
-   ```bash
-   git clone ssh://aur@aur.archlinux.org/omnirec-bin.git aur-omnirec-bin
-   cp packaging/aur/{PKGBUILD,omnirec.desktop,omnirec-bin.install,.SRCINFO} aur-omnirec-bin/
-   cd aur-omnirec-bin
-   git add -A
-   git commit -m "Update to vX.Y.Z"
-   git push
-   ```
-
 ## License
 
 [MIT](LICENSE)
