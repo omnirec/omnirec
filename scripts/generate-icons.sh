@@ -14,6 +14,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SOURCE_SVG="$PROJECT_ROOT/images/omnirec-icon.svg"
 TEMP_PNG="$PROJECT_ROOT/images/omnirec-icon-temp.png"
 ICON_OUTPUT_DIR="$PROJECT_ROOT/src-tauri/icons"
+ASSET_ICON="$PROJECT_ROOT/src/assets/omnirec-icon.png"
 
 # Check for ImageMagick
 if ! command -v magick &> /dev/null; then
@@ -29,13 +30,16 @@ if [[ ! -f "$SOURCE_SVG" ]]; then
 fi
 
 echo "Converting SVG to PNG..."
-magick "$SOURCE_SVG" -resize 1024x1024 "$TEMP_PNG"
+magick -background none "$SOURCE_SVG" -resize 1024x1024 "$TEMP_PNG"
 
 echo "Generating Tauri icons..."
 cd "$PROJECT_ROOT"
 pnpm tauri icon "$TEMP_PNG" --output "$ICON_OUTPUT_DIR"
 
+echo "Generating frontend asset icon..."
+magick -background none "$SOURCE_SVG" -resize 512x512 "$ASSET_ICON"
+
 echo "Cleaning up temporary file..."
 rm -f "$TEMP_PNG"
 
-echo "Done! Icons generated in $ICON_OUTPUT_DIR"
+echo "Done! Icons generated in $ICON_OUTPUT_DIR and $ASSET_ICON"
