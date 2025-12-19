@@ -41,6 +41,34 @@ cargo clippy           # Lint Rust code
 pnpm build             # Build frontend only
 ```
 
+## Linting Requirements
+
+**All code changes must pass strict linting before being committed.** Run these commands and fix any errors:
+
+```bash
+# TypeScript type checking
+pnpm exec tsc --noEmit
+
+# Rust linting (strict mode - warnings are errors)
+cd src-tauri && cargo clippy --all-targets --all-features -- -D warnings
+
+# Rust tests
+cd src-tauri && cargo test --all-features
+
+# Linux-only: Picker linting and tests
+cd src-picker && cargo clippy --all-targets --all-features -- -D warnings
+cd src-picker && cargo test --all-features
+```
+
+The CI workflow enforces these checks on all platforms. Code that passes locally but has linting warnings will fail in CI due to the `-D warnings` flag, which promotes all warnings to errors.
+
+Common clippy issues to watch for:
+- Unused imports or dead code
+- Redundant closures (use function references instead)
+- `&PathBuf` parameters (prefer `&Path`)
+- Comparing pointers with `null` (use `.is_null()`)
+- Field reassignment after `Default::default()` (use struct initialization syntax)
+
 ## Code Guidelines
 
 ### Rust (Backend)
