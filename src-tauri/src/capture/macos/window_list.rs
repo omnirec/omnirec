@@ -44,7 +44,7 @@ fn get_window_bounds(window_id: CGWindowID) -> Option<WindowBounds> {
         Some(window_id),
     )?;
 
-    if info_array.len() == 0 {
+    if info_array.is_empty() {
         return None;
     }
 
@@ -198,8 +198,8 @@ pub fn list_windows() -> Vec<WindowInfo> {
             .unwrap_or(WindowBounds {
                 x: 0,
                 y: 0,
-                width: window.width as u32,
-                height: window.height as u32,
+                width: window.width,
+                height: window.height,
             });
 
         windows.push(WindowInfo {

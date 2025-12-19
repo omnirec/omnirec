@@ -875,6 +875,7 @@ async fn save_theme(
 
 /// Configure macOS window to have rounded corners.
 #[cfg(target_os = "macos")]
+#[allow(deprecated)]
 fn setup_macos_window(app: &tauri::App) {
     use tauri::Manager;
     

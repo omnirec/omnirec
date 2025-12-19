@@ -336,6 +336,7 @@ impl MacOSBackend {
 }
 
 /// Initialize the audio capture subsystem.
+#[allow(dead_code)]
 pub fn init_audio() -> Result<(), String> {
     audio::init_audio_backend()
 }

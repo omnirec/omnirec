@@ -558,6 +558,7 @@ pub fn start_audio_capture(_source_id: &str) -> Result<(AudioReceiver, StopHandl
 ///
 /// This is the preferred API for macOS since ScreenCaptureKit captures
 /// all system audio globally.
+#[allow(dead_code)]
 pub fn start_system_audio_capture() -> Result<(AudioReceiver, StopHandle), CaptureError> {
     start_audio_capture("system")
 }
@@ -565,6 +566,7 @@ pub fn start_system_audio_capture() -> Result<(AudioReceiver, StopHandle), Captu
 /// Initialize the audio backend.
 ///
 /// Performs one-time setup and logs available audio devices.
+#[allow(dead_code)]
 pub fn init_audio_backend() -> Result<(), String> {
     eprintln!("[Audio] Initializing macOS audio backend");
 
