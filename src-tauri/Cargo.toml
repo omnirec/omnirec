@@ -87,8 +87,10 @@ aec3 = "0.1"
 hyprland = "0.4.0-beta.3"
 
 # PipeWire for video capture
-# Pin to 0.7 to avoid libspa 0.8 compatibility issues with newer PipeWire
+# Pin to 0.7 to avoid libspa 0.8 compatibility issues with system PipeWire headers
 pipewire = "0.7"
+libspa = "0.7"
+libspa-sys = "0.7"
 
 # Logging
 tracing = "0.1"
