@@ -2,13 +2,122 @@
 //!
 //! Uses SCShareableContent for window enumeration, which provides accurate
 //! window information once screen recording permission is granted.
+//! Window bounds are obtained via Core Graphics CGWindowListCopyWindowInfo
+//! since the screencapturekit crate doesn't expose position data.
 
 use crate::capture::types::WindowInfo;
+use core_foundation::base::TCFType;
+use core_foundation::dictionary::CFDictionaryRef;
+use core_foundation::number::CFNumber;
+use core_foundation::string::CFString;
+use core_graphics::display::{
+    kCGWindowListOptionIncludingWindow, CGDisplay, CGWindowID,
+};
 use screencapturekit::sc_shareable_content::SCShareableContent;
+use std::collections::HashMap;
+
+// External function for raw array access
+extern "C" {
+    fn CFArrayGetValueAtIndex(
+        theArray: core_foundation::array::CFArrayRef,
+        idx: isize,
+    ) -> *const std::ffi::c_void;
+}
+
+/// Window bounds from Core Graphics
+#[derive(Debug, Clone, Copy, Default)]
+struct WindowBounds {
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+}
+
+/// Get window bounds for a specific window ID using Core Graphics.
+///
+/// This uses CGWindowListCopyWindowInfo to get the kCGWindowBounds dictionary
+/// which contains X, Y, Width, Height of the window frame.
+fn get_window_bounds(window_id: CGWindowID) -> Option<WindowBounds> {
+    // Get window info for this specific window
+    let info_array = CGDisplay::window_list_info(
+        kCGWindowListOptionIncludingWindow,
+        Some(window_id),
+    )?;
+
+    if info_array.len() == 0 {
+        return None;
+    }
+
+    // Get the first (and only) window info dictionary using raw CFArray access
+    let dict_ref: CFDictionaryRef = unsafe {
+        let ptr = CFArrayGetValueAtIndex(info_array.as_concrete_TypeRef(), 0);
+        if ptr.is_null() {
+            return None;
+        }
+        ptr as CFDictionaryRef
+    };
+
+    // Keys for window bounds dictionary
+    let bounds_key = CFString::new("kCGWindowBounds");
+
+    // Get the bounds dictionary
+    let bounds_value = unsafe {
+        let mut value: *const std::ffi::c_void = std::ptr::null();
+        if core_foundation::dictionary::CFDictionaryGetValueIfPresent(
+            dict_ref,
+            bounds_key.as_concrete_TypeRef() as *const _,
+            &mut value,
+        ) == 0
+        {
+            return None;
+        }
+        value as CFDictionaryRef
+    };
+
+    // Extract X, Y, Width, Height from bounds dictionary
+    let x = get_number_from_dict(bounds_value, "X").unwrap_or(0.0) as i32;
+    let y = get_number_from_dict(bounds_value, "Y").unwrap_or(0.0) as i32;
+    let width = get_number_from_dict(bounds_value, "Width").unwrap_or(0.0) as u32;
+    let height = get_number_from_dict(bounds_value, "Height").unwrap_or(0.0) as u32;
+
+    Some(WindowBounds { x, y, width, height })
+}
+
+/// Helper to extract a number from a CFDictionary
+fn get_number_from_dict(dict: CFDictionaryRef, key: &str) -> Option<f64> {
+    let cf_key = CFString::new(key);
+    unsafe {
+        let mut value: *const std::ffi::c_void = std::ptr::null();
+        if core_foundation::dictionary::CFDictionaryGetValueIfPresent(
+            dict,
+            cf_key.as_concrete_TypeRef() as *const _,
+            &mut value,
+        ) == 0
+        {
+            return None;
+        }
+        let cf_number = CFNumber::wrap_under_get_rule(value as _);
+        cf_number.to_f64()
+    }
+}
+
+/// Build a map of window ID to bounds for efficient lookup
+fn build_window_bounds_map(window_ids: &[CGWindowID]) -> HashMap<CGWindowID, WindowBounds> {
+    let mut map = HashMap::new();
+    for &window_id in window_ids {
+        if let Some(bounds) = get_window_bounds(window_id) {
+            map.insert(window_id, bounds);
+        }
+    }
+    map
+}
 
 /// List all visible, capturable windows on macOS.
 ///
 /// Uses ScreenCaptureKit's SCShareableContent for accurate window enumeration.
+/// Window positions are obtained from Core Graphics since screencapturekit
+/// doesn't expose position data.
+///
 /// This requires screen recording permission to return complete results.
 ///
 /// Note: Without screen recording permission, this may return an empty list
@@ -24,6 +133,16 @@ pub fn list_windows() -> Vec<WindowInfo> {
             return Vec::new();
         }
     };
+
+    // Collect window IDs first to batch-fetch bounds
+    let window_ids: Vec<CGWindowID> = content
+        .windows
+        .iter()
+        .map(|w| w.window_id)
+        .collect();
+
+    // Get window bounds from Core Graphics
+    let bounds_map = build_window_bounds_map(&window_ids);
 
     let mut windows = Vec::new();
 
@@ -72,16 +191,25 @@ pub fn list_windows() -> Vec<WindowInfo> {
             continue;
         }
 
+        // Get bounds from Core Graphics, fallback to ScreenCaptureKit dimensions
+        let bounds = bounds_map
+            .get(&window.window_id)
+            .copied()
+            .unwrap_or(WindowBounds {
+                x: 0,
+                y: 0,
+                width: window.width as u32,
+                height: window.height as u32,
+            });
+
         windows.push(WindowInfo {
             handle: window.window_id as isize,
             title,
             process_name,
-            // Note: SCWindow doesn't expose x/y position in screencapturekit 0.2.x
-            // Window position isn't needed for capture (CGWindowListCreateImage uses window_id)
-            x: 0,
-            y: 0,
-            width: window.width as u32,
-            height: window.height as u32,
+            x: bounds.x,
+            y: bounds.y,
+            width: bounds.width,
+            height: bounds.height,
         });
     }
 
