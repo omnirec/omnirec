@@ -34,7 +34,7 @@ jobs:
             libclang-dev
 
       - name: Setup Rust toolchain
-        uses: dtolnay/rust-action@stable
+        uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
 
