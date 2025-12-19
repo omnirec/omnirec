@@ -7,11 +7,11 @@
 <p align="center"><i>The universal screen recorder for every desktop</i></p>
 
 <p align="center">
-  <a href="#"><img src="https://img.shields.io/github/actions/workflow/status/user/omnirec/build.yml?label=build" alt="Build Status"></a>
-  <a href="#"><img src="https://img.shields.io/github/actions/workflow/status/user/omnirec/test.yml?label=tests" alt="Test Status"></a>
-  <a href="#"><img src="https://img.shields.io/github/v/release/user/omnirec" alt="Release"></a>
-  <a href="#"><img src="https://img.shields.io/github/license/user/omnirec" alt="License"></a>
-  <a href="#"><img src="https://img.shields.io/aur/version/omnirec-bin" alt="AUR Version"></a>
+  <a href="https://github.com/omnirec/omnirec/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/omnirec/omnirec/ci.yml?branch=master&label=build" alt="Build Status"></a>
+  <a href="https://github.com/omnirec/omnirec/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/omnirec/omnirec/ci.yml?branch=master&label=tests" alt="Test Status"></a>
+  <a href="https://github.com/omnirec/omnirec/releases"><img src="https://img.shields.io/github/v/release/omnirec/omnirec" alt="Release"></a>
+  <a href="https://github.com/omnirec/omnirec/blob/master/LICENSE"><img src="https://img.shields.io/github/license/omnirec/omnirec" alt="License"></a>
+  <a href="https://aur.archlinux.org/packages/omnirec-bin"><img src="https://img.shields.io/aur/version/omnirec-bin" alt="AUR Version"></a>
 </p>
 
 <picture><img src="images/omnirec-screenshots.gif"></picture>
@@ -57,11 +57,11 @@
 
 ### Windows
 
-Download the latest `.msi` installer from the [Releases](https://github.com/user/omnirec/releases) page.
+Download the latest `.msi` installer from the [Releases](https://github.com/omnirec/omnirec/releases) page.
 
 ### macOS
 
-Download the latest `.dmg` from the [Releases](https://github.com/user/omnirec/releases) page, open it, and drag OmniRec to your Applications folder.
+Download the latest `.dmg` from the [Releases](https://github.com/omnirec/omnirec/releases) page, open it, and drag OmniRec to your Applications folder.
 
 > **Note**: On first launch, grant Screen Recording permission in System Settings > Privacy & Security.
 
@@ -77,7 +77,7 @@ paru -S omnirec-bin
 
 ### Linux (Other Distros)
 
-Download the latest `.AppImage` or `.deb` from the [Releases](https://github.com/user/omnirec/releases) page.
+Download the latest `.AppImage` or `.deb` from the [Releases](https://github.com/omnirec/omnirec/releases) page.
 
 ```bash
 # AppImage
