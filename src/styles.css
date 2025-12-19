@@ -128,6 +128,9 @@ body {
   height: 100%;
   background: transparent;
   overflow: hidden;
+  /* Ensure no browser-default borders or outlines */
+  border: none;
+  outline: none;
 }
 
 /* App container with gradient and rounded corners */
