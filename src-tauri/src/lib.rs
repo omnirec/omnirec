@@ -458,7 +458,7 @@ async fn configure_region_selector_window(window_label: String) -> Result<(), St
     // Execute commands via hyprctl
     for rule in rules {
         let output = std::process::Command::new("hyprctl")
-            .args(&["keyword", "windowrulev2", rule])
+            .args(["keyword", "windowrulev2", rule])
             .output();
             
         match output {

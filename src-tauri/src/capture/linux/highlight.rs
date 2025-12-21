@@ -74,8 +74,8 @@ fn get_hyprland_monitors() -> Vec<HyprMonitorInfo> {
         Ok(monitors) => {
             monitors.iter().map(|m| HyprMonitorInfo {
                 name: m.name.clone(),
-                x: m.x as i32,
-                y: m.y as i32,
+                x: m.x,
+                y: m.y,
                 width: m.width as i32,
                 height: m.height as i32,
                 scale: m.scale as f64,

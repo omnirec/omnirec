@@ -190,7 +190,7 @@ impl WindowEnumerator for LinuxBackend {
             let scale = monitors.as_ref()
                 .and_then(|m| {
                     client.monitor.and_then(|client_mon_id| {
-                        m.iter().find(|mon| mon.id as i128 == client_mon_id)
+                        m.iter().find(|mon| mon.id == client_mon_id)
                     })
                 })
                 .map(|mon| mon.scale as f64)
@@ -243,8 +243,8 @@ impl MonitorEnumerator for LinuxBackend {
                 } else {
                     format!("{} ({})", monitor.name, monitor.description)
                 },
-                x: monitor.x as i32,
-                y: monitor.y as i32,
+                x: monitor.x,
+                y: monitor.y,
                 width: monitor.width as u32,
                 height: monitor.height as u32,
                 is_primary: monitor.focused,
@@ -285,7 +285,7 @@ impl CaptureBackend for LinuxBackend {
             let rt = tokio::runtime::Handle::current();
             let portal_client = portal_client::PortalClient::new(ipc_state);
             rt.block_on(portal_client.request_window_capture(&window_address))
-        }).map_err(|e| CaptureError::PlatformError(e))?;
+        }).map_err(CaptureError::PlatformError)?;
         
         eprintln!("[Linux] Portal returned node ID {} for window capture", stream.node_id);
         
@@ -295,7 +295,7 @@ impl CaptureBackend for LinuxBackend {
         
         // Start PipeWire capture
         pipewire_capture::start_pipewire_capture(stream.node_id, width, height)
-            .map_err(|e| CaptureError::PlatformError(e))
+            .map_err(CaptureError::PlatformError)
     }
 
     fn start_region_capture(
@@ -367,7 +367,7 @@ impl CaptureBackend for LinuxBackend {
                 region_width,
                 region_height,
             ))
-        }).map_err(|e| CaptureError::PlatformError(e))?;
+        }).map_err(CaptureError::PlatformError)?;
         
         eprintln!("[Linux] Portal returned node ID {} for region capture", stream.node_id);
         
@@ -394,7 +394,7 @@ impl CaptureBackend for LinuxBackend {
                 capture_width,
                 capture_height,
             )
-            .map_err(|e| CaptureError::PlatformError(e))
+            .map_err(CaptureError::PlatformError)
         } else {
             eprintln!("[Linux] Portal provided full monitor stream - will crop in app");
             
@@ -424,7 +424,7 @@ impl CaptureBackend for LinuxBackend {
                 capture_height,
                 Some(crop_region),
             )
-            .map_err(|e| CaptureError::PlatformError(e))
+            .map_err(CaptureError::PlatformError)
         }
     }
 
@@ -447,7 +447,7 @@ impl CaptureBackend for LinuxBackend {
             let rt = tokio::runtime::Handle::current();
             let portal_client = portal_client::PortalClient::new(ipc_state);
             rt.block_on(portal_client.request_monitor_capture(&monitor_id_clone))
-        }).map_err(|e| CaptureError::PlatformError(e))?;
+        }).map_err(CaptureError::PlatformError)?;
         
         eprintln!("[Linux] Portal returned node ID {} for display capture", stream.node_id);
         
@@ -458,7 +458,7 @@ impl CaptureBackend for LinuxBackend {
         
         // Start PipeWire capture
         pipewire_capture::start_pipewire_capture(stream.node_id, capture_width, capture_height)
-            .map_err(|e| CaptureError::PlatformError(e))
+            .map_err(CaptureError::PlatformError)
     }
 }
 

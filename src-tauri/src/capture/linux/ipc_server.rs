@@ -57,15 +57,10 @@ pub enum IpcResponse {
 }
 
 /// Shared state for the IPC server.
+#[derive(Default)]
 pub struct IpcServerState {
     /// Current capture selection (set by UI before recording starts)
     pub selection: Option<CaptureSelection>,
-}
-
-impl Default for IpcServerState {
-    fn default() -> Self {
-        Self { selection: None }
-    }
 }
 
 /// Get the IPC socket path.

@@ -57,8 +57,8 @@ fn find_monitor_for_window(window_x: i32, window_y: i32) -> Option<String> {
     let monitors = Monitors::get().ok()?;
     
     for monitor in monitors.iter() {
-        let mon_x = monitor.x as i32;
-        let mon_y = monitor.y as i32;
+        let mon_x = monitor.x;
+        let mon_y = monitor.y;
         // Use logical dimensions for comparison (window coords are logical)
         let mon_width = (monitor.width as f64 / monitor.scale as f64).round() as i32;
         let mon_height = (monitor.height as f64 / monitor.scale as f64).round() as i32;
@@ -79,7 +79,7 @@ fn get_monitor_info(monitor_name: &str) -> Option<(i32, i32, u32, u32, f64)> {
     let monitors = Monitors::get().ok()?;
     monitors.iter()
         .find(|m| m.name == monitor_name)
-        .map(|m| (m.x as i32, m.y as i32, m.width as u32, m.height as u32, m.scale as f64))
+        .map(|m| (m.x, m.y, m.width as u32, m.height as u32, m.scale as f64))
 }
 
 /// Linux thumbnail capture implementation using wlr-screencopy.
@@ -127,7 +127,7 @@ impl ThumbnailCapture for LinuxThumbnailCapture {
         
         // Capture the output
         let frame = screencopy::capture_output(&monitor_name)
-            .map_err(|e| CaptureError::PlatformError(e))?;
+            .map_err(CaptureError::PlatformError)?;
         
         // Calculate window position relative to monitor in physical pixels
         // Window coordinates from Hyprland are in logical space
@@ -165,7 +165,7 @@ impl ThumbnailCapture for LinuxThumbnailCapture {
             THUMBNAIL_MAX_WIDTH,
             THUMBNAIL_MAX_HEIGHT,
         )
-        .map_err(|e| CaptureError::PlatformError(e))?;
+        .map_err(CaptureError::PlatformError)?;
         
         Ok(ThumbnailResult {
             data: base64_data,
@@ -177,7 +177,7 @@ impl ThumbnailCapture for LinuxThumbnailCapture {
     fn capture_display_thumbnail(&self, monitor_id: &str) -> Result<ThumbnailResult, CaptureError> {
         // Capture the output directly via screencopy
         let frame = screencopy::capture_output(monitor_id)
-            .map_err(|e| CaptureError::PlatformError(e))?;
+            .map_err(CaptureError::PlatformError)?;
 
         // Convert to thumbnail
         let (base64_data, thumb_width, thumb_height) = bgra_to_jpeg_thumbnail(
@@ -187,7 +187,7 @@ impl ThumbnailCapture for LinuxThumbnailCapture {
             THUMBNAIL_MAX_WIDTH,
             THUMBNAIL_MAX_HEIGHT,
         )
-        .map_err(|e| CaptureError::PlatformError(e))?;
+        .map_err(CaptureError::PlatformError)?;
 
         Ok(ThumbnailResult {
             data: base64_data,
@@ -219,7 +219,7 @@ impl ThumbnailCapture for LinuxThumbnailCapture {
 
         // Capture the output via screencopy (returns physical pixels)
         let frame = screencopy::capture_output(monitor_id)
-            .map_err(|e| CaptureError::PlatformError(e))?;
+            .map_err(CaptureError::PlatformError)?;
 
         // Region coordinates from frontend are in LOGICAL pixels (from Hyprland)
         // Screencopy capture is in PHYSICAL pixels
@@ -252,7 +252,7 @@ impl ThumbnailCapture for LinuxThumbnailCapture {
             PREVIEW_MAX_WIDTH,
             PREVIEW_MAX_HEIGHT,
         )
-        .map_err(|e| CaptureError::PlatformError(e))?;
+        .map_err(CaptureError::PlatformError)?;
 
         Ok(ThumbnailResult {
             data: base64_data,

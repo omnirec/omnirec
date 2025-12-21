@@ -229,6 +229,7 @@ pub struct PipeWireAudioBackend {
     /// Thread handle
     _thread_handle: JoinHandle<()>,
     /// Current sample rate
+    #[allow(dead_code)]
     sample_rate: Arc<Mutex<u32>>,
     /// Async sender for audio samples (created per capture session)
     audio_tx: Arc<Mutex<Option<mpsc::Sender<AudioSample>>>>,
@@ -297,6 +298,7 @@ impl PipeWireAudioBackend {
     }
 
     /// Get current sample rate.
+    #[allow(dead_code)]
     pub fn sample_rate(&self) -> u32 {
         *self.sample_rate.lock().unwrap()
     }
@@ -386,6 +388,7 @@ impl PipeWireAudioBackend {
     /// Start audio capture from the specified source (backward compatible).
     ///
     /// Returns an audio sample receiver and stop handle.
+    #[allow(dead_code)]
     pub fn start_capture(&self, source_id: &str) -> Result<(AudioReceiver, StopHandle), CaptureError> {
         // Determine if this is a system audio source or microphone
         let is_output = {
@@ -845,6 +848,7 @@ pub fn list_audio_sources() -> Result<Vec<AudioSource>, EnumerationError> {
 }
 
 /// Start audio capture from the specified source (backward compatible).
+#[allow(dead_code)]
 pub fn start_audio_capture(source_id: &str) -> Result<(AudioReceiver, StopHandle), CaptureError> {
     let backend = get_audio_backend().ok_or_else(|| {
         CaptureError::AudioError("Audio backend not initialized".to_string())

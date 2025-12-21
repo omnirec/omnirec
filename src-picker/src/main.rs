@@ -211,8 +211,8 @@ async fn main() -> ExitCode {
                 }
                 "window" => {
                     // Parse our source_id (Hyprland window address like "0x55df589f63d0")
-                    let hyprland_addr = if source_id.starts_with("0x") {
-                        u64::from_str_radix(&source_id[2..], 16).unwrap_or(0)
+                    let hyprland_addr = if let Some(stripped) = source_id.strip_prefix("0x") {
+                        u64::from_str_radix(stripped, 16).unwrap_or(0)
                     } else {
                         source_id.parse::<u64>().unwrap_or(0)
                     };

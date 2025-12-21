@@ -544,11 +544,11 @@ fn crop_frame_data(frame_data: &[u8], full_width: u32, full_height: u32, crop: C
     
     // Log if we had to clamp the region
     static LOGGED_CLAMPING: AtomicBool = AtomicBool::new(false);
-    if !LOGGED_CLAMPING.swap(true, Ordering::Relaxed) {
-        if actual_crop_width != crop.width || actual_crop_height != crop.height {
-            eprintln!("[PipeWire] Warning: crop region clamped from {}x{} to {}x{}", 
-                crop.width, crop.height, actual_crop_width, actual_crop_height);
-        }
+    if !LOGGED_CLAMPING.swap(true, Ordering::Relaxed)
+        && (actual_crop_width != crop.width || actual_crop_height != crop.height)
+    {
+        eprintln!("[PipeWire] Warning: crop region clamped from {}x{} to {}x{}", 
+            crop.width, crop.height, actual_crop_width, actual_crop_height);
     }
     
     let mut cropped = Vec::with_capacity((actual_crop_width * actual_crop_height * bytes_per_pixel) as usize);
