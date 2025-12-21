@@ -37,7 +37,7 @@
 ## Use Cases
 
 | Use Case | Description |
-|---|----------|-------------|
+|----------|-------------|
 | **Record Meetings** | Capture video calls from Zoom, Teams, or Google Meet with system audio and microphone. Echo cancellation prevents feedback when using speakers. |
 | **Create Tutorials** | Record step-by-step walkthroughs of software, websites, or workflows with voiceover narration. |
 | **Capture Gameplay** | Record gaming sessions with system audio for sharing highlights or streaming clips. |
