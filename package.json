@@ -8,7 +8,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "icons:generate": "bash scripts/generate-icons.sh"
+    "icons:generate": "bash scripts/generate-icons.sh",
+    "version:set": "bash scripts/set-version.sh"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
