@@ -3130,7 +3130,7 @@ dependencies = [
 
 [[package]]
 name = "omnirec"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "aec3",
  "ashpd 0.9.2",

@@ -1,5 +1,5 @@
 # Maintainer: OmniRec Team <maintainer@omnirec.app>
-pkgname=omnirec-bin
+pkgname=omnirec
 pkgver=0.1.2
 pkgrel=1
 pkgdesc="High-performance screen, window, and region recording application"
@@ -18,9 +18,9 @@ optdepends=(
     'xdg-desktop-portal-kde: Portal backend for KDE Plasma'
     'xdg-desktop-portal-wlr: Portal backend for wlroots-based compositors'
 )
-provides=('omnirec')
-conflicts=('omnirec' 'omnirec-git')
-install=omnirec-bin.install
+conflicts=('omnirec-bin' 'omnirec-git')
+install=omnirec.install
+options=('!debug')
 source=(
     "omnirec-${pkgver}.tar.gz::${url}/releases/download/v${pkgver}/omnirec-${pkgver}-linux-x86_64.tar.gz"
     "omnirec.desktop"
@@ -31,7 +31,7 @@ sha256sums=(
 )
 
 package() {
-    cd "${srcdir}"
+    cd "${srcdir}/omnirec-${pkgver}-linux-x86_64"
 
     # Install main binary
     install -Dm755 "omnirec" "${pkgdir}/usr/bin/omnirec"
@@ -39,8 +39,8 @@ package() {
     # Install picker binary
     install -Dm755 "omnirec-picker" "${pkgdir}/usr/bin/omnirec-picker"
 
-    # Install desktop entry
-    install -Dm644 "${srcdir}/omnirec.desktop" "${pkgdir}/usr/share/applications/omnirec.desktop"
+    # Install desktop entry (from packaging dir, not archive)
+    install -Dm644 "../omnirec.desktop" "${pkgdir}/usr/share/applications/omnirec.desktop"
 
     # Install icons
     install -Dm644 "icons/128x128.png" "${pkgdir}/usr/share/icons/hicolor/128x128/apps/omnirec.png"
