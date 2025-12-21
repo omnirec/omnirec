@@ -20,28 +20,28 @@
 
 ## Key Features
 
-- 🖥️ **Universal Capture** — Record any window, entire display, or custom screen region
-- 🔊 **Audio Recording** — Capture system audio, microphone, or both with dual-source mixing
-- 🔇 **Echo Cancellation** — Built-in AEC removes speaker feedback when recording with a microphone
-- 📦 **Multiple Formats** — Export to MP4, WebM, MKV, QuickTime, GIF, APNG, or WebP
-- 🌍 **Cross-Platform** — Works on Windows, macOS (12.3+), and Linux (Hyprland/Wayland)
-- 🔒 **Privacy-First** — All processing happens locally — your recordings never leave your machine
-- 💚 **Free & Open Source** — No subscriptions, no accounts, no limits
+- **Universal Capture** — Record any window, entire display, or custom screen region
+- **Audio Recording** — Capture system audio, microphone, or both with dual-source mixing
+- **Echo Cancellation** — Built-in AEC removes speaker feedback when recording with a microphone
+- **Multiple Formats** — Export to MP4, WebM, MKV, QuickTime, GIF, APNG, or WebP
+- **Cross-Platform** — Works on Windows, macOS (12.3+), and Linux (Hyprland/Wayland)
+- **Privacy-First** — All processing happens locally — your recordings never leave your machine
+- **Free & Open Source** — No subscriptions, no accounts, no limits
 
 ## Coming Soon
 
-- 🗣️ **Voice Transcription** — Streaming speech-to-text for automatic captions and searchable recordings
-- ⌨️ **Global Hotkeys** — Start, stop, and pause recordings from anywhere with customizable shortcuts
-- 💻 **Command Line Interface** — Scriptable recording for automation and power users
+- **Voice Transcription** — Streaming speech-to-text for automatic captions and searchable recordings
+- **Global Hotkeys** — Start, stop, and pause recordings from anywhere with customizable shortcuts
+- **Command Line Interface** — Scriptable recording for automation and power users
 
 ## Use Cases
 
-| | Use Case | Description |
+| Use Case | Description |
 |---|----------|-------------|
-| 📹 | **Record Meetings** | Capture video calls from Zoom, Teams, or Google Meet with system audio and microphone. Echo cancellation prevents feedback when using speakers. |
-| 🎓 | **Create Tutorials** | Record step-by-step walkthroughs of software, websites, or workflows with voiceover narration. |
-| 🎮 | **Capture Gameplay** | Record gaming sessions with system audio for sharing highlights or streaming clips. |
-| 🐛 | **Bug Reporting** | Quickly capture and share screen recordings to demonstrate issues to developers or support teams. |
+| **Record Meetings** | Capture video calls from Zoom, Teams, or Google Meet with system audio and microphone. Echo cancellation prevents feedback when using speakers. |
+| **Create Tutorials** | Record step-by-step walkthroughs of software, websites, or workflows with voiceover narration. |
+| **Capture Gameplay** | Record gaming sessions with system audio for sharing highlights or streaming clips. |
+| **Bug Reporting** | Quickly capture and share screen recordings to demonstrate issues to developers or support teams. |
 
 ## Supported Platforms
 
