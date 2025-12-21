@@ -1,6 +1,6 @@
 # Maintainer: OmniRec Team <maintainer@omnirec.app>
 pkgname=omnirec-bin
-pkgver=0.1.0
+pkgver=0.1.1
 pkgrel=1
 pkgdesc="High-performance screen, window, and region recording application"
 arch=('x86_64')
