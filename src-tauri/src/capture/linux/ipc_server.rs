@@ -11,6 +11,8 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::RwLock;
 
+use super::approval_token;
+
 /// Geometry for region capture.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Geometry {
@@ -37,6 +39,10 @@ pub struct CaptureSelection {
 pub enum IpcRequest {
     /// Query the current capture selection.
     QuerySelection,
+    /// Validate an approval token.
+    ValidateToken { token: String },
+    /// Store an approval token (for "always allow" feature).
+    StoreToken { token: String },
 }
 
 /// IPC response from main app to picker.
@@ -49,11 +55,20 @@ pub enum IpcResponse {
         source_id: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         geometry: Option<Geometry>,
+        /// Whether an approval token exists (for "always allow" feature)
+        #[serde(default)]
+        has_approval_token: bool,
     },
     /// No selection available.
     NoSelection,
     /// Error occurred.
     Error { message: String },
+    /// Approval token is valid.
+    TokenValid,
+    /// Approval token is invalid or missing.
+    TokenInvalid,
+    /// Approval token was stored successfully.
+    TokenStored,
 }
 
 /// Shared state for the IPC server.
@@ -109,17 +124,44 @@ async fn handle_client(
             let state = state.read().await;
             match &state.selection {
                 Some(sel) => {
-                    eprintln!("[IPC] Picker queried selection: type={}, id={}, geometry={:?}",
-                        sel.source_type, sel.source_id, sel.geometry);
+                    let has_token = approval_token::has_token();
+                    eprintln!(
+                        "[IPC] Picker queried selection: type={}, id={}, geometry={:?}, has_token={}",
+                        sel.source_type, sel.source_id, sel.geometry, has_token
+                    );
                     IpcResponse::Selection {
                         source_type: sel.source_type.clone(),
                         source_id: sel.source_id.clone(),
                         geometry: sel.geometry.clone(),
+                        has_approval_token: has_token,
                     }
                 }
                 None => {
                     eprintln!("[IPC] Picker queried but no selection available");
                     IpcResponse::NoSelection
+                }
+            }
+        }
+        IpcRequest::ValidateToken { token } => {
+            let is_valid = approval_token::validate_token(&token);
+            eprintln!("[IPC] Token validation: {}", if is_valid { "valid" } else { "invalid" });
+            if is_valid {
+                IpcResponse::TokenValid
+            } else {
+                IpcResponse::TokenInvalid
+            }
+        }
+        IpcRequest::StoreToken { token } => {
+            match approval_token::write_token(&token) {
+                Ok(()) => {
+                    eprintln!("[IPC] Token stored successfully");
+                    IpcResponse::TokenStored
+                }
+                Err(e) => {
+                    eprintln!("[IPC] Failed to store token: {}", e);
+                    IpcResponse::Error {
+                        message: format!("Failed to store token: {}", e),
+                    }
                 }
             }
         }
@@ -206,11 +248,24 @@ mod tests {
             source_type: "monitor".to_string(),
             source_id: "DP-1".to_string(),
             geometry: None,
+            has_approval_token: false,
         };
         let json = serde_json::to_string(&response).unwrap();
         assert!(json.contains(r#""type":"selection""#));
         assert!(json.contains(r#""source_type":"monitor""#));
         assert!(json.contains(r#""source_id":"DP-1""#));
+    }
+
+    #[test]
+    fn test_serialize_selection_with_token() {
+        let response = IpcResponse::Selection {
+            source_type: "monitor".to_string(),
+            source_id: "DP-1".to_string(),
+            geometry: None,
+            has_approval_token: true,
+        };
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains(r#""has_approval_token":true"#));
     }
 
     #[test]
@@ -224,6 +279,7 @@ mod tests {
                 width: 800,
                 height: 600,
             }),
+            has_approval_token: false,
         };
         let json = serde_json::to_string(&response).unwrap();
         assert!(json.contains(r#""source_type":"region""#));
@@ -236,5 +292,37 @@ mod tests {
         let json = r#"{"type":"query_selection"}"#;
         let request: IpcRequest = serde_json::from_str(json).unwrap();
         assert!(matches!(request, IpcRequest::QuerySelection));
+    }
+
+    #[test]
+    fn test_deserialize_validate_token_request() {
+        let json = r#"{"type":"validate_token","token":"abc123"}"#;
+        let request: IpcRequest = serde_json::from_str(json).unwrap();
+        match request {
+            IpcRequest::ValidateToken { token } => assert_eq!(token, "abc123"),
+            _ => panic!("Expected ValidateToken"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_store_token_request() {
+        let json = r#"{"type":"store_token","token":"xyz789"}"#;
+        let request: IpcRequest = serde_json::from_str(json).unwrap();
+        match request {
+            IpcRequest::StoreToken { token } => assert_eq!(token, "xyz789"),
+            _ => panic!("Expected StoreToken"),
+        }
+    }
+
+    #[test]
+    fn test_serialize_token_responses() {
+        let valid = serde_json::to_string(&IpcResponse::TokenValid).unwrap();
+        assert!(valid.contains(r#""type":"token_valid""#));
+
+        let invalid = serde_json::to_string(&IpcResponse::TokenInvalid).unwrap();
+        assert!(invalid.contains(r#""type":"token_invalid""#));
+
+        let stored = serde_json::to_string(&IpcResponse::TokenStored).unwrap();
+        assert!(stored.contains(r#""type":"token_stored""#));
     }
 }

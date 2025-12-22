@@ -88,6 +88,12 @@ chmod +x OmniRec-*.AppImage
 sudo dpkg -i omnirec_*.deb
 ```
 
+### Linux Screen Recording Permission
+
+On first recording request, OmniRec will display an approval dialog asking for permission to record the screen. You can check "Always allow OmniRec to record the screen" to bypass this dialog for future recordings.
+
+The approval token is stored at `~/.local/state/omnirec/approval-token`. To revoke permission, delete this file.
+
 ## Development
 
 ### Prerequisites

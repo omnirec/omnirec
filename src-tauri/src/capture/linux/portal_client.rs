@@ -63,6 +63,8 @@ impl PortalClient {
         &self,
         monitor_id: &str,
     ) -> Result<ScreencastStream, String> {
+        eprintln!("[PortalClient] request_monitor_capture: {}", monitor_id);
+        
         // Set selection for picker to query
         let selection = CaptureSelection {
             source_type: CaptureSourceType::Monitor.as_str().to_string(),
@@ -71,11 +73,14 @@ impl PortalClient {
         };
         
         {
+            eprintln!("[PortalClient] Setting IPC selection...");
             let mut state = self.ipc_state.write().await;
             state.selection = Some(selection);
+            eprintln!("[PortalClient] IPC selection set");
         }
 
         // Initiate portal request
+        eprintln!("[PortalClient] Initiating portal request...");
         self.request_screencast(SourceType::Monitor).await
     }
 
@@ -84,6 +89,8 @@ impl PortalClient {
         &self,
         window_address: &str,
     ) -> Result<ScreencastStream, String> {
+        eprintln!("[PortalClient] request_window_capture: {}", window_address);
+        
         let selection = CaptureSelection {
             source_type: CaptureSourceType::Window.as_str().to_string(),
             source_id: window_address.to_string(),
@@ -91,10 +98,13 @@ impl PortalClient {
         };
         
         {
+            eprintln!("[PortalClient] Setting IPC selection...");
             let mut state = self.ipc_state.write().await;
             state.selection = Some(selection);
+            eprintln!("[PortalClient] IPC selection set");
         }
 
+        eprintln!("[PortalClient] Initiating portal request...");
         self.request_screencast(SourceType::Window).await
     }
 

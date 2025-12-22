@@ -123,12 +123,17 @@ async fn test_ipc_connection() {
         Ok(response) => {
             print_ok("Connection", "Successfully connected to OmniRec");
             match response {
-                IpcResponse::Selection { source_type, source_id, geometry } => {
+                IpcResponse::Selection { source_type, source_id, geometry, has_approval_token } => {
                     print_ok("Selection", &format!("type={}, id={}", source_type, source_id));
                     if let Some(geom) = geometry {
                         print_info("Geometry", &format!("{}x{} at ({}, {})", geom.width, geom.height, geom.x, geom.y));
                     }
-                    println!("\n  {CYAN}→ Picker will use OmniRec's selection (no fallback){RESET}");
+                    if has_approval_token {
+                        print_ok("Approval Token", "Present (will auto-approve)");
+                    } else {
+                        print_warn("Approval Token", "Not present (will show approval dialog)");
+                    }
+                    println!("\n  {CYAN}→ Picker will use OmniRec's selection{RESET}");
                 }
                 IpcResponse::NoSelection => {
                     print_warn("Selection", "No active selection in OmniRec");
@@ -136,6 +141,9 @@ async fn test_ipc_connection() {
                 }
                 IpcResponse::Error { message } => {
                     print_err("Response", &format!("Error from OmniRec: {}", message));
+                }
+                IpcResponse::TokenValid | IpcResponse::TokenInvalid | IpcResponse::TokenStored => {
+                    print_err("Response", "Unexpected response type from QuerySelection");
                 }
             }
         }
@@ -281,7 +289,7 @@ async fn main() {
     // Test IPC
     test_ipc_connection().await;
     
-    // Trigger portal request
+    // Trigger portal request (async because ashpd requires it)
     match trigger_portal_request(source_type).await {
         Ok(()) => {
             print_header("Result");

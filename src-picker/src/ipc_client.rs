@@ -14,6 +14,8 @@ use tokio::net::UnixStream;
 pub enum IpcRequest {
     /// Query the current capture selection.
     QuerySelection,
+    /// Store an approval token (for "always allow" feature).
+    StoreToken { token: String },
 }
 
 /// Geometry for region capture.
@@ -38,11 +40,20 @@ pub enum IpcResponse {
         /// Geometry for region capture (None for monitor/window)
         #[serde(skip_serializing_if = "Option::is_none")]
         geometry: Option<Geometry>,
+        /// Whether an approval token exists (for "always allow" feature)
+        #[serde(default)]
+        has_approval_token: bool,
     },
     /// No selection available.
     NoSelection,
     /// Error occurred.
     Error { message: String },
+    /// Approval token is valid.
+    TokenValid,
+    /// Approval token is invalid or missing.
+    TokenInvalid,
+    /// Approval token was stored successfully.
+    TokenStored,
 }
 
 /// Get the IPC socket path.
@@ -68,7 +79,7 @@ pub async fn query_selection() -> Result<IpcResponse, String> {
     let (reader, mut writer) = stream.into_split();
     let mut reader = BufReader::new(reader);
 
-    // Send query request
+    // Send request
     let request = IpcRequest::QuerySelection;
     let request_json =
         serde_json::to_string(&request).map_err(|e| format!("Failed to serialize request: {}", e))?;
@@ -99,6 +110,53 @@ pub async fn query_selection() -> Result<IpcResponse, String> {
     Ok(response)
 }
 
+/// Store an approval token in the main app.
+#[allow(dead_code)]
+pub async fn store_token(token: &str) -> Result<(), String> {
+    let socket_path = get_socket_path();
+
+    let stream = UnixStream::connect(&socket_path).await.map_err(|e| {
+        format!("Failed to connect to main app: {} (path: {:?})", e, socket_path)
+    })?;
+
+    let (reader, mut writer) = stream.into_split();
+    let mut reader = BufReader::new(reader);
+
+    let request = IpcRequest::StoreToken {
+        token: token.to_string(),
+    };
+    let request_json =
+        serde_json::to_string(&request).map_err(|e| format!("Failed to serialize request: {}", e))?;
+
+    writer
+        .write_all(request_json.as_bytes())
+        .await
+        .map_err(|e| format!("Failed to write to socket: {}", e))?;
+    writer
+        .write_all(b"\n")
+        .await
+        .map_err(|e| format!("Failed to write newline: {}", e))?;
+    writer
+        .flush()
+        .await
+        .map_err(|e| format!("Failed to flush socket: {}", e))?;
+
+    let mut response_line = String::new();
+    reader
+        .read_line(&mut response_line)
+        .await
+        .map_err(|e| format!("Failed to read response: {}", e))?;
+
+    let response: IpcResponse = serde_json::from_str(response_line.trim())
+        .map_err(|e| format!("Failed to parse response: {}", e))?;
+
+    match response {
+        IpcResponse::TokenStored => Ok(()),
+        IpcResponse::Error { message } => Err(message),
+        _ => Err("Unexpected response type".to_string()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -119,10 +177,12 @@ mod tests {
                 source_type,
                 source_id,
                 geometry,
+                has_approval_token,
             } => {
                 assert_eq!(source_type, "monitor");
                 assert_eq!(source_id, "DP-1");
                 assert!(geometry.is_none());
+                assert!(!has_approval_token);
             }
             _ => panic!("Expected Selection response"),
         }
@@ -137,6 +197,7 @@ mod tests {
                 source_type,
                 source_id,
                 geometry,
+                has_approval_token,
             } => {
                 assert_eq!(source_type, "region");
                 assert_eq!(source_id, "DP-1");
@@ -145,6 +206,7 @@ mod tests {
                 assert_eq!(geom.y, 200);
                 assert_eq!(geom.width, 800);
                 assert_eq!(geom.height, 600);
+                assert!(!has_approval_token);
             }
             _ => panic!("Expected Selection response"),
         }

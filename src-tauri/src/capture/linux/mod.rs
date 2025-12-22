@@ -8,6 +8,7 @@
 //! The capture flow involves a separate picker service that auto-approves
 //! portal requests based on the user's selection in the main app UI.
 
+pub mod approval_token;
 pub mod audio;
 pub mod highlight;
 pub mod ipc_server;
