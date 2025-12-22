@@ -12,6 +12,7 @@ depends=(
     'pipewire'
     'xdg-desktop-portal'
     'xdg-desktop-portal-hyprland'
+    'qt6-base'
 )
 optdepends=(
     'xdg-desktop-portal-gtk: Portal backend for GTK-based compositors'

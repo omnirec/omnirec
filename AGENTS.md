@@ -62,9 +62,9 @@ cd src-tauri && cargo clippy --all-targets --all-features -- -D warnings
 # Rust tests
 cd src-tauri && cargo test --all-features
 
-# Linux-only: Picker linting and tests
-cd src-picker && cargo clippy --all-targets --all-features -- -D warnings
-cd src-picker && cargo test --all-features
+# Linux-only: Build picker (C++)
+cmake -B src-picker/build -S src-picker -DCMAKE_BUILD_TYPE=Release
+cmake --build src-picker/build
 ```
 
 The CI workflow enforces these checks on all platforms. Code that passes locally but has linting warnings will fail in CI due to the `-D warnings` flag, which promotes all warnings to errors.

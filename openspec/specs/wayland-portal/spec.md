@@ -220,14 +220,14 @@ The picker SHALL display a graphical approval dialog when OmniRec has a pending 
 - **AND** the IPC connection to OmniRec succeeds
 - **AND** OmniRec responds with a valid selection (pending recording request)
 - **AND** no valid approval token exists
-- **THEN** the picker displays a GTK dialog asking "Allow OmniRec to record the screen?"
+- **THEN** the picker displays a Qt6 dialog asking "Allow OmniRec to record your screen?"
 - **AND** the dialog includes Allow and Deny buttons
-- **AND** the dialog includes a checkbox "Always allow OmniRec to record the screen"
+- **AND** the dialog includes an "Always Allow" option
 
 #### Scenario: User approves recording
 
 - **GIVEN** the approval dialog is displayed
-- **WHEN** the user clicks Allow
+- **WHEN** the user clicks Allow Once or Always Allow
 - **THEN** the picker outputs the selection to stdout in XDPH format
 - **AND** the picker exits with success code
 
@@ -242,8 +242,7 @@ The picker SHALL display a graphical approval dialog when OmniRec has a pending 
 #### Scenario: User enables always allow
 
 - **GIVEN** the approval dialog is displayed
-- **WHEN** the user checks "Always allow OmniRec to record the screen"
-- **AND** the user clicks Allow
+- **WHEN** the user clicks "Always Allow"
 - **THEN** the picker generates a random 256-bit approval token
 - **AND** the picker sends the token to OmniRec via IPC StoreToken message
 - **AND** OmniRec stores the token in the state directory
@@ -252,7 +251,7 @@ The picker SHALL display a graphical approval dialog when OmniRec has a pending 
 #### Scenario: Dialog closed without selection
 
 - **GIVEN** the approval dialog is displayed
-- **WHEN** the user closes the dialog window without clicking Allow or Deny
+- **WHEN** the user closes the dialog window without clicking a button
 - **THEN** the picker exits with failure code
 - **AND** XDPH cancels the portal request
 

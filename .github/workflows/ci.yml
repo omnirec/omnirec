@@ -34,7 +34,8 @@ jobs:
             patchelf \
             libpipewire-0.3-dev \
             libspa-0.2-dev \
-            libclang-dev
+            libclang-dev \
+            qt6-base-dev
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -57,7 +58,6 @@ jobs:
         with:
           workspaces: |
             src-tauri -> target
-            src-picker -> target
 
       - name: TypeScript type check
         run: pnpm exec tsc --noEmit
@@ -66,16 +66,12 @@ jobs:
         working-directory: src-tauri
         run: cargo clippy --all-targets --all-features -- -D warnings
 
-      - name: Rust lint (clippy) - picker
-        if: matrix.platform == 'ubuntu-22.04'
-        working-directory: src-picker
-        run: cargo clippy --all-targets --all-features -- -D warnings
-
       - name: Rust tests - main app
         working-directory: src-tauri
         run: cargo test --all-features
 
-      - name: Rust tests - picker
+      - name: Build picker (C++)
         if: matrix.platform == 'ubuntu-22.04'
-        working-directory: src-picker
-        run: cargo test --all-features
+        run: |
+          cmake -B src-picker/build -S src-picker -DCMAKE_BUILD_TYPE=Release
+          cmake --build src-picker/build

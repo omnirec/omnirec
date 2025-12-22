@@ -81,7 +81,8 @@ jobs:
             patchelf \
             libpipewire-0.3-dev \
             libspa-0.2-dev \
-            libclang-dev
+            libclang-dev \
+            qt6-base-dev
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -104,7 +105,6 @@ jobs:
         with:
           workspaces: |
             src-tauri -> target
-            src-picker -> target
 
       - name: TypeScript type check
         run: pnpm exec tsc --noEmit
@@ -113,19 +113,15 @@ jobs:
         working-directory: src-tauri
         run: cargo clippy --all-targets --all-features -- -D warnings
 
-      - name: Rust lint (clippy) - picker
-        if: matrix.platform == 'ubuntu-22.04'
-        working-directory: src-picker
-        run: cargo clippy --all-targets --all-features -- -D warnings
-
       - name: Rust tests - main app
         working-directory: src-tauri
         run: cargo test --all-features
 
-      - name: Rust tests - picker
+      - name: Build picker (C++)
         if: matrix.platform == 'ubuntu-22.04'
-        working-directory: src-picker
-        run: cargo test --all-features
+        run: |
+          cmake -B src-picker/build -S src-picker -DCMAKE_BUILD_TYPE=Release
+          cmake --build src-picker/build
 
   build-and-release:
     needs: [validate-version, test-and-lint]
@@ -162,7 +158,8 @@ jobs:
             patchelf \
             libpipewire-0.3-dev \
             libspa-0.2-dev \
-            libclang-dev
+            libclang-dev \
+            qt6-base-dev
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -185,7 +182,6 @@ jobs:
         with:
           workspaces: |
             src-tauri -> target
-            src-picker -> target
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0.6.0
@@ -199,10 +195,11 @@ jobs:
           prerelease: false
           args: ${{ matrix.args }}
 
-      - name: Build Linux picker binary
+      - name: Build Linux picker binary (C++)
         if: matrix.platform == 'ubuntu-22.04'
-        working-directory: src-picker
-        run: cargo build --release
+        run: |
+          cmake -B src-picker/build -S src-picker -DCMAKE_BUILD_TYPE=Release
+          cmake --build src-picker/build
 
       - name: Create Linux tar.gz for AUR
         if: matrix.platform == 'ubuntu-22.04'
@@ -215,8 +212,8 @@ jobs:
           # Copy main binary
           cp src-tauri/target/release/omnirec "$ARCHIVE_NAME/"
 
-          # Copy picker binary
-          cp src-picker/target/release/omnirec-picker "$ARCHIVE_NAME/"
+          # Copy picker binary (built with CMake)
+          cp src-picker/build/omnirec-picker "$ARCHIVE_NAME/"
 
           # Copy icons
           cp src-tauri/icons/128x128.png "$ARCHIVE_NAME/icons/"
