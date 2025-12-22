@@ -1,6 +1,6 @@
 [package]
 name = "omnirec-picker"
-version = "0.1.2"
+version = "0.1.3"
 description = "Custom picker for xdg-desktop-portal-hyprland that queries the main omnirec app"
 authors = ["you"]
 edition = "2021"
