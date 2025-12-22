@@ -11,7 +11,6 @@
 #   - package.json
 #   - src-tauri/Cargo.toml
 #   - src-tauri/tauri.conf.json
-#   - src-picker/Cargo.toml
 #   - packaging/aur/PKGBUILD
 
 set -euo pipefail
@@ -128,7 +127,6 @@ echo "Updating version files:"
 update_json_version "$PROJECT_ROOT/package.json"
 update_json_version "$PROJECT_ROOT/src-tauri/tauri.conf.json"
 update_toml_version "$PROJECT_ROOT/src-tauri/Cargo.toml"
-update_toml_version "$PROJECT_ROOT/src-picker/Cargo.toml"
 update_pkgbuild_version "$PROJECT_ROOT/packaging/aur/PKGBUILD"
 
 echo ""
