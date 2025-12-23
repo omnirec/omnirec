@@ -1,8 +1,10 @@
-<picture>
-  <!-- <source srcset="images/omnirec-banner-dark.png" media="(prefers-color-scheme: dark)"> -->
-  <!-- <source srcset="images/omnirec-banner-white.png" media="(prefers-color-scheme: light)"> -->
-  <img src="images/omnirec-banner.png" alt="OmniRec logo">
-</picture>
+<p align="center">
+    <picture>
+      <!-- <source srcset="images/omnirec-banner-dark.png" media="(prefers-color-scheme: dark)"> -->
+      <!-- <source srcset="images/omnirec-banner-white.png" media="(prefers-color-scheme: light)"> -->
+      <img src="images/omnirec-banner.png" alt="OmniRec logo">
+    </picture>
+</p>
 
 <p align="center"><i>The universal screen recorder for every desktop</i></p>
 
@@ -55,6 +57,10 @@
 
 ## Installation
 
+> [!WARNING]
+>
+> OmniRec is in active development and is not yet available for general use. If you would like to help test OmniRec or contribute to its development, please download one of the available pre-release installation packages or build from source (see below).
+
 ### Windows
 
 Download the latest `.msi` installer from the [Releases](https://github.com/omnirec/omnirec/releases) page.
@@ -63,32 +69,29 @@ Download the latest `.msi` installer from the [Releases](https://github.com/omni
 
 Download the latest `.dmg` from the [Releases](https://github.com/omnirec/omnirec/releases) page, open it, and drag OmniRec to your Applications folder.
 
-> **Note**: On first launch, grant Screen Recording permission in System Settings > Privacy & Security.
-
 ### Linux (Arch/AUR)
 
-```bash
-# Using an AUR helper
-yay -S omnirec-bin
+> [!NOTE]
+>
+> Currently, **only** Arch Linux with Hyprland is supported (including Omarchy and other popular derivitives and configs). Support for other platforms and desktop environments is not yet available.
 
-# Or with paru
-paru -S omnirec-bin
-```
-
-### Linux (Other Distros)
-
-Download the latest `.AppImage` or `.deb` from the [Releases](https://github.com/omnirec/omnirec/releases) page.
+Use `makepkg`:
 
 ```bash
-# AppImage
-chmod +x OmniRec-*.AppImage
-./OmniRec-*.AppImage
-
-# Debian/Ubuntu
-sudo dpkg -i omnirec_*.deb
+curl -LO https://github.com/omnirec/omnirec/releases/latest/download/PKGBUILD
+curl -LO https://github.com/omnirec/omnirec/releases/latest/download/omnirec.desktop
+makepkg -si
 ```
 
-### Linux Screen Recording Permission
+## Configuration & Permissions
+
+OmniRec is designed to work with zero configuration, but it is necessary to grant it permission to record your screen. This process varies by OS and desktop environment:
+
+### macOS
+
+On first launch, grant Screen Recording permission in System Settings > Privacy & Security.
+
+### Linux
 
 On first recording request, OmniRec will display an approval dialog asking for permission to record the screen. You can check "Always allow OmniRec to record the screen" to bypass this dialog for future recordings.
 
@@ -103,15 +106,15 @@ The approval token is stored at `~/.local/state/omnirec/approval-token`. To revo
 - [Rust](https://rustup.rs/)
 - [ImageMagick](https://imagemagick.org/script/download.php) (for icon generation)
 
-### Regenerating Icons
+### Build & Run
 
-To regenerate all application icons from the source SVG (`images/omnirec-icon.svg`):
+OmniRec is built with [Tauri](https://v2.tauri.app/). Use `npm` (or equivalent) to install and run the dev servver:
 
-```bash
-pnpm icons:generate
 ```
-
-This script uses ImageMagick to convert the SVG to a high-resolution PNG, then generates all platform-specific icons (Windows .ico, macOS .icns, iOS, Android, and various PNG sizes) using Tauri's built-in icon generator.
+cd omnirec
+npm install
+npm run tauri dev
+```
 
 ## License
 
