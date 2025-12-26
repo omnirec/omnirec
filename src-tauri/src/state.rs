@@ -125,6 +125,11 @@ impl RecordingManager {
     pub async fn get_output_format(&self) -> OutputFormat {
         *self.output_format.read().await
     }
+    
+    /// Get a clone of the stop flag (for monitoring external stop events).
+    pub async fn get_stop_flag(&self) -> Option<Arc<AtomicBool>> {
+        self.stop_flag.lock().await.clone()
+    }
 
     /// Set the output format for future recordings.
     pub async fn set_output_format(&self, format: OutputFormat) -> Result<(), String> {
@@ -211,6 +216,33 @@ impl RecordingManager {
             .map_err(|e| e.to_string())?;
 
         self.start_encoding(frame_rx, stop_flag).await
+    }
+
+    /// Start recording on GNOME using the portal with native picker.
+    /// This lets the user select their capture source through GNOME's UI.
+    #[cfg(target_os = "linux")]
+    pub async fn start_gnome_portal_recording(&self) -> Result<(), String> {
+        // Check current state
+        {
+            let state = self.state.read().await;
+            if *state != RecordingState::Idle {
+                return Err("Already recording or saving".to_string());
+            }
+        }
+
+        // Start portal-based capture - the portal will show its native picker
+        let backend = get_backend();
+        let (frame_rx, stop_flag) = backend
+            .start_portal_capture()
+            .map_err(|e| e.to_string())?;
+
+        self.start_encoding(frame_rx, stop_flag).await
+    }
+
+    /// Stub for non-Linux platforms.
+    #[cfg(not(target_os = "linux"))]
+    pub async fn start_gnome_portal_recording(&self) -> Result<(), String> {
+        Err("GNOME portal recording is only available on Linux".to_string())
     }
 
     /// Common encoding startup logic.

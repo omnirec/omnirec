@@ -48,6 +48,20 @@ pnpm tauri build       # Production build (rarely needed)
 
 Never run `pnpm tauri dev` - user will run this manually.
 
+## Build Dependencies (Linux)
+
+On Linux, the following system packages are required for building:
+
+```bash
+# Arch Linux
+sudo pacman -S webkit2gtk-4.1 pipewire libpipewire clang qt6-base libappindicator-gtk3
+
+# Ubuntu/Debian
+sudo apt install libwebkit2gtk-4.1-dev libappindicator3-dev libpipewire-0.3-dev libspa-0.2-dev libclang-dev qt6-base-dev
+```
+
+The `libappindicator` library is required for system tray icon support (used in GNOME mode).
+
 ## Linting Requirements
 
 **All code changes must pass strict linting before being committed.** Run these commands and fix any errors:

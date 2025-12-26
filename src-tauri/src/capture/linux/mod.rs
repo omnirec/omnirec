@@ -219,41 +219,58 @@ impl WindowEnumerator for LinuxBackend {
 
 impl MonitorEnumerator for LinuxBackend {
     fn list_monitors(&self) -> Result<Vec<MonitorInfo>, EnumerationError> {
-        if !Self::is_hyprland() {
-            return Err(EnumerationError::NotImplemented(
-                "Monitor enumeration requires Hyprland compositor".to_string(),
-            ));
+        // Try Hyprland first
+        if Self::is_hyprland() {
+            // Query Hyprland for monitor list
+            let monitors = Monitors::get().map_err(|e| {
+                EnumerationError::PlatformError(format!("Failed to get Hyprland monitors: {}", e))
+            })?;
+
+            let mut result = Vec::new();
+            for monitor in monitors {
+                eprintln!("[Linux] Monitor {}: {}x{} at ({},{}) scale={}", 
+                    monitor.name, monitor.width, monitor.height, monitor.x, monitor.y, monitor.scale);
+                
+                result.push(MonitorInfo {
+                    // Use monitor name as ID (e.g., "DP-1", "HDMI-A-1")
+                    id: monitor.name.clone(),
+                    // Display name includes description if available
+                    name: if monitor.description.is_empty() {
+                        monitor.name.clone()
+                    } else {
+                        format!("{} ({})", monitor.name, monitor.description)
+                    },
+                    x: monitor.x,
+                    y: monitor.y,
+                    width: monitor.width as u32,
+                    height: monitor.height as u32,
+                    is_primary: monitor.focused,
+                    scale_factor: monitor.scale as f64,
+                });
+            }
+
+            return Ok(result);
         }
-
-        // Query Hyprland for monitor list
-        let monitors = Monitors::get().map_err(|e| {
-            EnumerationError::PlatformError(format!("Failed to get Hyprland monitors: {}", e))
-        })?;
-
-        let mut result = Vec::new();
-        for monitor in monitors {
-            eprintln!("[Linux] Monitor {}: {}x{} at ({},{}) scale={}", 
-                monitor.name, monitor.width, monitor.height, monitor.x, monitor.y, monitor.scale);
-            
-            result.push(MonitorInfo {
-                // Use monitor name as ID (e.g., "DP-1", "HDMI-A-1")
-                id: monitor.name.clone(),
-                // Display name includes description if available
-                name: if monitor.description.is_empty() {
-                    monitor.name.clone()
-                } else {
-                    format!("{} ({})", monitor.name, monitor.description)
-                },
-                x: monitor.x,
-                y: monitor.y,
-                width: monitor.width as u32,
-                height: monitor.height as u32,
-                is_primary: monitor.focused,
-                scale_factor: monitor.scale as f64,
-            });
-        }
-
-        Ok(result)
+        
+        // Fallback for GNOME and other desktops: use xrandr or provide a default
+        // For now, return a single "default" monitor that covers the primary display
+        // The portal will handle the actual display selection
+        eprintln!("[Linux] Non-Hyprland: using fallback monitor enumeration");
+        
+        // Try to get display info from environment or use sensible defaults
+        // On Wayland/GNOME, we can't easily enumerate monitors without compositor-specific APIs
+        // But we can provide a fallback that allows region selection to work
+        Ok(vec![MonitorInfo {
+            id: "default".to_string(),
+            name: "Primary Display".to_string(),
+            x: 0,
+            y: 0,
+            // Use common default resolution - the portal will capture the actual display
+            width: 1920,
+            height: 1080,
+            is_primary: true,
+            scale_factor: 1.0,
+        }])
     }
 }
 
@@ -524,6 +541,72 @@ impl LinuxBackend {
         aec_enabled: bool,
     ) -> Result<(AudioReceiver, StopHandle), CaptureError> {
         audio::start_audio_capture_dual(system_source_id, mic_source_id, aec_enabled)
+    }
+
+    /// Start portal-based capture with native picker (for GNOME).
+    ///
+    /// This method invokes the xdg-desktop-portal screencast flow without
+    /// a pre-selected source. On GNOME, this shows the native picker dialog
+    /// where the user selects what to capture.
+    ///
+    /// Returns a frame receiver and stop handle.
+    pub fn start_portal_capture(&self) -> Result<(FrameReceiver, StopHandle), CaptureError> {
+        eprintln!("[Linux] Starting portal capture with native picker...");
+        
+        // Get IPC state
+        let ipc_state = get_ipc_state().ok_or_else(|| {
+            CaptureError::PlatformError("IPC server not initialized".to_string())
+        })?;
+        
+        // Use block_in_place to run async code from sync context within tokio runtime
+        let stream = tokio::task::block_in_place(|| {
+            let rt = tokio::runtime::Handle::current();
+            let portal_client = portal_client::PortalClient::new(ipc_state);
+            // Request generic screencast - portal will show picker
+            rt.block_on(portal_client.request_screencast_with_picker())
+        }).map_err(CaptureError::PlatformError)?;
+        
+        eprintln!("[Linux] Portal returned node ID {} from native picker", stream.node_id);
+        
+        // Use portal-reported dimensions or default
+        let (content_width, content_height) = stream.size
+            .map(|(w, h)| (w as u32, h as u32))
+            .unwrap_or((1920, 1080));
+        
+        eprintln!("[Linux] Content dimensions: {}x{}", content_width, content_height);
+        
+        // Check if we need to crop (window capture provides position)
+        if let Some((x, y)) = stream.position {
+            eprintln!("[Linux] Window position: ({}, {}), will crop to content", x, y);
+            
+            // For window captures, the stream is the full display but we need to crop
+            // to just the window content. The position tells us where the window is,
+            // and size tells us the window dimensions.
+            let crop = pipewire_capture::CropRegion {
+                x,
+                y,
+                width: content_width,
+                height: content_height,
+            };
+            
+            // We don't know the full stream size, but PipeWire will tell us via format negotiation.
+            // Use a large default that will be corrected by the actual stream dimensions.
+            let stream_width = 3840u32; // Will be updated by PipeWire
+            let stream_height = 2160u32;
+            
+            pipewire_capture::start_pipewire_capture_with_crop(
+                stream.node_id, 
+                stream_width, 
+                stream_height, 
+                Some(crop)
+            ).map_err(CaptureError::PlatformError)
+        } else {
+            // No position info - use auto-crop detection for window captures
+            // This handles GNOME's portal which doesn't provide window position
+            eprintln!("[Linux] No position info, using auto-crop detection, dimensions: {}x{}", content_width, content_height);
+            pipewire_capture::start_pipewire_capture_with_auto_crop(stream.node_id, content_width, content_height)
+                .map_err(CaptureError::PlatformError)
+        }
     }
 }
 

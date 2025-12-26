@@ -13,9 +13,23 @@ use config::{AppConfig, AudioConfig, ThemeMode, load_config, save_config as save
 use encoder::ensure_ffmpeg_blocking;
 use state::{OutputFormat, RecordingManager, RecordingResult, RecordingState};
 use std::sync::Arc;
-use tauri::{Emitter, State};
+use tauri::{Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 use tokio::sync::Mutex;
+
+#[cfg(target_os = "linux")]
+use tauri::{
+    image::Image,
+    menu::{Menu, MenuItem},
+    tray::{TrayIcon, TrayIconBuilder},
+};
+
+/// State for GNOME system tray (Linux only).
+#[cfg(target_os = "linux")]
+pub struct GnomeTrayState {
+    tray: std::sync::Mutex<TrayIcon>,
+    is_recording: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
 
 #[cfg(target_os = "linux")]
 use capture::linux;
@@ -245,6 +259,132 @@ async fn start_display_recording(
             eprintln!("[start_display_recording] Error: {}", e);
             e
         })
+}
+
+/// Start recording on GNOME using the standard portal picker.
+/// This invokes the xdg-desktop-portal screencast flow with GNOME's native picker.
+#[tauri::command]
+async fn start_gnome_recording(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    if !state.ffmpeg_ready {
+        let err = "FFmpeg is not available. Please restart the application.";
+        eprintln!("[start_gnome_recording] Error: {}", err);
+        return Err(err.to_string());
+    }
+
+    eprintln!("[start_gnome_recording] Starting GNOME portal recording...");
+    
+    // On GNOME, we use portal-based recording.
+    // The portal will show the native picker for source selection.
+    // We need to get the stop flag while holding the lock, then release it.
+    let stop_flag = {
+        let manager = state.recording_manager.lock().await;
+        manager.start_gnome_portal_recording().await.map_err(|e| {
+            eprintln!("[start_gnome_recording] Error: {}", e);
+            e
+        })?;
+        // Get stop flag before releasing the lock
+        manager.get_stop_flag().await
+    }; // Lock released here
+    
+    // Hide tray icon now that recording has started
+    set_gnome_tray_visible(&app, false);
+    
+    // Spawn a background task to monitor the stop flag.
+    // When PipeWire stream is paused (e.g., user clicks GNOME's indicator),
+    // the stop flag is set. We detect this and emit an event to the frontend.
+    if let Some(stop_flag) = stop_flag {
+        let app_clone = app.clone();
+        tokio::spawn(async move {
+            eprintln!("[GNOME] Starting stop flag monitor task");
+            
+            // Wait a bit for recording to stabilize before monitoring
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            
+            // Poll the stop flag
+            loop {
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                if stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
+                    eprintln!("[GNOME] Stop flag detected in monitor task");
+                    // Restore tray icon visibility
+                    set_gnome_tray_visible(&app_clone, true);
+                    let _ = app_clone.emit("recording-stream-stopped", ());
+                    eprintln!("[GNOME] Monitor task exiting");
+                    break;
+                }
+            }
+        });
+    } else {
+        eprintln!("[start_gnome_recording] Warning: No stop flag available for monitoring");
+    }
+    
+    Ok(())
+}
+
+/// Helper to set GNOME tray icon visibility.
+#[cfg(target_os = "linux")]
+fn set_gnome_tray_visible(app: &tauri::AppHandle, visible: bool) {
+    if let Some(tray_state) = app.try_state::<GnomeTrayState>() {
+        tray_state.is_recording.store(!visible, std::sync::atomic::Ordering::SeqCst);
+        if let Ok(tray) = tray_state.tray.lock() {
+            eprintln!("[GNOME Tray] Setting visible: {}", visible);
+            match tray.set_visible(visible) {
+                Ok(()) => eprintln!("[GNOME Tray] set_visible({}) succeeded", visible),
+                Err(e) => eprintln!("[GNOME Tray] set_visible({}) failed: {:?}", visible, e),
+            }
+        } else {
+            eprintln!("[GNOME Tray] Failed to lock tray mutex");
+        }
+    } else {
+        eprintln!("[GNOME Tray] No GnomeTrayState available");
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn set_gnome_tray_visible(_app: &tauri::AppHandle, _visible: bool) {
+    // No-op on non-Linux
+}
+
+/// Update tray icon visibility based on recording state.
+/// When recording: hide tray icon (system indicator is used to stop).
+/// When idle: show tray icon with menu.
+#[tauri::command]
+async fn set_tray_recording_state(
+    app: tauri::AppHandle,
+    recording: bool,
+) -> Result<(), String> {
+    eprintln!("[set_tray_recording_state] Setting recording state: {}, visible: {}", recording, !recording);
+    
+    #[cfg(target_os = "linux")]
+    {
+        use std::sync::atomic::Ordering;
+        
+        // Get the tray state
+        if let Some(tray_state) = app.try_state::<GnomeTrayState>() {
+            eprintln!("[set_tray_recording_state] Got tray state, updating...");
+            // Update recording flag
+            tray_state.is_recording.store(recording, Ordering::SeqCst);
+            
+            if let Ok(tray) = tray_state.tray.lock() {
+                eprintln!("[set_tray_recording_state] Setting tray visible: {}", !recording);
+                let result = tray.set_visible(!recording);
+                eprintln!("[set_tray_recording_state] set_visible result: {:?}", result);
+            } else {
+                eprintln!("[set_tray_recording_state] Failed to lock tray mutex");
+            }
+        } else {
+            eprintln!("[set_tray_recording_state] No GnomeTrayState found (not on GNOME?)");
+        }
+    }
+    
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (app, recording); // Suppress unused warnings
+    }
+    
+    Ok(())
 }
 
 /// Stop the current recording and save the file.
@@ -489,6 +629,44 @@ fn is_hyprland() -> bool {
     #[cfg(not(target_os = "linux"))]
     {
         false
+    }
+}
+
+/// Check if running on GNOME desktop environment.
+#[tauri::command]
+fn is_gnome() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        std::env::var("XDG_CURRENT_DESKTOP")
+            .map(|d| d.to_uppercase().contains("GNOME"))
+            .unwrap_or(false)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        false
+    }
+}
+
+/// Get the current desktop environment name.
+/// Returns: "gnome", "hyprland", or "unknown".
+#[tauri::command]
+fn get_desktop_environment() -> String {
+    #[cfg(target_os = "linux")]
+    {
+        if std::env::var("HYPRLAND_INSTANCE_SIGNATURE").is_ok() {
+            return "hyprland".to_string();
+        }
+        if std::env::var("XDG_CURRENT_DESKTOP")
+            .map(|d| d.to_uppercase().contains("GNOME"))
+            .unwrap_or(false)
+        {
+            return "gnome".to_string();
+        }
+        "unknown".to_string()
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        "unknown".to_string()
     }
 }
 
@@ -895,6 +1073,179 @@ fn setup_macos_window(_app: &tauri::App) {
     // No-op on other platforms
 }
 
+/// Check if running on GNOME desktop (internal helper).
+#[cfg(target_os = "linux")]
+fn is_gnome_desktop() -> bool {
+    std::env::var("XDG_CURRENT_DESKTOP")
+        .map(|d| d.to_uppercase().contains("GNOME"))
+        .unwrap_or(false)
+}
+
+/// Load a tray icon from multiple possible locations.
+/// Returns the icon if found, or None if not found anywhere.
+#[cfg(target_os = "linux")]
+fn load_tray_icon(app: &tauri::App, icon_name: &str) -> Option<Image<'static>> {
+    load_tray_icon_from_paths(app.path().resource_dir().ok(), icon_name)
+}
+
+/// Load a tray icon from multiple possible locations given a resource dir.
+#[cfg(target_os = "linux")]
+fn load_tray_icon_from_paths(resource_dir: Option<std::path::PathBuf>, icon_name: &str) -> Option<Image<'static>> {
+    // Try multiple locations for the icon
+    let icon_paths = [
+        // Production: resource_dir/icons/tray/
+        resource_dir.map(|p| p.join(format!("icons/tray/{}", icon_name))),
+        // Development: relative paths
+        Some(std::path::PathBuf::from(format!("icons/tray/{}", icon_name))),
+        Some(std::path::PathBuf::from(format!("src-tauri/icons/tray/{}", icon_name))),
+        // Absolute path for development
+        Some(std::path::PathBuf::from(format!("{}/icons/tray/{}", env!("CARGO_MANIFEST_DIR"), icon_name))),
+    ];
+    
+    for path in icon_paths.iter().flatten() {
+        if path.exists() {
+            match Image::from_path(path) {
+                Ok(img) => {
+                    eprintln!("[Tray] Loaded icon from: {:?}", path);
+                    return Some(img.to_owned());
+                }
+                Err(e) => {
+                    eprintln!("[Tray] Failed to load icon from {:?}: {}", path, e);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Create a fallback tray icon (simple circle).
+#[cfg(target_os = "linux")]
+fn create_fallback_tray_icon(color: (u8, u8, u8)) -> Image<'static> {
+    let size = 22u32;
+    let mut rgba = vec![0u8; (size * size * 4) as usize];
+    let center = size as f32 / 2.0 - 0.5;
+    let radius = size as f32 / 2.0 - 2.0;
+    
+    for y in 0..size {
+        for x in 0..size {
+            let dx = x as f32 - center;
+            let dy = y as f32 - center;
+            let dist = (dx * dx + dy * dy).sqrt();
+            let idx = ((y * size + x) * 4) as usize;
+            if dist < radius {
+                rgba[idx] = color.0;     // R
+                rgba[idx + 1] = color.1; // G
+                rgba[idx + 2] = color.2; // B
+                rgba[idx + 3] = 255;     // A
+            }
+        }
+    }
+    Image::new_owned(rgba, size, size)
+}
+
+/// Set up system tray for GNOME mode.
+#[cfg(target_os = "linux")]
+fn setup_gnome_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    use std::sync::atomic::AtomicBool;
+    use std::sync::Arc;
+    
+    if !is_gnome_desktop() {
+        return Ok(());
+    }
+    
+    eprintln!("[Tray] Setting up GNOME tray icon...");
+    
+    // Load symbolic tray icon (22x22 monochrome white)
+    let icon = load_tray_icon(app, "omnirec-symbolic-22.png")
+        .or_else(|| load_tray_icon(app, "omnirec-symbolic-24.png"))
+        .or_else(|| load_tray_icon(app, "omnirec-symbolic-32.png"))
+        .or_else(|| load_tray_icon(app, "omnirec-symbolic.png"))
+        .unwrap_or_else(|| {
+            eprintln!("[Tray] Warning: Could not load icon, using fallback");
+            create_fallback_tray_icon((255, 255, 255)) // White fallback
+        });
+    
+    // Track recording state
+    let is_recording = Arc::new(AtomicBool::new(false));
+    
+    // Create menu items
+    let record_item = MenuItem::with_id(app, "record", "Record Screen/Window", true, None::<&str>)?;
+    let configuration = MenuItem::with_id(app, "configuration", "Configuration", true, None::<&str>)?;
+    let about = MenuItem::with_id(app, "about", "About", true, None::<&str>)?;
+    let exit = MenuItem::with_id(app, "exit", "Exit", true, None::<&str>)?;
+    
+    // Build menu
+    let menu = Menu::with_items(app, &[
+        &record_item,
+        &configuration,
+        &about,
+        &exit,
+    ])?;
+    
+    // Build tray icon (hidden during recording, shown when idle)
+    let tray = TrayIconBuilder::new()
+        .icon(icon)
+        .menu(&menu)
+        .tooltip("OmniRec")
+        .on_menu_event(|app, event| {
+            match event.id.as_ref() {
+                "record" => {
+                    eprintln!("[Tray] Record Screen/Window clicked");
+                    let _ = app.emit("tray-start-recording", ());
+                }
+                "configuration" => {
+                    eprintln!("[Tray] Configuration clicked");
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                    }
+                    let _ = app.emit("tray-show-config", ());
+                }
+                "about" => {
+                    eprintln!("[Tray] About clicked");
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                    }
+                    let _ = app.emit("tray-show-about", ());
+                }
+                "exit" => {
+                    eprintln!("[Tray] Exit clicked");
+                    let _ = app.emit("tray-exit", ());
+                    std::thread::spawn({
+                        let app = app.clone();
+                        move || {
+                            std::thread::sleep(std::time::Duration::from_millis(500));
+                            app.exit(0);
+                        }
+                    });
+                }
+                _ => {}
+            }
+        })
+        .build(app)?;
+    
+    // Store tray handle and recording state
+    app.manage(GnomeTrayState {
+        tray: std::sync::Mutex::new(tray),
+        is_recording,
+    });
+    
+    // Hide main window on GNOME (start with tray only)
+    if let Some(window) = app.get_webview_window("main") {
+        eprintln!("[Tray] Hiding main window for GNOME tray mode");
+        let _ = window.hide();
+    }
+    
+    eprintln!("[Tray] GNOME tray icon setup complete");
+    Ok(())
+}
+
+#[cfg(not(target_os = "linux"))]
+fn setup_gnome_tray(_app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -903,6 +1254,12 @@ pub fn run() {
         .manage(AppState::new())
         .setup(|app| {
             setup_macos_window(app);
+            
+            // Set up GNOME tray if on GNOME desktop
+            if let Err(e) = setup_gnome_tray(app) {
+                eprintln!("[Setup] Failed to set up GNOME tray: {}", e);
+            }
+            
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -912,6 +1269,8 @@ pub fn run() {
             start_recording,
             start_region_recording,
             start_display_recording,
+            start_gnome_recording,
+            set_tray_recording_state,
             stop_recording,
             get_elapsed_time,
             get_output_format,
@@ -922,6 +1281,8 @@ pub fn run() {
             get_region_selector_position,
             move_region_selector,
             is_hyprland,
+            is_gnome,
+            get_desktop_environment,
             check_screen_recording_permission,
             open_screen_recording_settings,
             get_window_thumbnail,

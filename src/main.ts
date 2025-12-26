@@ -1,8 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
-import { revealItemInDir } from "@tauri-apps/plugin-opener";
+import { revealItemInDir, openUrl } from "@tauri-apps/plugin-opener";
 import { WebviewWindow, getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { listen } from "@tauri-apps/api/event";
+
+// Application URLs
+const OMNIREC_WEBSITE_URL = "https://omnirec.app";
+const OMNIREC_GITHUB_URL = "https://github.com/keathmilligan/omnirec";
+const OMNIREC_LICENSE_URL = "https://github.com/keathmilligan/omnirec/blob/main/LICENSE";
 
 // Types matching Rust structs
 interface WindowInfo {
@@ -32,7 +37,7 @@ interface CaptureRegion {
 }
 
 type CaptureMode = "window" | "region" | "display";
-type ViewMode = CaptureMode | "config";
+type ViewMode = CaptureMode | "config" | "about";
 type RecordingState = "idle" | "recording" | "saving";
 type OutputFormat = "mp4" | "webm" | "mkv" | "quicktime" | "gif" | "apng" | "webp";
 
@@ -207,10 +212,19 @@ let macosSystemAudioCheckbox: HTMLInputElement | null;
 let macosSystemAudioConfigItem: HTMLElement | null;
 let macosSystemAudioHint: HTMLElement | null;
 let audioSourceConfigItem: HTMLElement | null;
+let modeAboutBtn: HTMLButtonElement | null;
+let aboutViewEl: HTMLElement | null;
+let aboutVersionEl: HTMLElement | null;
+let aboutWebsiteLink: HTMLAnchorElement | null;
+let aboutGithubLink: HTMLAnchorElement | null;
+let aboutLicenseLink: HTMLAnchorElement | null;
 
 // Platform state
 let currentPlatform: "macos" | "linux" | "windows" = "linux";
 let macosSystemAudioAvailable = false;
+let isGnomeDesktop = false;
+type DesktopEnvironment = "gnome" | "hyprland" | "unknown";
+let desktopEnvironment: DesktopEnvironment = "unknown";
 
 // State
 let captureMode: CaptureMode = "window";
@@ -324,6 +338,12 @@ window.addEventListener("DOMContentLoaded", () => {
   macosSystemAudioConfigItem = document.querySelector("#macos-system-audio-config-item");
   macosSystemAudioHint = document.querySelector("#macos-system-audio-hint");
   audioSourceConfigItem = document.querySelector("#audio-source-config-item");
+  modeAboutBtn = document.querySelector("#mode-about-btn");
+  aboutViewEl = document.querySelector("#about-view");
+  aboutVersionEl = document.querySelector("#about-version");
+  aboutWebsiteLink = document.querySelector("#about-website-link");
+  aboutGithubLink = document.querySelector("#about-github-link");
+  aboutLicenseLink = document.querySelector("#about-license-link");
 
   // Set up event listeners
   closeBtn?.addEventListener("click", async () => {
@@ -384,6 +404,21 @@ window.addEventListener("DOMContentLoaded", () => {
   modeRegionBtn?.addEventListener("click", () => setViewMode("region"));
   modeDisplayBtn?.addEventListener("click", () => setViewMode("display"));
   modeConfigBtn?.addEventListener("click", () => setViewMode("config"));
+  modeAboutBtn?.addEventListener("click", () => setViewMode("about"));
+  
+  // About view handlers
+  aboutWebsiteLink?.addEventListener("click", (e) => {
+    e.preventDefault();
+    openUrl(OMNIREC_WEBSITE_URL);
+  });
+  aboutGithubLink?.addEventListener("click", (e) => {
+    e.preventDefault();
+    openUrl(OMNIREC_GITHUB_URL);
+  });
+  aboutLicenseLink?.addEventListener("click", (e) => {
+    e.preventDefault();
+    openUrl(OMNIREC_LICENSE_URL);
+  });
 
   // Config view handlers
   outputDirInput?.addEventListener("input", handleOutputDirInput);
@@ -454,7 +489,45 @@ window.addEventListener("DOMContentLoaded", () => {
     updateRegionDisplay();
   });
 
-  // Initial load - check permissions first
+  // Listen for tray menu events (GNOME mode)
+  listen("tray-start-recording", () => {
+    console.log("[Tray] Start recording event received");
+    handleTrayStartRecording();
+  });
+
+  listen("tray-stop-recording", () => {
+    console.log("[Tray] Stop recording event received");
+    handleTrayStopRecording();
+  });
+
+  listen("tray-show-config", () => {
+    console.log("[Tray] Show config event received");
+    setViewMode("config");
+  });
+
+  listen("tray-show-about", () => {
+    console.log("[Tray] Show about event received");
+    setViewMode("about");
+  });
+
+  listen("tray-exit", () => {
+    console.log("[Tray] Exit event received");
+    // Stop any active recording before exit
+    if (currentState === "recording") {
+      stopRecording();
+    }
+  });
+
+  // Listen for external recording stop (e.g., user clicked GNOME's recording indicator)
+  listen("recording-stream-stopped", () => {
+    console.log("[Stream] Recording stream stopped externally");
+    if (currentState === "recording") {
+      handleTrayStopRecording();
+    }
+  });
+
+  // Initial load - detect desktop environment and check permissions
+  detectDesktopEnvironment();
   checkPermissionsAndLoad();
   loadAppVersion();
   loadConfig();
@@ -493,16 +566,49 @@ async function handleOpenSettings(): Promise<void> {
 
 // Load and display app version
 async function loadAppVersion(): Promise<void> {
-  if (!appVersionEl) return;
   try {
     const version = await getVersion();
-    appVersionEl.textContent = `v${version}`;
+    if (appVersionEl) {
+      appVersionEl.textContent = `v${version}`;
+    }
+    if (aboutVersionEl) {
+      aboutVersionEl.textContent = `Version ${version}`;
+    }
   } catch (error) {
     console.error("Failed to load app version:", error);
   }
 }
 
-// Set view mode (capture mode or config)
+// Detect desktop environment (GNOME, Hyprland, etc.)
+async function detectDesktopEnvironment(): Promise<void> {
+  try {
+    desktopEnvironment = await invoke<DesktopEnvironment>("get_desktop_environment");
+    isGnomeDesktop = desktopEnvironment === "gnome";
+    console.log("[Desktop] Detected environment:", desktopEnvironment, ", isGnome:", isGnomeDesktop);
+    
+    // Apply GNOME-specific UI changes
+    if (isGnomeDesktop) {
+      applyGnomeMode();
+    }
+  } catch (error) {
+    console.error("Failed to detect desktop environment:", error);
+  }
+}
+
+// Apply GNOME-specific UI modifications
+function applyGnomeMode(): void {
+  console.log("[GNOME] Applying GNOME mode...");
+  
+  // Hide capture mode tabs (Window, Region, Display) - portal handles selection
+  modeWindowBtn?.classList.add("hidden");
+  modeRegionBtn?.classList.add("hidden");
+  modeDisplayBtn?.classList.add("hidden");
+  
+  // Set config as default view on GNOME
+  setViewMode("config");
+}
+
+// Set view mode (capture mode or config or about)
 function setViewMode(mode: ViewMode): void {
   if (currentState !== "idle") return;
 
@@ -511,19 +617,21 @@ function setViewMode(mode: ViewMode): void {
   modeRegionBtn?.classList.toggle("active", mode === "region");
   modeDisplayBtn?.classList.toggle("active", mode === "display");
   modeConfigBtn?.classList.toggle("active", mode === "config");
+  modeAboutBtn?.classList.toggle("active", mode === "about");
 
   // Show/hide sections
   windowSelectionEl?.classList.toggle("hidden", mode !== "window");
   regionSelectionEl?.classList.toggle("hidden", mode !== "region");
   displaySelectionEl?.classList.toggle("hidden", mode !== "display");
   configViewEl?.classList.toggle("hidden", mode !== "config");
+  aboutViewEl?.classList.toggle("hidden", mode !== "about");
 
-  // Show/hide controls section (hidden in config mode)
+  // Show/hide controls section (hidden in config and about modes)
   const controlsEl = document.querySelector(".controls");
-  controlsEl?.classList.toggle("hidden", mode === "config");
+  controlsEl?.classList.toggle("hidden", mode === "config" || mode === "about");
 
   // Handle switching to/from capture modes
-  if (mode !== "config") {
+  if (mode !== "config" && mode !== "about") {
     captureMode = mode;
   }
 
@@ -557,7 +665,7 @@ function setViewMode(mode: ViewMode): void {
   }
 
   // Update record button only for capture modes
-  if (mode !== "config") {
+  if (mode !== "config" && mode !== "about") {
     updateRecordButton();
   }
 }
@@ -1438,6 +1546,71 @@ async function stopRecording(): Promise<void> {
   disableSelection(false);
 }
 
+// =============================================================================
+// GNOME Tray Recording Functions
+// =============================================================================
+
+// Handle tray "Start Recording" - invokes portal on GNOME
+async function handleTrayStartRecording(): Promise<void> {
+  console.log("[Tray] handleTrayStartRecording called, currentState:", currentState);
+  if (currentState !== "idle") {
+    console.log("[Tray] Cannot start recording - not in idle state");
+    return;
+  }
+
+  console.log("[Tray] Starting portal-based recording...");
+  setStatus("Starting recording...");
+
+  try {
+    // On GNOME, we use portal-based recording which shows the native picker
+    // The portal handles source selection, so we call a generic start function
+    console.log("[Tray] Calling start_gnome_recording...");
+    await invoke("start_gnome_recording");
+    console.log("[Tray] start_gnome_recording completed");
+    
+    currentState = "recording";
+    updateRecordButton();
+    startTimer();
+    setStatus("Recording...");
+    
+    // Hide tray icon during recording (GNOME's indicator will be used to stop)
+    console.log("[Tray] Calling set_tray_recording_state(true)...");
+    await invoke("set_tray_recording_state", { recording: true });
+    console.log("[Tray] set_tray_recording_state completed");
+  } catch (error) {
+    console.error("[Tray] Failed to start recording:", error);
+    setStatus(`Failed to start recording: ${error}`, true);
+  }
+}
+
+// Handle tray "Stop Recording"
+async function handleTrayStopRecording(): Promise<void> {
+  if (currentState !== "recording") {
+    console.log("[Tray] Cannot stop recording - not recording");
+    return;
+  }
+
+  console.log("[Tray] Stopping recording...");
+  await stopRecording();
+  
+  // Update tray icon back to normal state
+  try {
+    await invoke("set_tray_recording_state", { recording: false });
+  } catch (error) {
+    console.error("[Tray] Failed to update tray icon:", error);
+  }
+  
+  // Close region selector if open (GNOME mode)
+  if (regionSelectorWindow) {
+    try {
+      await regionSelectorWindow.close();
+    } catch {
+      // Window may already be closed
+    }
+    regionSelectorWindow = null;
+  }
+}
+
 // Update record button state
 function updateRecordButton(): void {
   if (!recordBtn) return;
@@ -1510,6 +1683,9 @@ function disableSelection(disabled: boolean): void {
   }
   if (modeConfigBtn) {
     modeConfigBtn.disabled = disabled;
+  }
+  if (modeAboutBtn) {
+    modeAboutBtn.disabled = disabled;
   }
   if (formatBtnEl) {
     formatBtnEl.disabled = disabled;

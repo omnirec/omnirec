@@ -44,7 +44,18 @@ pub fn start_pipewire_capture(
     width: u32,
     height: u32,
 ) -> Result<(FrameReceiver, StopHandle), String> {
-    start_pipewire_capture_with_crop(node_id, width, height, None)
+    start_pipewire_capture_internal(node_id, width, height, None, false)
+}
+
+/// Start capturing with auto-crop detection.
+/// This will analyze the first frame to find the actual content bounds
+/// and crop to that region (useful for window captures on GNOME).
+pub fn start_pipewire_capture_with_auto_crop(
+    node_id: u32,
+    width: u32,
+    height: u32,
+) -> Result<(FrameReceiver, StopHandle), String> {
+    start_pipewire_capture_internal(node_id, width, height, None, true)
 }
 
 /// Start capturing from a PipeWire stream with optional cropping.
@@ -63,6 +74,17 @@ pub fn start_pipewire_capture_with_crop(
     height: u32,
     crop_region: Option<CropRegion>,
 ) -> Result<(FrameReceiver, StopHandle), String> {
+    start_pipewire_capture_internal(node_id, width, height, crop_region, false)
+}
+
+/// Internal capture function with all options.
+fn start_pipewire_capture_internal(
+    node_id: u32,
+    width: u32,
+    height: u32,
+    crop_region: Option<CropRegion>,
+    enable_auto_crop: bool,
+) -> Result<(FrameReceiver, StopHandle), String> {
     let (frame_tx, frame_rx) = mpsc::channel::<CapturedFrame>(2);
     let stop_flag = Arc::new(AtomicBool::new(false));
     let stop_flag_clone = stop_flag.clone();
@@ -70,13 +92,15 @@ pub fn start_pipewire_capture_with_crop(
     if let Some(crop) = crop_region {
         eprintln!("[PipeWire] Starting capture thread for node {} ({}x{}) with crop region ({}x{} at {},{}", 
             node_id, width, height, crop.width, crop.height, crop.x, crop.y);
+    } else if enable_auto_crop {
+        eprintln!("[PipeWire] Starting capture thread for node {} ({}x{}) with auto-crop enabled", node_id, width, height);
     } else {
         eprintln!("[PipeWire] Starting capture thread for node {} ({}x{})", node_id, width, height);
     }
 
     // Spawn the PipeWire capture thread
     std::thread::spawn(move || {
-        if let Err(e) = run_pipewire_capture(node_id, width, height, crop_region, frame_tx, stop_flag_clone) {
+        if let Err(e) = run_pipewire_capture(node_id, width, height, crop_region, enable_auto_crop, frame_tx, stop_flag_clone) {
             eprintln!("[PipeWire] Capture error: {}", e);
         }
         eprintln!("[PipeWire] Capture thread exited");
@@ -98,6 +122,10 @@ struct StreamData {
     format_changes: u32,
     /// Optional region to crop from the stream
     crop_region: Option<CropRegion>,
+    /// Auto-detected content bounds (for window captures without explicit crop)
+    auto_crop: Option<CropRegion>,
+    /// Whether we should try to auto-detect content bounds
+    enable_auto_crop: bool,
 }
 
 /// Run the PipeWire main loop and capture frames.
@@ -106,6 +134,7 @@ fn run_pipewire_capture(
     width: u32,
     height: u32,
     crop_region: Option<CropRegion>,
+    enable_auto_crop: bool,
     frame_tx: mpsc::Sender<CapturedFrame>,
     stop_flag: Arc<AtomicBool>,
 ) -> Result<(), String> {
@@ -147,6 +176,8 @@ fn run_pipewire_capture(
         frames_received: 0,
         format_changes: 0,
         crop_region,
+        auto_crop: None,
+        enable_auto_crop,
     };
 
     // Clone mainloop for stop check
@@ -180,7 +211,18 @@ fn run_pipewire_capture(
                     eprintln!("[PipeWire] Stream is now streaming");
                 }
                 pw::stream::StreamState::Paused => {
-                    eprintln!("[PipeWire] Stream paused");
+                    // Only stop if we were previously streaming.
+                    // Normal startup goes: Unconnected -> Connecting -> Paused -> Streaming
+                    // User-initiated pause goes: Streaming -> Paused
+                    if matches!(old, pw::stream::StreamState::Streaming) {
+                        eprintln!("[PipeWire] Stream paused after streaming - stopping capture");
+                        stop_flag_for_state.store(true, Ordering::SeqCst);
+                        if let Some(mainloop) = mainloop_weak.upgrade() {
+                            mainloop.quit();
+                        }
+                    } else {
+                        eprintln!("[PipeWire] Stream paused (startup phase, waiting for streaming)");
+                    }
                 }
                 _ => {}
             }
@@ -645,16 +687,97 @@ fn convert_to_bgra(frame_data: Vec<u8>, format: spa::param::video::VideoFormat) 
     }
 }
 
+/// Detect the bounding box of non-black content in a frame.
+/// Returns (x, y, width, height) of the content region, or None if detection fails.
+fn detect_content_bounds(frame_data: &[u8], width: u32, height: u32) -> Option<CropRegion> {
+    let bytes_per_pixel = 4;
+    let row_bytes = width as usize * bytes_per_pixel;
+    
+    // Threshold for considering a pixel as "content" (not black)
+    // Using a small threshold to account for compression artifacts
+    const THRESHOLD: u8 = 8;
+    
+    let mut min_x = width as i32;
+    let mut min_y = height as i32;
+    let mut max_x = 0i32;
+    let mut max_y = 0i32;
+    
+    for y in 0..height as usize {
+        for x in 0..width as usize {
+            let idx = y * row_bytes + x * bytes_per_pixel;
+            if idx + 2 < frame_data.len() {
+                let b = frame_data[idx];
+                let g = frame_data[idx + 1];
+                let r = frame_data[idx + 2];
+                
+                // Check if pixel is non-black
+                if r > THRESHOLD || g > THRESHOLD || b > THRESHOLD {
+                    min_x = min_x.min(x as i32);
+                    min_y = min_y.min(y as i32);
+                    max_x = max_x.max(x as i32);
+                    max_y = max_y.max(y as i32);
+                }
+            }
+        }
+    }
+    
+    // Check if we found any content
+    if max_x >= min_x && max_y >= min_y {
+        let content_width = (max_x - min_x + 1) as u32;
+        let content_height = (max_y - min_y + 1) as u32;
+        
+        // Only use auto-crop if content is meaningfully smaller than frame
+        // (at least 10% smaller in either dimension)
+        let width_ratio = content_width as f32 / width as f32;
+        let height_ratio = content_height as f32 / height as f32;
+        
+        if width_ratio < 0.95 || height_ratio < 0.95 {
+            eprintln!("[PipeWire] Auto-crop detected content bounds: {}x{} at ({}, {})",
+                content_width, content_height, min_x, min_y);
+            return Some(CropRegion {
+                x: min_x,
+                y: min_y,
+                width: content_width,
+                height: content_height,
+            });
+        }
+    }
+    
+    None
+}
+
 /// Send a frame to the encoder channel.
 fn send_frame(user_data: &mut StreamData, width: u32, height: u32, frame_data: Vec<u8>) {
     // Convert to BGRA format for consistent downstream processing
     let format = user_data.format.format();
     let bgra_data = convert_to_bgra(frame_data, format);
     
+    // Auto-crop detection on first frame
+    if user_data.enable_auto_crop && user_data.auto_crop.is_none() && user_data.frames_received == 1 {
+        if let Some(bounds) = detect_content_bounds(&bgra_data, width, height) {
+            user_data.auto_crop = Some(bounds);
+        } else {
+            // Disable auto-crop if we couldn't detect bounds
+            eprintln!("[PipeWire] Auto-crop: no distinct content bounds detected, using full frame");
+            user_data.enable_auto_crop = false;
+        }
+    }
+    
+    // Apply auto-crop if detected
+    let (final_data, final_width, final_height) = if let Some(crop) = user_data.auto_crop {
+        if let Some(cropped) = crop_frame_data(&bgra_data, width, height, crop) {
+            (cropped, crop.width, crop.height)
+        } else {
+            (bgra_data, width, height)
+        }
+    } else {
+        (bgra_data, width, height)
+    };
+    
     let frame = CapturedFrame {
-        width,
-        height,
-        data: bgra_data,
+        width: final_width,
+        height: final_height,
+        data: final_data,
     };
     
     // Non-blocking send - drop frame if channel is full

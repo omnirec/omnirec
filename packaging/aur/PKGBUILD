@@ -11,10 +11,12 @@ depends=(
     'ffmpeg'
     'pipewire'
     'xdg-desktop-portal'
-    'xdg-desktop-portal-hyprland'
     'qt6-base'
+    'libappindicator-gtk3'
 )
 optdepends=(
+    'xdg-desktop-portal-hyprland: Portal backend for Hyprland compositor'
+    'xdg-desktop-portal-gnome: Portal backend for GNOME desktop'
     'xdg-desktop-portal-gtk: Portal backend for GTK-based compositors'
     'xdg-desktop-portal-kde: Portal backend for KDE Plasma'
     'xdg-desktop-portal-wlr: Portal backend for wlroots-based compositors'

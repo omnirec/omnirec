@@ -53,7 +53,7 @@
 | macOS | 12.3+ |
 | Linux | Arch, Debian, Ubuntu, Fedora, and others |
 
-**Linux Desktop Environments** (Wayland): Hyprland, GNOME, KDE
+**Linux Desktop Environments** (Wayland): Hyprland (full features), GNOME (screen/window recording via system tray), KDE
 
 ## Installation
 
@@ -73,7 +73,7 @@ Download the latest `.dmg` from the [Releases](https://github.com/omnirec/omnire
 
 > [!NOTE]
 >
-> Currently, **only** Arch Linux with Hyprland is supported (including Omarchy and other popular derivitives and configs). Support for other platforms and desktop environments is not yet available.
+> Currently, **Arch Linux with Hyprland** is recommended for full feature support (including Omarchy and other popular derivitives and configs). GNOME is supported with screen/window recording via system tray (region recording is not available due to Wayland limitations).
 
 Use `makepkg`:
 
@@ -91,11 +91,23 @@ OmniRec is designed to work with zero configuration, but it is necessary to gran
 
 On first launch, grant Screen Recording permission in System Settings > Privacy & Security.
 
-### Linux
+### Linux (Hyprland)
 
 On first recording request, OmniRec will display an approval dialog asking for permission to record the screen. You can check "Always allow OmniRec to record the screen" to bypass this dialog for future recordings.
 
 The approval token is stored at `~/.local/state/omnirec/approval-token`. To revoke permission, delete this file.
+
+### Linux (GNOME)
+
+On GNOME, OmniRec runs as a system tray application. Click the tray icon to access recording controls:
+
+- **Record Screen/Window** — Opens GNOME's native screen share picker
+- **Stop Recording** — Stops the current recording
+- **Configuration** — Opens settings window
+- **About** — Shows app information
+- **Exit** — Quits the application
+
+Region recording is not available on GNOME due to Wayland security limitations that prevent applications from determining window positions.
 
 ## Development
 

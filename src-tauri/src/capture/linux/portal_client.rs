@@ -39,8 +39,10 @@ pub struct ScreencastStream {
     /// Source type that was approved (e.g., Monitor, Window)
     #[allow(dead_code)]
     pub source_type: Option<SourceType>,
-    /// Stream dimensions (if available)
+    /// Stream dimensions (if available) - this is the size of the content
     pub size: Option<(i32, i32)>,
+    /// Position in compositor coordinates (for window captures)
+    pub position: Option<(i32, i32)>,
 }
 
 /// Portal client for screen capture.
@@ -134,10 +136,37 @@ impl PortalClient {
         self.request_screencast(SourceType::Monitor).await
     }
 
+    /// Request a screencast stream using the portal's native picker.
+    ///
+    /// This method does NOT set any IPC selection, allowing the portal's
+    /// native picker (e.g., GNOME's dialog) to handle source selection.
+    /// Use this for GNOME mode where we want the standard portal UX.
+    pub async fn request_screencast_with_picker(&self) -> Result<ScreencastStream, String> {
+        eprintln!("[PortalClient] request_screencast_with_picker: using native picker");
+        
+        // Clear any existing IPC selection so our custom picker doesn't interfere
+        {
+            let mut state = self.ipc_state.write().await;
+            state.selection = None;
+        }
+
+        // Request with both Monitor and Window source types enabled
+        // This allows the portal picker to offer all options
+        self.request_screencast_multi(SourceType::Monitor | SourceType::Window).await
+    }
+
     /// Internal method to execute the portal screencast flow.
     async fn request_screencast(
         &self,
         source_type: SourceType,
+    ) -> Result<ScreencastStream, String> {
+        self.request_screencast_multi(source_type.into()).await
+    }
+
+    /// Internal method to execute the portal screencast flow with multiple source types.
+    async fn request_screencast_multi(
+        &self,
+        source_types: BitFlags<SourceType>,
     ) -> Result<ScreencastStream, String> {
         // Get the screencast portal proxy
         let screencast = Screencast::new()
@@ -149,9 +178,6 @@ impl PortalClient {
             .create_session()
             .await
             .map_err(|e| format!("Failed to create portal session: {}", e))?;
-
-        // Build source type flags
-        let source_types: BitFlags<SourceType> = source_type.into();
 
         // Select sources - this triggers the picker
         screencast
@@ -166,7 +192,7 @@ impl PortalClient {
             .await
             .map_err(|e| format!("Failed to select sources: {}", e))?;
 
-        // Start the screencast - picker will auto-approve
+        // Start the screencast - picker will handle source selection
         let response = screencast
             .start(&session, &WindowIdentifier::default())
             .await
@@ -188,14 +214,16 @@ impl PortalClient {
         let node_id = stream.pipe_wire_node_id();
         let source_type = stream.source_type();
         let size = stream.size();
+        let position = stream.position();
         
-        eprintln!("[Portal] Stream info: node_id={}, source_type={:?}, size={:?}", 
-            node_id, source_type, size);
+        eprintln!("[Portal] Stream info: node_id={}, source_type={:?}, size={:?}, position={:?}", 
+            node_id, source_type, size, position);
 
         Ok(ScreencastStream {
             node_id,
             source_type,
             size,
+            position,
         })
     }
 }

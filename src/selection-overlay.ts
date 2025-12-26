@@ -66,8 +66,6 @@ window.addEventListener("DOMContentLoaded", async () => {
     isHyprland = false;
   }
 
-  console.log("isHyprland result:", isHyprland);
-
   // On non-Hyprland platforms, add resize handles (they don't work on Hyprland)
   if (!isHyprland) {
     console.log("Adding resize handles for non-Hyprland platform");

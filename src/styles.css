@@ -512,6 +512,115 @@ section {
   margin-top: -2px;
 }
 
+/* About button - right-aligned in tab bar after config */
+.mode-btn--about {
+  padding: 0.5em 0.8em;
+}
+
+.mode-btn--about .about-icon {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
+/* ===== About View ===== */
+.about-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  margin-bottom: 16px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 8px;
+}
+
+.about-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 24px 16px;
+  flex: 1;
+}
+
+.about-logo {
+  max-width: 180px;
+  height: auto;
+  margin-bottom: 8px;
+  pointer-events: none;
+}
+
+.about-version {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  margin: 0 0 24px 0;
+}
+
+.about-links {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 32px;
+}
+
+.about-link {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  text-decoration: none;
+  font-size: 0.85rem;
+  font-weight: 500;
+  transition: background-color 0.2s, border-color 0.2s;
+  cursor: pointer;
+}
+
+.about-link:hover {
+  background: var(--bg-surface-hover);
+  border-color: var(--text-muted);
+}
+
+.about-link svg {
+  width: 16px;
+  height: 16px;
+  color: var(--text-secondary);
+}
+
+.about-link:hover svg {
+  color: var(--text-primary);
+}
+
+.about-legal {
+  margin-top: auto;
+  padding-top: 16px;
+}
+
+.about-copyright {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin: 0 0 4px 0;
+}
+
+.about-license {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.about-license a {
+  color: var(--accent-primary);
+  text-decoration: none;
+}
+
+.about-license a:hover {
+  text-decoration: underline;
+}
+
 /* ===== Region Selection ===== */
 .region-selection {
   display: flex;
