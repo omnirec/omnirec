@@ -6,10 +6,63 @@ use chrono::Local;
 use ffmpeg_sidecar::command::FfmpegCommand;
 use std::io::Write;
 use std::path::PathBuf;
-use std::process::{ChildStdin, Stdio};
+use std::process::{Command, ChildStdin, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::mpsc;
+
+/// Detect the best available H.264 encoder.
+/// Returns the encoder name to use with FFmpeg.
+fn detect_h264_encoder() -> &'static str {
+    // Check which encoders are available by running ffmpeg -encoders
+    let output = Command::new("ffmpeg")
+        .args(["-encoders", "-hide_banner"])
+        .output();
+    
+    let encoders_output = match output {
+        Ok(o) => String::from_utf8_lossy(&o.stdout).to_string(),
+        Err(e) => {
+            eprintln!("[Encoder] Failed to run ffmpeg -encoders: {}", e);
+            String::new()
+        }
+    };
+    
+    eprintln!("[Encoder] Checking available H.264 encoders...");
+    
+    // Preference order: libx264 (best quality/compat), then hardware encoders, then fallback
+    // Note: Fedora's ffmpeg-free doesn't include libx264, so we check hardware encoders too
+    let encoder_preferences = [
+        ("libx264", "libx264"),           // Software, best compatibility (not on Fedora ffmpeg-free)
+        ("libopenh264", "libopenh264"),   // OpenH264 (Cisco, available on Fedora)
+        ("h264_vaapi", "h264_vaapi"),     // VAAPI (AMD/Intel) - common on Linux
+        ("h264_nvenc", "h264_nvenc"),     // NVIDIA
+        ("h264_amf", "h264_amf"),         // AMD AMF
+        ("h264_qsv", "h264_qsv"),         // Intel QuickSync
+        ("h264_v4l2m2m", "h264_v4l2m2m"), // V4L2 (RPi, etc.)
+        ("h264_vulkan", "h264_vulkan"),   // Vulkan
+    ];
+    
+    for (search_name, encoder_name) in encoder_preferences {
+        // Check if the encoder is listed (search for the encoder name followed by space or end)
+        if encoders_output.contains(&format!(" {} ", search_name)) 
+            || encoders_output.contains(&format!(" {}\n", search_name))
+            || encoders_output.lines().any(|l| l.contains(search_name)) 
+        {
+            eprintln!("[Encoder] Found H.264 encoder: {}", encoder_name);
+            return encoder_name;
+        }
+    }
+    
+    // Last resort fallback - try libx264 anyway
+    eprintln!("[Encoder] Warning: No H.264 encoder detected in ffmpeg output!");
+    eprintln!("[Encoder] Available encoders: {}", 
+        encoders_output.lines()
+            .filter(|l| l.contains("264") || l.contains("h264"))
+            .collect::<Vec<_>>()
+            .join(", "));
+    eprintln!("[Encoder] Trying libx264 as fallback (may fail on Fedora without RPM Fusion)");
+    "libx264"
+}
 
 /// Audio configuration for the encoder.
 #[derive(Clone)]
@@ -78,6 +131,9 @@ impl VideoEncoder {
 
     /// Start the FFmpeg encoding process.
     pub fn start(&mut self) -> Result<(), String> {
+        // Detect available H.264 encoder
+        let encoder = detect_h264_encoder();
+        
         // Build the FFmpeg command using std::process for better stdin control
         let mut command = FfmpegCommand::new();
         command
@@ -86,11 +142,42 @@ impl VideoEncoder {
             .args(["-pix_fmt", "bgra"])
             .args(["-s", &format!("{}x{}", self.width, self.height)])
             .args(["-r", "30"]) // 30 FPS
-            .args(["-i", "-"]) // Read from stdin
-            // Output: H.264 in MP4 container
-            .args(["-c:v", "libx264"])
-            .args(["-preset", "ultrafast"]) // Fast encoding for real-time
-            .args(["-crf", "23"]) // Good quality/size balance
+            .args(["-i", "-"]); // Read from stdin
+        
+        // Output: H.264 in MP4 container
+        // Configure encoder-specific options
+        command.args(["-c:v", encoder]);
+        
+        // Add encoder-specific options
+        match encoder {
+            "libx264" => {
+                command
+                    .args(["-preset", "ultrafast"]) // Fast encoding for real-time
+                    .args(["-crf", "23"]); // Good quality/size balance
+            }
+            "libopenh264" => {
+                // OpenH264 has limited options
+                command
+                    .args(["-b:v", "2M"]); // Target bitrate
+            }
+            "h264_vaapi" => {
+                // VAAPI needs different options
+                command
+                    .args(["-qp", "23"]); // Quality parameter
+            }
+            "h264_nvenc" | "h264_amf" => {
+                command
+                    .args(["-preset", "p1"]) // Fastest preset
+                    .args(["-rc", "vbr"])
+                    .args(["-cq", "23"]);
+            }
+            _ => {
+                // Generic options for other encoders
+                eprintln!("[Encoder] Using generic options for encoder: {}", encoder);
+            }
+        }
+        
+        command
             .args(["-pix_fmt", "yuv420p"]) // Compatible pixel format
             .args(["-movflags", "+faststart"]) // Web-optimized MP4
             .args(["-y"]) // Overwrite output
@@ -110,6 +197,18 @@ impl VideoEncoder {
             .stdin
             .take()
             .ok_or("Failed to get FFmpeg stdin")?;
+
+        // Spawn a thread to read stderr and log FFmpeg errors
+        if let Some(stderr) = child.stderr.take() {
+            std::thread::spawn(move || {
+                use std::io::{BufRead, BufReader};
+                let reader = BufReader::new(stderr);
+                for line in reader.lines().map_while(Result::ok) {
+                    eprintln!("[FFmpeg] {}", line);
+                }
+                eprintln!("[FFmpeg] stderr reader thread exiting");
+            });
+        }
 
         self.video_stdin = Some(stdin);
         self.child = Some(child);

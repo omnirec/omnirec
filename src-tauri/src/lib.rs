@@ -647,8 +647,23 @@ fn is_gnome() -> bool {
     }
 }
 
+/// Check if running on KDE Plasma desktop environment.
+#[tauri::command]
+fn is_kde() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        std::env::var("XDG_CURRENT_DESKTOP")
+            .map(|d| d.to_uppercase().contains("KDE"))
+            .unwrap_or(false)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        false
+    }
+}
+
 /// Get the current desktop environment name.
-/// Returns: "gnome", "hyprland", or "unknown".
+/// Returns: "gnome", "kde", "hyprland", or "unknown".
 #[tauri::command]
 fn get_desktop_environment() -> String {
     #[cfg(target_os = "linux")]
@@ -661,6 +676,12 @@ fn get_desktop_environment() -> String {
             .unwrap_or(false)
         {
             return "gnome".to_string();
+        }
+        if std::env::var("XDG_CURRENT_DESKTOP")
+            .map(|d| d.to_uppercase().contains("KDE"))
+            .unwrap_or(false)
+        {
+            return "kde".to_string();
         }
         "unknown".to_string()
     }
@@ -1073,11 +1094,15 @@ fn setup_macos_window(_app: &tauri::App) {
     // No-op on other platforms
 }
 
-/// Check if running on GNOME desktop (internal helper).
+/// Check if running on a tray-mode desktop (GNOME, KDE) - internal helper.
+/// These desktops use the portal's native picker for source selection.
 #[cfg(target_os = "linux")]
-fn is_gnome_desktop() -> bool {
+fn is_tray_mode_desktop() -> bool {
     std::env::var("XDG_CURRENT_DESKTOP")
-        .map(|d| d.to_uppercase().contains("GNOME"))
+        .map(|d| {
+            let upper = d.to_uppercase();
+            upper.contains("GNOME") || upper.contains("KDE")
+        })
         .unwrap_or(false)
 }
 
@@ -1143,17 +1168,17 @@ fn create_fallback_tray_icon(color: (u8, u8, u8)) -> Image<'static> {
     Image::new_owned(rgba, size, size)
 }
 
-/// Set up system tray for GNOME mode.
+/// Set up system tray for tray-mode desktops (GNOME, KDE).
 #[cfg(target_os = "linux")]
-fn setup_gnome_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+fn setup_tray_mode(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
     
-    if !is_gnome_desktop() {
+    if !is_tray_mode_desktop() {
         return Ok(());
     }
     
-    eprintln!("[Tray] Setting up GNOME tray icon...");
+    eprintln!("[Tray] Setting up tray icon for tray-mode desktop...");
     
     // Load symbolic tray icon (22x22 monochrome white)
     let icon = load_tray_icon(app, "omnirec-symbolic-22.png")
@@ -1231,18 +1256,18 @@ fn setup_gnome_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> 
         is_recording,
     });
     
-    // Hide main window on GNOME (start with tray only)
+    // Hide main window on tray-mode desktops (start with tray only)
     if let Some(window) = app.get_webview_window("main") {
-        eprintln!("[Tray] Hiding main window for GNOME tray mode");
+        eprintln!("[Tray] Hiding main window for tray mode");
         let _ = window.hide();
     }
     
-    eprintln!("[Tray] GNOME tray icon setup complete");
+    eprintln!("[Tray] Tray mode setup complete");
     Ok(())
 }
 
 #[cfg(not(target_os = "linux"))]
-fn setup_gnome_tray(_app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+fn setup_tray_mode(_app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
@@ -1255,9 +1280,9 @@ pub fn run() {
         .setup(|app| {
             setup_macos_window(app);
             
-            // Set up GNOME tray if on GNOME desktop
-            if let Err(e) = setup_gnome_tray(app) {
-                eprintln!("[Setup] Failed to set up GNOME tray: {}", e);
+            // Set up tray mode if on GNOME or KDE desktop
+            if let Err(e) = setup_tray_mode(app) {
+                eprintln!("[Setup] Failed to set up tray mode: {}", e);
             }
             
             Ok(())
@@ -1282,6 +1307,7 @@ pub fn run() {
             move_region_selector,
             is_hyprland,
             is_gnome,
+            is_kde,
             get_desktop_environment,
             check_screen_recording_permission,
             open_screen_recording_settings,

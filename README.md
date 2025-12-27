@@ -91,13 +91,15 @@ OmniRec is designed to work with zero configuration, but it is necessary to gran
 
 On first launch, grant Screen Recording permission in System Settings > Privacy & Security.
 
-### Linux (Hyprland)
+### Linux
+
+#### Hyprland
 
 On first recording request, OmniRec will display an approval dialog asking for permission to record the screen. You can check "Always allow OmniRec to record the screen" to bypass this dialog for future recordings.
 
 The approval token is stored at `~/.local/state/omnirec/approval-token`. To revoke permission, delete this file.
 
-### Linux (GNOME)
+#### GNOME
 
 On GNOME, OmniRec runs as a system tray application. Click the tray icon to access recording controls:
 
@@ -107,7 +109,7 @@ On GNOME, OmniRec runs as a system tray application. Click the tray icon to acce
 - **About** — Shows app information
 - **Exit** — Quits the application
 
-Region recording is not available on GNOME due to Wayland security limitations that prevent applications from determining window positions.
+#### KDE Plasma
 
 ## Development
 

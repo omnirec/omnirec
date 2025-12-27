@@ -1,13 +1,8 @@
-# gnome-tray-mode Specification
+## MODIFIED Requirements
 
-## Purpose
-Provides tray-based recording workflow for desktop environments that don't support custom portal pickers (GNOME, KDE Plasma). Users interact via system tray icon and native portal dialogs.
+### Requirement: GNOME Desktop Detection
 
-## Requirements
-
-### Requirement: Tray Mode Desktop Detection
-
-The system SHALL detect when running on a tray-mode desktop environment and activate tray mode.
+The system SHALL detect when running on GNOME desktop environment and activate tray mode.
 
 #### Scenario: GNOME detected via XDG_CURRENT_DESKTOP
 
@@ -31,33 +26,6 @@ The system SHALL detect when running on a tray-mode desktop environment and acti
 - **AND** the `XDG_CURRENT_DESKTOP` environment variable does not contain "GNOME" or "KDE"
 - **THEN** the application SHALL use the standard Hyprland/portal workflow
 - **AND** the main window SHALL be shown on startup
-
-### Requirement: System Tray Icon
-
-The system SHALL display a tray icon that provides recording controls.
-
-#### Scenario: Tray icon displayed on startup
-
-- **WHEN** tray mode is active
-- **THEN** a system tray icon SHALL appear in the system tray / app indicator area
-- **AND** the icon SHALL use the OmniRec application icon
-
-#### Scenario: Tray icon indicates idle state
-
-- **WHEN** no recording is in progress
-- **THEN** the tray icon SHALL display the normal OmniRec icon
-
-#### Scenario: Tray icon indicates recording state
-
-- **WHEN** a recording is in progress
-- **THEN** the tray icon SHALL change to a red dot icon
-- **AND** the icon SHALL remain red until recording stops
-
-#### Scenario: Tray icon removed on exit
-
-- **WHEN** the user selects Exit from the tray menu
-- **THEN** the tray icon SHALL be removed from the system tray
-- **AND** the application SHALL quit completely
 
 ### Requirement: Tray Menu Structure
 
@@ -116,32 +84,6 @@ The tray icon SHALL display a context menu with recording controls and navigatio
 - **WHEN** the user clicks "Exit"
 - **THEN** any active recording SHALL be stopped and saved
 - **AND** the application SHALL quit completely
-- **AND** the tray icon SHALL be removed
-
-### Requirement: Tray Mode Window Lifecycle
-
-On tray mode desktops, the main window close button SHALL hide the window instead of quitting the application.
-
-#### Scenario: Close button hides window
-
-- **WHEN** tray mode is active
-- **AND** the user clicks the window close button
-- **THEN** the main window SHALL be hidden
-- **AND** the application SHALL continue running
-- **AND** the tray icon SHALL remain visible
-
-#### Scenario: Window can be re-shown from tray
-
-- **WHEN** the main window is hidden
-- **AND** the user clicks Configuration or About in the tray menu
-- **THEN** the main window SHALL be shown
-- **AND** the window SHALL be focused
-
-#### Scenario: Exit still quits
-
-- **WHEN** tray mode is active
-- **AND** the user selects Exit from the tray menu
-- **THEN** the application SHALL quit completely
 - **AND** the tray icon SHALL be removed
 
 ### Requirement: Tray Mode Tab Visibility

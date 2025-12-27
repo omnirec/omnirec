@@ -222,8 +222,8 @@ let aboutLicenseLink: HTMLAnchorElement | null;
 // Platform state
 let currentPlatform: "macos" | "linux" | "windows" = "linux";
 let macosSystemAudioAvailable = false;
-let isGnomeDesktop = false;
-type DesktopEnvironment = "gnome" | "hyprland" | "unknown";
+let isTrayModeDesktop = false;
+type DesktopEnvironment = "gnome" | "kde" | "hyprland" | "unknown";
 let desktopEnvironment: DesktopEnvironment = "unknown";
 
 // State
@@ -579,32 +579,32 @@ async function loadAppVersion(): Promise<void> {
   }
 }
 
-// Detect desktop environment (GNOME, Hyprland, etc.)
+// Detect desktop environment (GNOME, KDE, Hyprland, etc.)
 async function detectDesktopEnvironment(): Promise<void> {
   try {
     desktopEnvironment = await invoke<DesktopEnvironment>("get_desktop_environment");
-    isGnomeDesktop = desktopEnvironment === "gnome";
-    console.log("[Desktop] Detected environment:", desktopEnvironment, ", isGnome:", isGnomeDesktop);
+    isTrayModeDesktop = desktopEnvironment === "gnome" || desktopEnvironment === "kde";
+    console.log("[Desktop] Detected environment:", desktopEnvironment, ", isTrayMode:", isTrayModeDesktop);
     
-    // Apply GNOME-specific UI changes
-    if (isGnomeDesktop) {
-      applyGnomeMode();
+    // Apply tray mode UI changes for GNOME and KDE
+    if (isTrayModeDesktop) {
+      applyTrayMode();
     }
   } catch (error) {
     console.error("Failed to detect desktop environment:", error);
   }
 }
 
-// Apply GNOME-specific UI modifications
-function applyGnomeMode(): void {
-  console.log("[GNOME] Applying GNOME mode...");
+// Apply tray mode UI modifications (for GNOME and KDE)
+function applyTrayMode(): void {
+  console.log("[TrayMode] Applying tray mode for", desktopEnvironment, "...");
   
   // Hide capture mode tabs (Window, Region, Display) - portal handles selection
   modeWindowBtn?.classList.add("hidden");
   modeRegionBtn?.classList.add("hidden");
   modeDisplayBtn?.classList.add("hidden");
   
-  // Set config as default view on GNOME
+  // Set config as default view in tray mode
   setViewMode("config");
 }
 
@@ -1562,18 +1562,18 @@ async function handleTrayStartRecording(): Promise<void> {
   setStatus("Starting recording...");
 
   try {
-    // On GNOME, we use portal-based recording which shows the native picker
+    // In tray mode (GNOME/KDE), we use portal-based recording which shows the native picker
     // The portal handles source selection, so we call a generic start function
     console.log("[Tray] Calling start_gnome_recording...");
     await invoke("start_gnome_recording");
-    console.log("[Tray] start_gnome_recording completed");
+    console.log("[Tray] Portal recording started");
     
     currentState = "recording";
     updateRecordButton();
     startTimer();
     setStatus("Recording...");
     
-    // Hide tray icon during recording (GNOME's indicator will be used to stop)
+    // Update tray icon to recording state
     console.log("[Tray] Calling set_tray_recording_state(true)...");
     await invoke("set_tray_recording_state", { recording: true });
     console.log("[Tray] set_tray_recording_state completed");

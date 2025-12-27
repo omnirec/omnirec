@@ -168,16 +168,22 @@ impl PortalClient {
         &self,
         source_types: BitFlags<SourceType>,
     ) -> Result<ScreencastStream, String> {
+        eprintln!("[Portal] request_screencast_multi: connecting to portal...");
+        
         // Get the screencast portal proxy
         let screencast = Screencast::new()
             .await
             .map_err(|e| format!("Failed to connect to screencast portal: {}", e))?;
+        
+        eprintln!("[Portal] Connected to screencast portal, creating session...");
 
         // Create a session
         let session = screencast
             .create_session()
             .await
             .map_err(|e| format!("Failed to create portal session: {}", e))?;
+        
+        eprintln!("[Portal] Session created, selecting sources (types: {:?})...", source_types);
 
         // Select sources - this triggers the picker
         screencast
@@ -191,12 +197,19 @@ impl PortalClient {
             )
             .await
             .map_err(|e| format!("Failed to select sources: {}", e))?;
+        
+        eprintln!("[Portal] Sources selected, starting screencast (picker should appear now)...");
+        eprintln!("[Portal] NOTE: On KDE, check if the dialog appeared behind other windows or in the system tray");
 
         // Start the screencast - picker will handle source selection
+        // Use None for parent window - this tells the portal we don't have a parent window
+        // which should make the dialog appear as a top-level window
         let response = screencast
-            .start(&session, &WindowIdentifier::default())
+            .start(&session, &WindowIdentifier::None)
             .await
             .map_err(|e| format!("Failed to start screencast: {}", e))?;
+        
+        eprintln!("[Portal] Screencast start returned, waiting for response...");
 
         // Wait for the response
         let streams = response

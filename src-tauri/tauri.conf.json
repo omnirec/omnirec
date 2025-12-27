@@ -44,6 +44,24 @@
     },
     "macOS": {
       "entitlements": "Entitlements.plist"
+    },
+    "linux": {
+      "deb": {
+        "depends": [
+          "libwebkit2gtk-4.1-0",
+          "ffmpeg",
+          "pipewire",
+          "libappindicator3-1"
+        ]
+      },
+      "rpm": {
+        "depends": [
+          "webkit2gtk4.1",
+          "ffmpeg-free",
+          "pipewire",
+          "libappindicator-gtk3"
+        ]
+      }
     }
   }
 }
