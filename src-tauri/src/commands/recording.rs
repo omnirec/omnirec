@@ -1,19 +1,33 @@
 //! Recording control commands.
 //!
 //! Commands for starting, stopping, and managing screen recordings.
-
-use crate::capture::{list_monitors, CaptureRegion};
-use crate::state::{OutputFormat, RecordingResult, RecordingState};
-use crate::AppState;
-use tauri::{Emitter, State};
+//! These commands proxy requests to the omnirec-service via IPC.
 
 use crate::tray::set_tray_visible;
+use crate::AppState;
+use omnirec_common::RecordingState;
+use serde::{Deserialize, Serialize};
+use tauri::{Emitter, State};
+
+/// Result of a completed recording.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecordingResult {
+    pub success: bool,
+    /// Path to the final output file (transcoded if applicable)
+    pub file_path: Option<String>,
+    /// Path to the original MP4 source file (same as file_path if format is MP4)
+    pub source_path: Option<String>,
+    pub error: Option<String>,
+}
 
 /// Get current recording state.
 #[tauri::command]
 pub async fn get_recording_state(state: State<'_, AppState>) -> Result<RecordingState, String> {
-    let manager = state.recording_manager.lock().await;
-    Ok(manager.get_state().await)
+    state
+        .service_client
+        .get_recording_state()
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Start recording the specified window.
@@ -22,16 +36,18 @@ pub async fn start_recording(
     window_handle: isize,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    if !state.ffmpeg_ready {
-        let err = "FFmpeg is not available. Please restart the application.";
-        eprintln!("[start_recording] Error: {}", err);
-        return Err(err.to_string());
+    if !state.is_service_ready() {
+        return Err("Service is not ready. Please wait for it to start.".to_string());
     }
-    let manager = state.recording_manager.lock().await;
-    manager.start_recording(window_handle).await.map_err(|e| {
-        eprintln!("[start_recording] Error: {}", e);
-        e
-    })
+
+    state
+        .service_client
+        .start_window_capture(window_handle)
+        .await
+        .map_err(|e| {
+            tracing::error!("start_recording error: {}", e);
+            e.to_string()
+        })
 }
 
 /// Start recording a screen region.
@@ -44,25 +60,18 @@ pub async fn start_region_recording(
     height: u32,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    if !state.ffmpeg_ready {
-        let err = "FFmpeg is not available. Please restart the application.";
-        eprintln!("[start_region_recording] Error: {}", err);
-        return Err(err.to_string());
+    if !state.is_service_ready() {
+        return Err("Service is not ready. Please wait for it to start.".to_string());
     }
 
-    let region = CaptureRegion {
-        monitor_id,
-        x,
-        y,
-        width,
-        height,
-    };
-
-    let manager = state.recording_manager.lock().await;
-    manager.start_region_recording(region).await.map_err(|e| {
-        eprintln!("[start_region_recording] Error: {}", e);
-        e
-    })
+    state
+        .service_client
+        .start_region_capture(monitor_id, x, y, width, height)
+        .await
+        .map_err(|e| {
+            tracing::error!("start_region_recording error: {}", e);
+            e.to_string()
+        })
 }
 
 /// Start recording an entire display.
@@ -71,30 +80,33 @@ pub async fn start_display_recording(
     monitor_id: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    if !state.ffmpeg_ready {
-        let err = "FFmpeg is not available. Please restart the application.";
-        eprintln!("[start_display_recording] Error: {}", err);
-        return Err(err.to_string());
+    if !state.is_service_ready() {
+        return Err("Service is not ready. Please wait for it to start.".to_string());
     }
 
-    // Find the monitor to get its dimensions
-    let monitors = list_monitors();
+    // Get monitor dimensions from the service
+    let monitors = state
+        .service_client
+        .list_monitors()
+        .await
+        .map_err(|e| e.to_string())?;
+
     let monitor = monitors
         .iter()
         .find(|m| m.id == monitor_id)
         .ok_or_else(|| {
             let err = format!("Monitor not found: {}", monitor_id);
-            eprintln!("[start_display_recording] Error: {}", err);
+            tracing::error!("start_display_recording: {}", err);
             err
         })?;
 
-    let manager = state.recording_manager.lock().await;
-    manager
-        .start_display_recording(monitor_id, monitor.width, monitor.height)
+    state
+        .service_client
+        .start_display_capture(monitor_id, monitor.width, monitor.height)
         .await
         .map_err(|e| {
-            eprintln!("[start_display_recording] Error: {}", e);
-            e
+            tracing::error!("start_display_recording error: {}", e);
+            e.to_string()
         })
 }
 
@@ -105,57 +117,62 @@ pub async fn start_gnome_recording(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    if !state.ffmpeg_ready {
-        let err = "FFmpeg is not available. Please restart the application.";
-        eprintln!("[start_gnome_recording] Error: {}", err);
-        return Err(err.to_string());
+    if !state.is_service_ready() {
+        return Err("Service is not ready. Please wait for it to start.".to_string());
     }
 
-    eprintln!("[start_gnome_recording] Starting GNOME portal recording...");
+    tracing::info!("Starting GNOME portal recording...");
 
-    // On GNOME, we use portal-based recording.
-    // The portal will show the native picker for source selection.
-    // We need to get the stop flag while holding the lock, then release it.
-    let stop_flag = {
-        let manager = state.recording_manager.lock().await;
-        manager.start_gnome_portal_recording().await.map_err(|e| {
-            eprintln!("[start_gnome_recording] Error: {}", e);
-            e
+    // Start portal-based recording via IPC
+    state
+        .service_client
+        .start_portal_capture()
+        .await
+        .map_err(|e| {
+            tracing::error!("start_gnome_recording error: {}", e);
+            e.to_string()
         })?;
-        // Get stop flag before releasing the lock
-        manager.get_stop_flag().await
-    }; // Lock released here
 
     // Hide tray icon now that recording has started
     set_tray_visible(&app, false);
 
-    // Spawn a background task to monitor the stop flag.
+    // Spawn a background task to monitor the recording state.
     // When PipeWire stream is paused (e.g., user clicks GNOME's indicator),
-    // the stop flag is set. We detect this and emit an event to the frontend.
-    if let Some(stop_flag) = stop_flag {
-        let app_clone = app.clone();
-        tokio::spawn(async move {
-            eprintln!("[GNOME] Starting stop flag monitor task");
+    // the state changes and we detect this to emit an event to the frontend.
+    let app_clone = app.clone();
+    let client = state.service_client.clone();
 
-            // Wait a bit for recording to stabilize before monitoring
-            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    tokio::spawn(async move {
+        tracing::info!("[GNOME] Starting recording state monitor task");
 
-            // Poll the stop flag
-            loop {
-                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                if stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
-                    eprintln!("[GNOME] Stop flag detected in monitor task");
-                    // Restore tray icon visibility
+        // Wait a bit for recording to stabilize before monitoring
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+        // Poll the recording state
+        loop {
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+            match client.get_recording_state().await {
+                Ok(state) => {
+                    if state != RecordingState::Recording {
+                        tracing::info!("[GNOME] Recording state changed to {:?}", state);
+                        // Restore tray icon visibility
+                        set_tray_visible(&app_clone, true);
+                        let _ = app_clone.emit("recording-stream-stopped", ());
+                        tracing::info!("[GNOME] Monitor task exiting");
+                        break;
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("[GNOME] Failed to get recording state: {}", e);
+                    // Assume recording stopped on error
                     set_tray_visible(&app_clone, true);
                     let _ = app_clone.emit("recording-stream-stopped", ());
-                    eprintln!("[GNOME] Monitor task exiting");
                     break;
                 }
             }
-        });
-    } else {
-        eprintln!("[start_gnome_recording] Warning: No stop flag available for monitoring");
-    }
+        }
+    });
 
     Ok(())
 }
@@ -168,9 +185,10 @@ pub async fn set_tray_recording_state(
     app: tauri::AppHandle,
     recording: bool,
 ) -> Result<(), String> {
-    eprintln!(
-        "[set_tray_recording_state] Setting recording state: {}, visible: {}",
-        recording, !recording
+    tracing::debug!(
+        "set_tray_recording_state: recording={}, visible={}",
+        recording,
+        !recording
     );
 
     #[cfg(target_os = "linux")]
@@ -181,22 +199,19 @@ pub async fn set_tray_recording_state(
 
         // Get the tray state
         if let Some(tray_state) = app.try_state::<TrayState>() {
-            eprintln!("[set_tray_recording_state] Got tray state, updating...");
+            tracing::debug!("Got tray state, updating...");
             // Update recording flag
             tray_state.is_recording.store(recording, Ordering::SeqCst);
 
             if let Ok(tray) = tray_state.tray.lock() {
-                eprintln!(
-                    "[set_tray_recording_state] Setting tray visible: {}",
-                    !recording
-                );
+                tracing::debug!("Setting tray visible: {}", !recording);
                 let result = tray.set_visible(!recording);
-                eprintln!("[set_tray_recording_state] set_visible result: {:?}", result);
+                tracing::debug!("set_visible result: {:?}", result);
             } else {
-                eprintln!("[set_tray_recording_state] Failed to lock tray mutex");
+                tracing::warn!("Failed to lock tray mutex");
             }
         } else {
-            eprintln!("[set_tray_recording_state] No TrayState found (not in portal mode?)");
+            tracing::debug!("No TrayState found (not in portal mode?)");
         }
     }
 
@@ -209,144 +224,37 @@ pub async fn set_tray_recording_state(
 }
 
 /// Stop the current recording and save the file.
-/// If the output format is not MP4, transcodes to the target format.
+/// Transcoding (if needed) is handled by the service.
 #[tauri::command]
 pub async fn stop_recording(
-    app: tauri::AppHandle,
+    _app: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> Result<RecordingResult, String> {
-    // Stop recording and get source MP4 path and target format
-    let (source_path, format) = {
-        let manager = state.recording_manager.lock().await;
-        manager.stop_recording().await.map_err(|e| {
-            eprintln!("[stop_recording] Error: {}", e);
-            e
-        })?
-    };
+    // Stop recording via IPC and get file paths
+    // The service handles transcoding internally if a non-MP4 format is configured
+    let (file_path, source_path) = state
+        .service_client
+        .stop_recording()
+        .await
+        .map_err(|e| {
+            tracing::error!("stop_recording error: {}", e);
+            e.to_string()
+        })?;
 
-    let source_path_str = source_path.to_string_lossy().to_string();
-
-    // If format is MP4, no transcoding needed
-    if format == OutputFormat::Mp4 {
-        // Reset state to idle
-        let manager = state.recording_manager.lock().await;
-        manager.set_idle().await;
-
-        return Ok(RecordingResult {
-            success: true,
-            file_path: Some(source_path_str.clone()),
-            source_path: Some(source_path_str),
-            error: None,
-        });
-    }
-
-    // Emit transcoding-started event
-    let format_name = format.display_name().to_string();
-    let _ = app.emit("transcoding-started", &format_name);
-    eprintln!("[stop_recording] Starting transcoding to {}", format_name);
-
-    // Transcode to target format
-    let transcode_result = tokio::task::spawn_blocking({
-        let source = source_path.clone();
-        move || crate::encoder::transcode_video(&source, format)
+    Ok(RecordingResult {
+        success: true,
+        file_path: Some(file_path),
+        source_path: Some(source_path),
+        error: None,
     })
-    .await;
-
-    // Reset state to idle
-    {
-        let manager = state.recording_manager.lock().await;
-        manager.set_idle().await;
-    }
-
-    match transcode_result {
-        Ok(Ok(output_path)) => {
-            let output_path_str = output_path.to_string_lossy().to_string();
-
-            // Emit transcoding-complete event with success
-            let _ = app.emit(
-                "transcoding-complete",
-                serde_json::json!({
-                    "success": true,
-                    "output_path": &output_path_str,
-                    "source_path": &source_path_str,
-                }),
-            );
-
-            Ok(RecordingResult {
-                success: true,
-                file_path: Some(output_path_str),
-                source_path: Some(source_path_str),
-                error: None,
-            })
-        }
-        Ok(Err(e)) => {
-            eprintln!("[stop_recording] Transcoding failed: {}", e);
-
-            // Emit transcoding-complete event with failure
-            let _ = app.emit(
-                "transcoding-complete",
-                serde_json::json!({
-                    "success": false,
-                    "error": &e,
-                    "source_path": &source_path_str,
-                }),
-            );
-
-            // Return success with the original MP4 path, but note the transcoding error
-            Ok(RecordingResult {
-                success: true, // MP4 was saved successfully
-                file_path: Some(source_path_str.clone()),
-                source_path: Some(source_path_str),
-                error: Some(format!("Transcoding failed: {}. Original MP4 saved.", e)),
-            })
-        }
-        Err(e) => {
-            eprintln!("[stop_recording] Transcoding task error: {}", e);
-
-            // Emit transcoding-complete event with failure
-            let _ = app.emit(
-                "transcoding-complete",
-                serde_json::json!({
-                    "success": false,
-                    "error": e.to_string(),
-                    "source_path": &source_path_str,
-                }),
-            );
-
-            Ok(RecordingResult {
-                success: true, // MP4 was saved successfully
-                file_path: Some(source_path_str.clone()),
-                source_path: Some(source_path_str),
-                error: Some(format!(
-                    "Transcoding task failed: {}. Original MP4 saved.",
-                    e
-                )),
-            })
-        }
-    }
 }
 
 /// Get elapsed recording time in seconds.
 #[tauri::command]
 pub async fn get_elapsed_time(state: State<'_, AppState>) -> Result<u64, String> {
-    let manager = state.recording_manager.lock().await;
-    Ok(manager.get_elapsed_seconds().await)
-}
-
-/// Get the current output format.
-#[tauri::command]
-pub async fn get_output_format(state: State<'_, AppState>) -> Result<String, String> {
-    let manager = state.recording_manager.lock().await;
-    let format = manager.get_output_format().await;
-    Ok(format.extension().to_string())
-}
-
-/// Set the output format for future recordings.
-#[tauri::command]
-pub async fn set_output_format(format: String, state: State<'_, AppState>) -> Result<(), String> {
-    let output_format =
-        OutputFormat::from_str(&format).ok_or_else(|| format!("Invalid output format: {}", format))?;
-
-    let manager = state.recording_manager.lock().await;
-    manager.set_output_format(output_format).await
+    state
+        .service_client
+        .get_elapsed_time()
+        .await
+        .map_err(|e| e.to_string())
 }

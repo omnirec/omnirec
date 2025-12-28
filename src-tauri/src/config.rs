@@ -218,14 +218,6 @@ pub fn get_default_output_dir() -> Result<PathBuf, String> {
     Ok(output_dir)
 }
 
-/// Get the configured output directory, falling back to default if not set.
-pub fn get_output_dir(config: &AppConfig) -> Result<PathBuf, String> {
-    match &config.output.directory {
-        Some(dir) if !dir.is_empty() => Ok(PathBuf::from(dir)),
-        _ => get_default_output_dir(),
-    }
-}
-
 /// Validate that a directory exists and is writable.
 pub fn validate_directory(path: &str) -> Result<(), String> {
     let path = PathBuf::from(path);

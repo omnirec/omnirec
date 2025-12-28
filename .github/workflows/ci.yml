@@ -58,13 +58,31 @@ jobs:
         with:
           workspaces: |
             src-tauri -> target
+            src-service -> target
+            src-common -> target
 
       - name: TypeScript type check
         run: pnpm exec tsc --noEmit
 
+      - name: Rust lint (clippy) - common library
+        working-directory: src-common
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Rust lint (clippy) - service
+        working-directory: src-service
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
       - name: Rust lint (clippy) - main app
         working-directory: src-tauri
         run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Rust tests - common library
+        working-directory: src-common
+        run: cargo test --all-features
+
+      - name: Rust tests - service
+        working-directory: src-service
+        run: cargo test --all-features
 
       - name: Rust tests - main app
         working-directory: src-tauri

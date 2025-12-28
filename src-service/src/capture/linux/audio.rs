@@ -29,7 +29,8 @@ use std::thread::{self, JoinHandle};
 use tokio::sync::mpsc;
 
 use crate::capture::error::{CaptureError, EnumerationError};
-use crate::capture::types::{AudioReceiver, AudioSample, AudioSource, AudioSourceType, StopHandle};
+use crate::capture::types::{AudioReceiver, AudioSample, StopHandle};
+use crate::capture::{AudioSource, AudioSourceType};
 
 /// AEC3 frame size: 10ms at 48kHz = 480 samples per channel
 const AEC_FRAME_SAMPLES: usize = 480;

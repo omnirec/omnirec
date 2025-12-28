@@ -39,6 +39,9 @@ package() {
     # Install main binary
     install -Dm755 "omnirec" "${pkgdir}/usr/bin/omnirec"
 
+    # Install service binary
+    install -Dm755 "omnirec-service" "${pkgdir}/usr/bin/omnirec-service"
+
     # Install picker binary
     install -Dm755 "omnirec-picker" "${pkgdir}/usr/bin/omnirec-picker"
 

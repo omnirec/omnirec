@@ -3,28 +3,24 @@
 //! This is the main entry point for the Tauri backend. The code is organized into
 //! several modules:
 //!
-//! - `capture` - Screen/window capture backends for each platform
 //! - `commands` - Tauri command handlers organized by functionality
 //! - `config` - Application configuration persistence
-//! - `encoder` - FFmpeg-based video encoding and transcoding
-//! - `state` - Recording state management
+//! - `ipc` - IPC client for communicating with omnirec-service
+//! - `platform` - Minimal platform-specific functionality (e.g., macOS permission checks)
 //! - `tray` - Cross-platform system tray functionality
 
-mod capture;
 mod commands;
 mod config;
-mod encoder;
-mod state;
+pub mod ipc;
+mod platform;
 pub mod tray;
 
 use config::{load_config, AppConfig};
-use encoder::ensure_ffmpeg_blocking;
-use state::RecordingManager;
+use ipc::ServiceClient;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-#[cfg(target_os = "linux")]
-use capture::linux;
+
 
 // Re-export tray types for use in commands
 #[cfg(target_os = "linux")]
@@ -41,82 +37,73 @@ pub use tray::GnomeTrayState;
 /// Application state wrapper.
 ///
 /// This struct holds all the shared state for the application, including:
-/// - Recording manager for controlling active recordings
-/// - Application configuration
-/// - FFmpeg availability status
+/// - Service client for communicating with omnirec-service
+/// - Application configuration (persisted locally)
+/// - Service connection status
 pub struct AppState {
-    pub recording_manager: Arc<Mutex<RecordingManager>>,
+    /// IPC client for communicating with the background service.
+    pub service_client: Arc<ServiceClient>,
+    /// Application configuration (UI preferences, output directory, etc.).
     pub app_config: Arc<Mutex<AppConfig>>,
-    pub ffmpeg_ready: bool,
+    /// Whether the service is connected and ready.
+    pub service_ready: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl AppState {
     fn new() -> Self {
-        // Initialize FFmpeg at startup (downloads if needed)
-        let ffmpeg_ready = match ensure_ffmpeg_blocking() {
-            Ok(()) => true,
-            Err(e) => {
-                eprintln!("Failed to initialize FFmpeg: {}", e);
-                false
-            }
-        };
-
-        // Initialize Linux-specific services
-        #[cfg(target_os = "linux")]
-        Self::init_linux_services();
-
         // Load configuration
         let app_config = load_config();
         eprintln!("[AppState] Loaded config: {:?}", app_config);
 
+        // Create service client
+        let service_client = Arc::new(ServiceClient::new());
+
         Self {
-            recording_manager: Arc::new(Mutex::new(RecordingManager::new())),
+            service_client,
             app_config: Arc::new(Mutex::new(app_config)),
-            ffmpeg_ready,
+            service_ready: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
 
-    /// Initialize Linux-specific services (IPC server, screencopy, audio).
-    #[cfg(target_os = "linux")]
-    fn init_linux_services() {
-        use std::sync::mpsc;
+    /// Initialize the service connection.
+    /// This spawns the service process if needed and waits for it to be ready.
+    pub async fn init_service(&self) -> Result<(), String> {
+        use std::sync::atomic::Ordering;
 
-        let (tx, rx) = mpsc::channel();
+        eprintln!("[AppState] Initializing service connection...");
 
-        // Spawn a thread that will run the IPC server for the lifetime of the app
-        std::thread::spawn(move || {
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            rt.block_on(async {
-                match linux::init_ipc_server().await {
-                    Ok(()) => {
-                        eprintln!("[AppState] Linux IPC server initialized");
-                        tx.send(Ok(())).ok();
-                        // Keep the runtime alive - the IPC server runs in a spawned task
-                        loop {
-                            tokio::time::sleep(tokio::time::Duration::from_secs(3600)).await;
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!("[AppState] Failed to init Linux IPC server: {}", e);
-                        tx.send(Err(e.clone())).ok();
-                    }
-                }
-            });
-        });
-
-        // Wait for IPC server to be ready (with timeout)
-        match rx.recv_timeout(std::time::Duration::from_secs(5)) {
-            Ok(Ok(())) => eprintln!("[AppState] IPC server ready"),
-            Ok(Err(e)) => eprintln!("[AppState] IPC server failed: {}", e),
-            Err(_) => eprintln!("[AppState] Timeout waiting for IPC server"),
+        // Use the ServiceClient's reconnect_or_spawn method which handles everything
+        match self.service_client.reconnect_or_spawn().await {
+            Ok(()) => {
+                self.service_ready.store(true, Ordering::SeqCst);
+                eprintln!("[AppState] Service is ready");
+                Ok(())
+            }
+            Err(e) => {
+                eprintln!("[AppState] Service failed to start: {}", e);
+                Err(format!("Service failed to start: {}", e))
+            }
         }
+    }
 
-        // Pre-initialize screencopy for faster first thumbnail
-        linux::init_screencopy();
+    /// Check if the service is ready.
+    pub fn is_service_ready(&self) -> bool {
+        self.service_ready.load(std::sync::atomic::Ordering::SeqCst)
+    }
 
-        // Initialize audio backend
-        if let Err(e) = linux::init_audio() {
-            eprintln!("[AppState] Failed to init audio backend: {}", e);
+    /// Ensure the service is connected, reconnecting if necessary.
+    pub async fn ensure_service_connected(&self) -> Result<(), String> {
+        use std::sync::atomic::Ordering;
+
+        match self.service_client.ensure_connected().await {
+            Ok(()) => {
+                self.service_ready.store(true, Ordering::SeqCst);
+                Ok(())
+            }
+            Err(e) => {
+                self.service_ready.store(false, Ordering::SeqCst);
+                Err(e.to_string())
+            }
         }
     }
 }
@@ -165,6 +152,28 @@ pub fn run() {
                 eprintln!("[Setup] Failed to set up tray: {}", e);
             }
 
+            // Initialize service connection in background
+            // The service will be spawned if not already running
+            use tauri::Manager;
+            let app_state = app.state::<AppState>();
+            let service_client = app_state.service_client.clone();
+            let service_ready = app_state.service_ready.clone();
+
+            tauri::async_runtime::spawn(async move {
+                // Use reconnect_or_spawn which handles all cases:
+                // - Service already running: connects directly
+                // - Service not running: spawns it and waits
+                match service_client.reconnect_or_spawn().await {
+                    Ok(()) => {
+                        service_ready.store(true, std::sync::atomic::Ordering::SeqCst);
+                        eprintln!("[Setup] Service connected and ready");
+                    }
+                    Err(e) => {
+                        eprintln!("[Setup] Failed to connect to service: {}", e);
+                    }
+                }
+            });
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -187,8 +196,6 @@ pub fn run() {
             commands::set_tray_recording_state,
             commands::stop_recording,
             commands::get_elapsed_time,
-            commands::get_output_format,
-            commands::set_output_format,
             // Platform commands
             commands::get_platform,
             commands::is_hyprland,
@@ -212,6 +219,8 @@ pub fn run() {
             commands::pick_output_directory,
             commands::validate_output_directory,
             commands::save_theme,
+            // Service status
+            commands::is_service_ready,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

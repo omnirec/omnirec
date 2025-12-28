@@ -1,8 +1,10 @@
 //! Video encoding module using FFmpeg via ffmpeg-sidecar.
 
-use crate::capture::{AudioSample, CapturedFrame};
-use crate::config::{get_output_dir, load_config};
+#![allow(dead_code)]
+
+use crate::capture::types::{AudioSample, CapturedFrame};
 use chrono::Local;
+use directories::UserDirs;
 use ffmpeg_sidecar::command::FfmpegCommand;
 use std::io::Write;
 use std::path::PathBuf;
@@ -511,11 +513,10 @@ pub fn mux_audio_video(
     Ok(video_path.clone())
 }
 
-/// Generate a unique output filename in the configured or default output directory.
+/// Generate a unique output filename in the default output directory (Videos folder).
 fn generate_output_path() -> Result<PathBuf, String> {
-    // Load config to get output directory preference
-    let config = load_config();
-    let output_dir = get_output_dir(&config)?;
+    // Use system Videos directory or fallback to temp
+    let output_dir = get_default_output_dir()?;
 
     // Ensure directory exists
     if !output_dir.exists() {
@@ -528,6 +529,32 @@ fn generate_output_path() -> Result<PathBuf, String> {
 
     eprintln!("[Encoder] Output path: {:?}", output_dir.join(&filename));
     Ok(output_dir.join(filename))
+}
+
+/// Get the default output directory (system Videos folder or temp fallback).
+fn get_default_output_dir() -> Result<PathBuf, String> {
+    let user_dirs = UserDirs::new().ok_or("Could not determine user directories")?;
+
+    // Try Videos directory first, fall back to home directory
+    let output_dir = user_dirs
+        .video_dir()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| {
+            let home = user_dirs.home_dir().to_path_buf();
+            let videos = home.join("Videos");
+            // Try to create Videos directory if it doesn't exist
+            if !videos.exists() && std::fs::create_dir_all(&videos).is_ok() {
+                return videos;
+            }
+            // Fall back to home directory if Videos exists or creation failed
+            if videos.exists() {
+                videos
+            } else {
+                home
+            }
+        });
+
+    Ok(output_dir)
 }
 
 /// Target frame rate for output video
@@ -802,7 +829,7 @@ pub fn ensure_ffmpeg_blocking() -> Result<(), String> {
         .map_err(|e| format!("Failed to download FFmpeg: {}", e))
 }
 
-use crate::state::OutputFormat;
+use omnirec_common::OutputFormat;
 use std::path::Path;
 
 /// Transcode a source MP4 file to the specified output format.

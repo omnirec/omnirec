@@ -12,8 +12,7 @@
   <a href="https://github.com/omnirec/omnirec/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/omnirec/omnirec/ci.yml?branch=master&label=build" alt="Build Status"></a>
   <a href="https://github.com/omnirec/omnirec/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/omnirec/omnirec/ci.yml?branch=master&label=tests" alt="Test Status"></a>
   <a href="https://github.com/omnirec/omnirec/releases"><img src="https://img.shields.io/github/v/release/omnirec/omnirec" alt="Release"></a>
-  <a href="https://github.com/omnirec/omnirec/blob/master/LICENSE"><img src="https://img.shields.io/github/license/omnirec/omnirec" alt="License"></a>
-  <a href="https://aur.archlinux.org/packages/omnirec-bin"><img src="https://img.shields.io/aur/version/omnirec-bin" alt="AUR Version"></a>
+  <!-- <a href="https://aur.archlinux.org/packages/omnirec-bin"><img src="https://img.shields.io/aur/version/omnirec-bin" alt="AUR Version"></a> -->
 </p>
 
 <picture><img src="images/omnirec-screenshots.gif"></picture>

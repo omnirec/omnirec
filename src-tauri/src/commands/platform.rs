@@ -3,6 +3,9 @@
 //! Commands for detecting the current platform, desktop environment,
 //! and managing Hyprland-specific window operations.
 
+use crate::AppState;
+use tauri::State;
+
 /// Get the current platform name.
 /// Returns "macos", "linux", or "windows".
 #[tauri::command]
@@ -308,4 +311,14 @@ pub async fn move_region_selector(x: i32, y: i32, width: i32, height: i32) -> Re
 #[tauri::command]
 pub async fn move_region_selector(_x: i32, _y: i32, _width: i32, _height: i32) -> Result<(), String> {
     Ok(())
+}
+
+// =============================================================================
+// Service status commands
+// =============================================================================
+
+/// Check if the background service is connected and ready.
+#[tauri::command]
+pub fn is_service_ready(state: State<'_, AppState>) -> bool {
+    state.is_service_ready()
 }

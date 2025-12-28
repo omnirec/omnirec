@@ -1,7 +1,11 @@
-//! Cross-platform capture module.
+//! Cross-platform capture module for the OmniRec service.
 //!
 //! This module provides platform-agnostic interfaces for screen capture operations,
 //! with platform-specific implementations selected at compile time.
+
+// Allow dead code and unused imports during migration - not all capture functionality is wired up yet
+#![allow(dead_code)]
+#![allow(unused_imports)]
 
 pub mod error;
 pub mod thumbnail;
@@ -15,15 +19,24 @@ pub mod linux;
 #[cfg(target_os = "macos")]
 pub mod macos;
 
-// Re-export common types for convenience
-pub use error::{CaptureError, EnumerationError};
-pub use types::{
-    AudioReceiver, AudioSample, AudioSource, CapturedFrame, CaptureRegion,
-    FrameReceiver, MonitorInfo, StopHandle, WindowInfo,
+// Re-export common types from omnirec-common for IPC
+pub use omnirec_common::{
+    AudioConfig, AudioSource, AudioSourceType, CaptureRegion, MonitorInfo, OutputFormat,
+    RecordingState, WindowInfo,
 };
+
+// Re-export local error types
+pub use error::{CaptureError, EnumerationError};
+
+// Re-export runtime types (service-internal, not for IPC)
+pub use types::{AudioReceiver, AudioSample, CapturedFrame, FrameReceiver, StopHandle};
+
 // Re-export thumbnail utilities (used by platform implementations)
 #[allow(unused_imports)]
-pub use thumbnail::{bgra_to_jpeg_thumbnail, THUMBNAIL_MAX_HEIGHT, THUMBNAIL_MAX_WIDTH, PREVIEW_MAX_WIDTH, PREVIEW_MAX_HEIGHT};
+pub use thumbnail::{
+    bgra_to_jpeg_thumbnail, PREVIEW_MAX_HEIGHT, PREVIEW_MAX_WIDTH, THUMBNAIL_MAX_HEIGHT,
+    THUMBNAIL_MAX_WIDTH,
+};
 
 // Platform-specific backend aliases
 #[cfg(target_os = "windows")]
@@ -116,7 +129,10 @@ pub trait ThumbnailCapture: Send + Sync {
     /// Capture a thumbnail of a window.
     ///
     /// Returns a base64-encoded JPEG image scaled to fit within max dimensions.
-    fn capture_window_thumbnail(&self, window_handle: isize) -> Result<ThumbnailResult, CaptureError>;
+    fn capture_window_thumbnail(
+        &self,
+        window_handle: isize,
+    ) -> Result<ThumbnailResult, CaptureError>;
 
     /// Capture a thumbnail of a display.
     ///

@@ -1,11 +1,11 @@
 //! Capture and thumbnail commands.
 //!
 //! Commands for listing windows/monitors, capturing thumbnails, and showing highlights.
+//! These commands proxy requests to the omnirec-service via IPC.
 
-use crate::capture::{
-    get_backend, list_monitors, list_windows, show_highlight, MonitorInfo, ThumbnailCapture,
-    ThumbnailResult, WindowInfo,
-};
+use crate::AppState;
+use omnirec_common::{MonitorInfo, WindowInfo};
+use tauri::State;
 
 /// Thumbnail result for JSON serialization.
 #[derive(serde::Serialize)]
@@ -18,69 +18,62 @@ pub struct ThumbnailResponse {
     pub height: u32,
 }
 
-impl From<ThumbnailResult> for ThumbnailResponse {
-    fn from(result: ThumbnailResult) -> Self {
-        Self {
-            data: result.data,
-            width: result.width,
-            height: result.height,
-        }
-    }
-}
-
 /// Get list of capturable windows.
 #[tauri::command]
-pub fn get_windows() -> Vec<WindowInfo> {
-    list_windows()
+pub async fn get_windows(state: State<'_, AppState>) -> Result<Vec<WindowInfo>, String> {
+    state
+        .service_client
+        .list_windows()
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Get list of available monitors.
 #[tauri::command]
-pub fn get_monitors() -> Vec<MonitorInfo> {
-    list_monitors()
+pub async fn get_monitors(state: State<'_, AppState>) -> Result<Vec<MonitorInfo>, String> {
+    state
+        .service_client
+        .list_monitors()
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Show a highlight border on the specified monitor.
 #[tauri::command]
-pub async fn show_display_highlight(monitor_id: String) -> Result<(), String> {
-    // Find the monitor
-    let monitors = list_monitors();
+pub async fn show_display_highlight(
+    monitor_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    // First get the monitor info to find its position/size
+    let monitors = state
+        .service_client
+        .list_monitors()
+        .await
+        .map_err(|e| e.to_string())?;
+
     let monitor = monitors
         .iter()
         .find(|m| m.id == monitor_id)
         .ok_or_else(|| format!("Monitor not found: {}", monitor_id))?;
 
-    show_highlight(
-        monitor.x,
-        monitor.y,
-        monitor.width as i32,
-        monitor.height as i32,
-    );
-
-    Ok(())
+    state
+        .service_client
+        .show_display_highlight(monitor.x, monitor.y, monitor.width as i32, monitor.height as i32)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Show a highlight border on the specified window.
 #[tauri::command]
-pub async fn show_window_highlight(window_handle: isize) -> Result<(), String> {
-    // Find the window
-    let windows = list_windows();
-    let window = windows
-        .iter()
-        .find(|w| w.handle == window_handle)
-        .ok_or_else(|| format!("Window not found: {}", window_handle))?;
-
-    // Only show highlight if window has valid dimensions
-    if window.width > 0 && window.height > 0 {
-        show_highlight(
-            window.x,
-            window.y,
-            window.width as i32,
-            window.height as i32,
-        );
-    }
-
-    Ok(())
+pub async fn show_window_highlight(
+    window_handle: isize,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    state
+        .service_client
+        .show_window_highlight(window_handle)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Capture a thumbnail of a window.
@@ -89,11 +82,12 @@ pub async fn show_window_highlight(window_handle: isize) -> Result<(), String> {
 #[tauri::command]
 pub async fn get_window_thumbnail(
     window_handle: isize,
+    state: State<'_, AppState>,
 ) -> Result<Option<ThumbnailResponse>, String> {
-    let backend = get_backend();
-    match backend.capture_window_thumbnail(window_handle) {
-        Ok(result) => Ok(Some(result.into())),
-        Err(_) => {
+    match state.service_client.get_window_thumbnail(window_handle).await {
+        Ok((data, width, height)) => Ok(Some(ThumbnailResponse { data, width, height })),
+        Err(e) => {
+            tracing::warn!("Window thumbnail capture failed: {}", e);
             // Fail gracefully - show placeholder for any error
             Ok(None)
         }
@@ -106,12 +100,12 @@ pub async fn get_window_thumbnail(
 #[tauri::command]
 pub async fn get_display_thumbnail(
     monitor_id: String,
+    state: State<'_, AppState>,
 ) -> Result<Option<ThumbnailResponse>, String> {
-    let backend = get_backend();
-    match backend.capture_display_thumbnail(&monitor_id) {
-        Ok(result) => Ok(Some(result.into())),
+    match state.service_client.get_display_thumbnail(monitor_id).await {
+        Ok((data, width, height)) => Ok(Some(ThumbnailResponse { data, width, height })),
         Err(e) => {
-            eprintln!("[get_display_thumbnail] Error: {}", e);
+            tracing::warn!("Display thumbnail capture failed: {}", e);
             // Fail gracefully - show placeholder for any error
             Ok(None)
         }
@@ -128,12 +122,16 @@ pub async fn get_region_preview(
     y: i32,
     width: u32,
     height: u32,
+    state: State<'_, AppState>,
 ) -> Result<Option<ThumbnailResponse>, String> {
-    let backend = get_backend();
-    match backend.capture_region_preview(&monitor_id, x, y, width, height) {
-        Ok(result) => Ok(Some(result.into())),
+    match state
+        .service_client
+        .get_region_preview(monitor_id, x, y, width, height)
+        .await
+    {
+        Ok((data, width, height)) => Ok(Some(ThumbnailResponse { data, width, height })),
         Err(e) => {
-            eprintln!("[get_region_preview] Error: {}", e);
+            tracing::warn!("Region preview capture failed: {}", e);
             // Fail gracefully - show placeholder for any error
             Ok(None)
         }
@@ -149,20 +147,20 @@ pub async fn get_region_preview(
 pub fn check_screen_recording_permission() -> String {
     #[cfg(target_os = "macos")]
     {
-        use crate::capture::macos::MacOSBackend;
+        use crate::platform::macos;
 
         // First check if we already have permission
-        if MacOSBackend::has_screen_recording_permission() {
+        if macos::has_screen_recording_permission() {
             return "granted".to_string();
         }
 
         // If not granted, trigger the prompt to add app to the permission list
         // This causes macOS to show the permission dialog (first time only)
         // and adds the app to System Settings > Screen Recording
-        MacOSBackend::trigger_permission_prompt();
+        macos::trigger_permission_prompt();
 
         // Check again after triggering
-        if MacOSBackend::has_screen_recording_permission() {
+        if macos::has_screen_recording_permission() {
             "granted".to_string()
         } else {
             "denied".to_string()
@@ -180,8 +178,8 @@ pub fn open_screen_recording_settings() {
     #[cfg(target_os = "macos")]
     {
         // First trigger the permission prompt to ensure the app is in the list
-        use crate::capture::macos::MacOSBackend;
-        MacOSBackend::trigger_permission_prompt();
+        use crate::platform::macos;
+        macos::trigger_permission_prompt();
 
         // Then open System Settings directly to the Screen Recording pane
         // This URL scheme works on macOS 13+ (Ventura and later)
