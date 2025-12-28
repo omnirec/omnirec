@@ -13,7 +13,7 @@ use config::{AppConfig, AudioConfig, ThemeMode, load_config, save_config as save
 use encoder::ensure_ffmpeg_blocking;
 use state::{OutputFormat, RecordingManager, RecordingResult, RecordingState};
 use std::sync::Arc;
-use tauri::{Emitter, Manager, State};
+use tauri::{Emitter, State};
 use tauri_plugin_dialog::DialogExt;
 use tokio::sync::Mutex;
 
@@ -22,6 +22,7 @@ use tauri::{
     image::Image,
     menu::{Menu, MenuItem},
     tray::{TrayIcon, TrayIconBuilder},
+    Manager,
 };
 
 /// State for GNOME system tray (Linux only).
