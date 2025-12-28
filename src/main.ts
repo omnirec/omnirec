@@ -223,7 +223,7 @@ let aboutLicenseLink: HTMLAnchorElement | null;
 let currentPlatform: "macos" | "linux" | "windows" = "linux";
 let macosSystemAudioAvailable = false;
 let isTrayModeDesktop = false;
-type DesktopEnvironment = "gnome" | "kde" | "cosmic" | "hyprland" | "unknown";
+type DesktopEnvironment = "gnome" | "kde" | "cosmic" | "cinnamon" | "hyprland" | "unknown";
 let desktopEnvironment: DesktopEnvironment = "unknown";
 
 // State
@@ -579,7 +579,9 @@ async function loadAppVersion(): Promise<void> {
   }
 }
 
-// Detect desktop environment (GNOME, KDE, COSMIC, Hyprland, etc.)
+// Detect desktop environment (GNOME, KDE, COSMIC, Cinnamon, Hyprland, etc.)
+// Note: Cinnamon is detected but NOT treated as tray-mode because xdg-desktop-portal-xapp
+// does not implement the ScreenCast interface required for screen recording.
 async function detectDesktopEnvironment(): Promise<void> {
   try {
     desktopEnvironment = await invoke<DesktopEnvironment>("get_desktop_environment");

@@ -677,8 +677,23 @@ fn is_cosmic() -> bool {
     }
 }
 
+/// Check if running on Cinnamon desktop environment (Linux Mint).
+#[tauri::command]
+fn is_cinnamon() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        std::env::var("XDG_CURRENT_DESKTOP")
+            .map(|d| d.to_uppercase().contains("X-CINNAMON"))
+            .unwrap_or(false)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        false
+    }
+}
+
 /// Get the current desktop environment name.
-/// Returns: "gnome", "kde", "cosmic", "hyprland", or "unknown".
+/// Returns: "gnome", "kde", "cosmic", "cinnamon", "hyprland", or "unknown".
 #[tauri::command]
 fn get_desktop_environment() -> String {
     #[cfg(target_os = "linux")]
@@ -703,6 +718,12 @@ fn get_desktop_environment() -> String {
             .unwrap_or(false)
         {
             return "cosmic".to_string();
+        }
+        if std::env::var("XDG_CURRENT_DESKTOP")
+            .map(|d| d.to_uppercase().contains("X-CINNAMON"))
+            .unwrap_or(false)
+        {
+            return "cinnamon".to_string();
         }
         "unknown".to_string()
     }
@@ -1117,6 +1138,7 @@ fn setup_macos_window(_app: &tauri::App) {
 
 /// Check if running on a tray-mode desktop (GNOME, KDE, COSMIC) - internal helper.
 /// These desktops use the portal's native picker for source selection.
+/// Note: Cinnamon is NOT included because xdg-desktop-portal-xapp does not implement ScreenCast.
 #[cfg(target_os = "linux")]
 fn is_tray_mode_desktop() -> bool {
     std::env::var("XDG_CURRENT_DESKTOP")
@@ -1352,6 +1374,7 @@ pub fn run() {
             is_gnome,
             is_kde,
             is_cosmic,
+            is_cinnamon,
             get_desktop_environment,
             check_screen_recording_permission,
             open_screen_recording_settings,
