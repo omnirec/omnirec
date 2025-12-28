@@ -1,8 +1,11 @@
-# gnome-tray-mode Specification
+# gnome-tray-mode Specification Delta
 
 ## Purpose
-Provides tray-based recording workflow for desktop environments that don't support custom portal pickers (GNOME, KDE Plasma). Users interact via system tray icon and native portal dialogs.
-## Requirements
+
+Refactors gnome-tray-mode to reference the shared system-tray capability for base tray functionality, while retaining portal-mode specific behaviors for Linux desktop environments that use native portal pickers.
+
+## MODIFIED Requirements
+
 ### Requirement: Tray Mode Desktop Detection
 
 The system SHALL detect when running on a portal-mode desktop environment and activate portal-mode tray behavior.
@@ -262,4 +265,3 @@ The system SHALL detect Cinnamon Wayland sessions and activate portal-mode.
 - **AND** the Display tab SHALL NOT be visible
 - **AND** the Configuration tab SHALL be visible
 - **AND** the About tab SHALL be visible
-

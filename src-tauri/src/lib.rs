@@ -8,7 +8,7 @@
 //! - `config` - Application configuration persistence
 //! - `encoder` - FFmpeg-based video encoding and transcoding
 //! - `state` - Recording state management
-//! - `tray` - System tray functionality (Linux only)
+//! - `tray` - Cross-platform system tray functionality
 
 mod capture;
 mod commands;
@@ -26,7 +26,11 @@ use tokio::sync::Mutex;
 #[cfg(target_os = "linux")]
 use capture::linux;
 
-// Re-export tray state for use in commands
+// Re-export tray types for use in commands
+#[cfg(target_os = "linux")]
+pub use tray::TrayState;
+
+// Legacy alias for backwards compatibility
 #[cfg(target_os = "linux")]
 pub use tray::GnomeTrayState;
 
@@ -156,9 +160,9 @@ pub fn run() {
         .setup(|app| {
             setup_macos_window(app);
 
-            // Set up tray mode if on GNOME, KDE, or COSMIC desktop
-            if let Err(e) = tray::setup_tray_mode(app) {
-                eprintln!("[Setup] Failed to set up tray mode: {}", e);
+            // Set up system tray (all platforms)
+            if let Err(e) = tray::setup_tray(app) {
+                eprintln!("[Setup] Failed to set up tray: {}", e);
             }
 
             Ok(())

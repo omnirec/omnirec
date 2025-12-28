@@ -7,8 +7,7 @@ use crate::state::{OutputFormat, RecordingResult, RecordingState};
 use crate::AppState;
 use tauri::{Emitter, State};
 
-#[cfg(target_os = "linux")]
-use crate::tray::set_gnome_tray_visible;
+use crate::tray::set_tray_visible;
 
 /// Get current recording state.
 #[tauri::command]
@@ -128,10 +127,7 @@ pub async fn start_gnome_recording(
     }; // Lock released here
 
     // Hide tray icon now that recording has started
-    #[cfg(target_os = "linux")]
-    set_gnome_tray_visible(&app, false);
-    #[cfg(not(target_os = "linux"))]
-    let _ = &app; // Suppress unused warning
+    set_tray_visible(&app, false);
 
     // Spawn a background task to monitor the stop flag.
     // When PipeWire stream is paused (e.g., user clicks GNOME's indicator),
@@ -150,8 +146,7 @@ pub async fn start_gnome_recording(
                 if stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
                     eprintln!("[GNOME] Stop flag detected in monitor task");
                     // Restore tray icon visibility
-                    #[cfg(target_os = "linux")]
-                    set_gnome_tray_visible(&app_clone, true);
+                    set_tray_visible(&app_clone, true);
                     let _ = app_clone.emit("recording-stream-stopped", ());
                     eprintln!("[GNOME] Monitor task exiting");
                     break;
@@ -180,12 +175,12 @@ pub async fn set_tray_recording_state(
 
     #[cfg(target_os = "linux")]
     {
-        use crate::tray::GnomeTrayState;
+        use crate::tray::TrayState;
         use std::sync::atomic::Ordering;
         use tauri::Manager;
 
         // Get the tray state
-        if let Some(tray_state) = app.try_state::<GnomeTrayState>() {
+        if let Some(tray_state) = app.try_state::<TrayState>() {
             eprintln!("[set_tray_recording_state] Got tray state, updating...");
             // Update recording flag
             tray_state.is_recording.store(recording, Ordering::SeqCst);
@@ -201,7 +196,7 @@ pub async fn set_tray_recording_state(
                 eprintln!("[set_tray_recording_state] Failed to lock tray mutex");
             }
         } else {
-            eprintln!("[set_tray_recording_state] No GnomeTrayState found (not on GNOME?)");
+            eprintln!("[set_tray_recording_state] No TrayState found (not in portal mode?)");
         }
     }
 

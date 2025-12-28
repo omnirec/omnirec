@@ -107,7 +107,7 @@ The approval token is stored at `~/.local/state/omnirec/approval-token`. To revo
 
 On GNOME, OmniRec runs as a system tray application. Click the tray icon to access recording controls. The standard system share interface is used to choose the recording source. Due to limitations of system share source selection diaglog, region selection and recording is not supported in GNOME.
 
-> [!WARNING] **Note for Debian Users**
+> [!NOTE]
 >
 > Debian users must install and enable the app indicator GNOME extension:
 >
