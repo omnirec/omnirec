@@ -223,7 +223,7 @@ let aboutLicenseLink: HTMLAnchorElement | null;
 let currentPlatform: "macos" | "linux" | "windows" = "linux";
 let macosSystemAudioAvailable = false;
 let isTrayModeDesktop = false;
-type DesktopEnvironment = "gnome" | "kde" | "hyprland" | "unknown";
+type DesktopEnvironment = "gnome" | "kde" | "cosmic" | "hyprland" | "unknown";
 let desktopEnvironment: DesktopEnvironment = "unknown";
 
 // State
@@ -579,14 +579,14 @@ async function loadAppVersion(): Promise<void> {
   }
 }
 
-// Detect desktop environment (GNOME, KDE, Hyprland, etc.)
+// Detect desktop environment (GNOME, KDE, COSMIC, Hyprland, etc.)
 async function detectDesktopEnvironment(): Promise<void> {
   try {
     desktopEnvironment = await invoke<DesktopEnvironment>("get_desktop_environment");
-    isTrayModeDesktop = desktopEnvironment === "gnome" || desktopEnvironment === "kde";
+    isTrayModeDesktop = desktopEnvironment === "gnome" || desktopEnvironment === "kde" || desktopEnvironment === "cosmic";
     console.log("[Desktop] Detected environment:", desktopEnvironment, ", isTrayMode:", isTrayModeDesktop);
     
-    // Apply tray mode UI changes for GNOME and KDE
+    // Apply tray mode UI changes for GNOME, KDE, and COSMIC
     if (isTrayModeDesktop) {
       applyTrayMode();
     }
@@ -595,7 +595,7 @@ async function detectDesktopEnvironment(): Promise<void> {
   }
 }
 
-// Apply tray mode UI modifications (for GNOME and KDE)
+// Apply tray mode UI modifications (for GNOME, KDE, and COSMIC)
 function applyTrayMode(): void {
   console.log("[TrayMode] Applying tray mode for", desktopEnvironment, "...");
   

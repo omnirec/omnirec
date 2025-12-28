@@ -2,9 +2,7 @@
 
 ## Purpose
 Provides tray-based recording workflow for desktop environments that don't support custom portal pickers (GNOME, KDE Plasma). Users interact via system tray icon and native portal dialogs.
-
 ## Requirements
-
 ### Requirement: Tray Mode Desktop Detection
 
 The system SHALL detect when running on a tray-mode desktop environment and activate tray mode.
@@ -146,7 +144,7 @@ On tray mode desktops, the main window close button SHALL hide the window instea
 
 ### Requirement: Tray Mode Tab Visibility
 
-On tray mode desktops (GNOME, KDE), capture mode tabs SHALL be hidden since the portal handles source selection.
+On tray mode desktops (GNOME, KDE, COSMIC), capture mode tabs SHALL be hidden since the portal handles source selection.
 
 #### Scenario: Capture tabs hidden on GNOME
 
@@ -164,9 +162,17 @@ On tray mode desktops (GNOME, KDE), capture mode tabs SHALL be hidden since the 
 - **AND** the Region tab SHALL NOT be visible
 - **AND** the Display tab SHALL NOT be visible
 
+#### Scenario: Capture tabs hidden on COSMIC
+
+- **WHEN** tray mode is active on COSMIC
+- **AND** the main window is displayed
+- **THEN** the Window tab SHALL NOT be visible
+- **AND** the Region tab SHALL NOT be visible
+- **AND** the Display tab SHALL NOT be visible
+
 #### Scenario: Config and About tabs visible on tray mode desktops
 
-- **WHEN** tray mode is active (GNOME or KDE)
+- **WHEN** tray mode is active (GNOME, KDE, or COSMIC)
 - **AND** the main window is displayed
 - **THEN** the Configuration tab SHALL be visible
 - **AND** the About tab SHALL be visible
@@ -200,3 +206,4 @@ On tray mode desktops, recording SHALL use the standard xdg-desktop-portal flow 
 - **THEN** recording SHALL NOT start
 - **AND** the application SHALL return to idle state
 - **AND** the tray icon SHALL remain normal
+

@@ -26,7 +26,7 @@
 - **Audio Recording** — Capture system audio, microphone, or both with dual-source mixing
 - **Echo Cancellation** — Built-in AEC removes speaker feedback when recording with a microphone
 - **Multiple Formats** — Export to MP4, WebM, MKV, QuickTime, GIF, APNG, or WebP
-- **Cross-Platform** — Works on Windows, macOS (12.3+), and Linux (Hyprland/Wayland)
+- **Cross-Platform** — Works on Windows, macOS (12.3+), and Linux (Hyprland, GNOME, KDE, COSMIC)
 - **Privacy-First** — All processing happens locally — your recordings never leave your machine
 - **Free & Open Source** — No subscriptions, no accounts, no limits
 
@@ -53,8 +53,6 @@
 | macOS | 12.3+ |
 | Linux | Arch, Debian, Ubuntu, Fedora, and others |
 
-**Linux Desktop Environments** (Wayland): Hyprland (full features), GNOME (screen/window recording via system tray), KDE
-
 ## Installation
 
 > [!WARNING]
@@ -69,11 +67,9 @@ Download the latest `.msi` installer from the [Releases](https://github.com/omni
 
 Download the latest `.dmg` from the [Releases](https://github.com/omnirec/omnirec/releases) page, open it, and drag OmniRec to your Applications folder.
 
-### Linux (Arch/AUR)
+### Linux
 
-> [!NOTE]
->
-> Currently, **Arch Linux with Hyprland** is recommended for full feature support (including Omarchy and other popular derivitives and configs). GNOME is supported with screen/window recording via system tray (region recording is not available due to Wayland limitations).
+#### Arch
 
 Use `makepkg`:
 
@@ -82,6 +78,14 @@ curl -LO https://github.com/omnirec/omnirec/releases/latest/download/PKGBUILD
 curl -LO https://github.com/omnirec/omnirec/releases/latest/download/omnirec.desktop
 makepkg -si
 ```
+
+#### Debian/Ubuntu/Pop!_OS
+
+Download the latest `.deb` package from the [Releases](https://github.com/omnirec/omnirec/releases) page. 
+
+#### Fedora
+
+Download the latest `.rpm` package from the [Releases](https://github.com/omnirec/omnirec/releases) page. 
 
 ## Configuration & Permissions
 
@@ -101,15 +105,29 @@ The approval token is stored at `~/.local/state/omnirec/approval-token`. To revo
 
 #### GNOME
 
-On GNOME, OmniRec runs as a system tray application. Click the tray icon to access recording controls:
+On GNOME, OmniRec runs as a system tray application. Click the tray icon to access recording controls. The standard system share interface is used to choose the recording source. Due to limitations of system share source selection diaglog, region selection and recording is not supported in GNOME.
 
-- **Record Screen/Window** — Opens GNOME's native screen share picker
-- **Stop Recording** — Stops the current recording
-- **Configuration** — Opens settings window
-- **About** — Shows app information
-- **Exit** — Quits the application
+> [!WARNING] **Note for Debian Users**
+>
+> Debian users must install and enable the app indicator GNOME extension:
+>
+> ```
+> sudo apt install gnome-shell-extension-appindicator
+> ```
+>
+> Then log out, log in again and enable it with:
+>
+> ```
+> gnome-extensions enable ubuntu-appindicators@ubuntu.com
+> ```
 
 #### KDE Plasma
+
+OmniRec is accessed from the taskbar in KDE Plasma.
+
+#### COSMIC
+
+On Pop!_OS with the COSMIC desktop environment, OmniRec runs as a system tray application similar to GNOME.
 
 ## Development
 
@@ -122,7 +140,7 @@ On GNOME, OmniRec runs as a system tray application. Click the tray icon to acce
 
 ### Build & Run
 
-OmniRec is built with [Tauri](https://v2.tauri.app/). Use `npm` (or equivalent) to install and run the dev servver:
+OmniRec is built with [Tauri](https://v2.tauri.app/). Use `npm` (or equivalent) to install and run the dev server:
 
 ```
 cd omnirec

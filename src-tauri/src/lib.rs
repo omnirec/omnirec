@@ -662,8 +662,23 @@ fn is_kde() -> bool {
     }
 }
 
+/// Check if running on COSMIC desktop environment.
+#[tauri::command]
+fn is_cosmic() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        std::env::var("XDG_CURRENT_DESKTOP")
+            .map(|d| d.to_uppercase().contains("COSMIC"))
+            .unwrap_or(false)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        false
+    }
+}
+
 /// Get the current desktop environment name.
-/// Returns: "gnome", "kde", "hyprland", or "unknown".
+/// Returns: "gnome", "kde", "cosmic", "hyprland", or "unknown".
 #[tauri::command]
 fn get_desktop_environment() -> String {
     #[cfg(target_os = "linux")]
@@ -682,6 +697,12 @@ fn get_desktop_environment() -> String {
             .unwrap_or(false)
         {
             return "kde".to_string();
+        }
+        if std::env::var("XDG_CURRENT_DESKTOP")
+            .map(|d| d.to_uppercase().contains("COSMIC"))
+            .unwrap_or(false)
+        {
+            return "cosmic".to_string();
         }
         "unknown".to_string()
     }
@@ -1094,14 +1115,14 @@ fn setup_macos_window(_app: &tauri::App) {
     // No-op on other platforms
 }
 
-/// Check if running on a tray-mode desktop (GNOME, KDE) - internal helper.
+/// Check if running on a tray-mode desktop (GNOME, KDE, COSMIC) - internal helper.
 /// These desktops use the portal's native picker for source selection.
 #[cfg(target_os = "linux")]
 fn is_tray_mode_desktop() -> bool {
     std::env::var("XDG_CURRENT_DESKTOP")
         .map(|d| {
             let upper = d.to_uppercase();
-            upper.contains("GNOME") || upper.contains("KDE")
+            upper.contains("GNOME") || upper.contains("KDE") || upper.contains("COSMIC")
         })
         .unwrap_or(false)
 }
@@ -1117,14 +1138,22 @@ fn load_tray_icon(app: &tauri::App, icon_name: &str) -> Option<Image<'static>> {
 #[cfg(target_os = "linux")]
 fn load_tray_icon_from_paths(resource_dir: Option<std::path::PathBuf>, icon_name: &str) -> Option<Image<'static>> {
     // Try multiple locations for the icon
+    let resource_dir_clone = resource_dir.clone();
     let icon_paths = [
         // Production: resource_dir/icons/tray/
         resource_dir.map(|p| p.join(format!("icons/tray/{}", icon_name))),
-        // Development: relative paths
+        // Production: resource_dir/icons/ (for main app icons)
+        resource_dir_clone.map(|p| p.join(format!("icons/{}", icon_name))),
+        // Development: relative paths (tray subdirectory)
         Some(std::path::PathBuf::from(format!("icons/tray/{}", icon_name))),
         Some(std::path::PathBuf::from(format!("src-tauri/icons/tray/{}", icon_name))),
-        // Absolute path for development
+        // Development: relative paths (main icons directory)
+        Some(std::path::PathBuf::from(format!("icons/{}", icon_name))),
+        Some(std::path::PathBuf::from(format!("src-tauri/icons/{}", icon_name))),
+        // Absolute path for development (tray)
         Some(std::path::PathBuf::from(format!("{}/icons/tray/{}", env!("CARGO_MANIFEST_DIR"), icon_name))),
+        // Absolute path for development (main icons)
+        Some(std::path::PathBuf::from(format!("{}/icons/{}", env!("CARGO_MANIFEST_DIR"), icon_name))),
     ];
     
     for path in icon_paths.iter().flatten() {
@@ -1168,7 +1197,7 @@ fn create_fallback_tray_icon(color: (u8, u8, u8)) -> Image<'static> {
     Image::new_owned(rgba, size, size)
 }
 
-/// Set up system tray for tray-mode desktops (GNOME, KDE).
+/// Set up system tray for tray-mode desktops (GNOME, KDE, COSMIC).
 #[cfg(target_os = "linux")]
 fn setup_tray_mode(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     use std::sync::atomic::AtomicBool;
@@ -1180,15 +1209,29 @@ fn setup_tray_mode(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     
     eprintln!("[Tray] Setting up tray icon for tray-mode desktop...");
     
-    // Load symbolic tray icon (22x22 monochrome white)
-    let icon = load_tray_icon(app, "omnirec-symbolic-22.png")
-        .or_else(|| load_tray_icon(app, "omnirec-symbolic-24.png"))
-        .or_else(|| load_tray_icon(app, "omnirec-symbolic-32.png"))
-        .or_else(|| load_tray_icon(app, "omnirec-symbolic.png"))
-        .unwrap_or_else(|| {
-            eprintln!("[Tray] Warning: Could not load icon, using fallback");
-            create_fallback_tray_icon((255, 255, 255)) // White fallback
-        });
+    // Load tray icon
+    // COSMIC requires full-color icons; GNOME/KDE work with symbolic (monochrome) icons
+    let icon = if is_cosmic() {
+        // COSMIC: Try multiple sizes, preferring larger icons
+        eprintln!("[Tray] COSMIC detected, using full-color icon");
+        load_tray_icon(app, "128x128.png")
+            .or_else(|| load_tray_icon(app, "64x64.png"))
+            .or_else(|| load_tray_icon(app, "32x32.png"))
+            .unwrap_or_else(|| {
+                eprintln!("[Tray] Warning: Could not load icon, using fallback");
+                create_fallback_tray_icon((59, 130, 246)) // Blue fallback for visibility
+            })
+    } else {
+        // GNOME/KDE: Use symbolic (monochrome white) icons
+        load_tray_icon(app, "omnirec-symbolic-22.png")
+            .or_else(|| load_tray_icon(app, "omnirec-symbolic-24.png"))
+            .or_else(|| load_tray_icon(app, "omnirec-symbolic-32.png"))
+            .or_else(|| load_tray_icon(app, "omnirec-symbolic.png"))
+            .unwrap_or_else(|| {
+                eprintln!("[Tray] Warning: Could not load icon, using fallback");
+                create_fallback_tray_icon((255, 255, 255)) // White fallback
+            })
+    };
     
     // Track recording state
     let is_recording = Arc::new(AtomicBool::new(false));
@@ -1280,7 +1323,7 @@ pub fn run() {
         .setup(|app| {
             setup_macos_window(app);
             
-            // Set up tray mode if on GNOME or KDE desktop
+            // Set up tray mode if on GNOME, KDE, or COSMIC desktop
             if let Err(e) = setup_tray_mode(app) {
                 eprintln!("[Setup] Failed to set up tray mode: {}", e);
             }
@@ -1308,6 +1351,7 @@ pub fn run() {
             is_hyprland,
             is_gnome,
             is_kde,
+            is_cosmic,
             get_desktop_environment,
             check_screen_recording_permission,
             open_screen_recording_settings,
