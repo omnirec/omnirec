@@ -20,7 +20,8 @@
 //! - Microphone capture and dual audio mixing are deferred to future changes
 
 use crate::capture::error::{CaptureError, EnumerationError};
-use crate::capture::types::{AudioReceiver, AudioSample, AudioSource, AudioSourceType, StopHandle};
+use crate::capture::types::{AudioReceiver, AudioSample, StopHandle};
+use crate::capture::{AudioSource, AudioSourceType};
 
 use coreaudio_sys::{
     kAudioDevicePropertyDeviceNameCFString, kAudioDevicePropertyScopeInput,

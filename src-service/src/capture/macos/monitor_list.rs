@@ -1,6 +1,6 @@
 //! macOS monitor/display enumeration using Core Graphics.
 
-use crate::capture::types::MonitorInfo;
+use crate::capture::MonitorInfo;
 use core_graphics::display::{CGDirectDisplayID, CGDisplay, CGMainDisplayID};
 
 /// List all connected monitors on macOS.

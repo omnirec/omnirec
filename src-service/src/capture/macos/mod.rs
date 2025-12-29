@@ -13,13 +13,11 @@ pub mod thumbnail;
 pub mod window_list;
 
 use crate::capture::error::{CaptureError, EnumerationError};
-use crate::capture::types::{
-    AudioReceiver, AudioSource, CaptureRegion, CapturedFrame, FrameReceiver, MonitorInfo,
-    StopHandle, WindowInfo,
-};
+use crate::capture::types::{AudioReceiver, CapturedFrame, FrameReceiver, StopHandle};
 use crate::capture::{
-    AudioCaptureBackend, AudioEnumerator, CaptureBackend, HighlightProvider, MonitorEnumerator,
-    ThumbnailCapture, ThumbnailResult, WindowEnumerator,
+    AudioCaptureBackend, AudioEnumerator, AudioSource, CaptureBackend, CaptureRegion,
+    HighlightProvider, MonitorEnumerator, MonitorInfo, ThumbnailCapture, ThumbnailResult,
+    WindowEnumerator, WindowInfo,
 };
 use std::sync::atomic::Ordering;
 use tokio::sync::mpsc;
@@ -180,7 +178,7 @@ impl CaptureBackend for MacOSBackend {
         let region_height = region_height_physical.min(max_height);
 
         // Validate we still have a valid region (in physical pixels)
-        let min_size_physical = ((100.0) * scale).round() as u32;
+        let min_size_physical = (100.0_f64 * scale).round() as u32;
         if region_width < min_size_physical || region_height < min_size_physical {
             return Err(CaptureError::InvalidRegion(format!(
                 "Region too small after scaling to physical pixels ({}x{}, need {}x{})",

@@ -5,7 +5,7 @@
 //! Window bounds are obtained via Core Graphics CGWindowListCopyWindowInfo
 //! since the screencapturekit crate doesn't expose position data.
 
-use crate::capture::types::WindowInfo;
+use crate::capture::WindowInfo;
 use core_foundation::base::TCFType;
 use core_foundation::dictionary::CFDictionaryRef;
 use core_foundation::number::CFNumber;

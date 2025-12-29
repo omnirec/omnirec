@@ -317,6 +317,8 @@ pub async fn handle_request(request: Request) -> Response {
                     return Response::TokenValid;
                 }
             }
+            #[cfg(not(target_os = "linux"))]
+            let _ = token; // Silence unused variable warning on non-Linux
             Response::TokenInvalid
         }
         Request::StoreToken { token } => {
@@ -327,6 +329,8 @@ pub async fn handle_request(request: Request) -> Response {
                     warn!("Failed to store approval token: {}", e);
                 }
             }
+            #[cfg(not(target_os = "linux"))]
+            let _ = token; // Silence unused variable warning on non-Linux
             Response::TokenStored
         }
 
