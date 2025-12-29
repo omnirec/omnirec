@@ -222,9 +222,10 @@ pub fn verify_peer(stream: &std::os::unix::net::UnixStream) -> Result<PeerInfo, 
 pub fn verify_peer(
     pipe: windows::Win32::Foundation::HANDLE,
 ) -> Result<PeerInfo, PeerVerifyError> {
+    use windows::Win32::Foundation::CloseHandle;
     use windows::Win32::System::Pipes::GetNamedPipeClientProcessId;
     use windows::Win32::System::Threading::{
-        CloseHandle, OpenProcess, QueryFullProcessImageNameW, PROCESS_QUERY_LIMITED_INFORMATION,
+        OpenProcess, QueryFullProcessImageNameW, PROCESS_QUERY_LIMITED_INFORMATION,
     };
 
     // Get client PID
