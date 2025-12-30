@@ -208,16 +208,6 @@ fn find_monitor_by_id(monitor_id: &str) -> Result<Monitor, CaptureError> {
     )))
 }
 
-/// Get the scale factor for a monitor by its ID.
-fn get_monitor_scale_factor(monitor_id: &str) -> f64 {
-    let monitors = monitor_list::list_monitors();
-    monitors
-        .iter()
-        .find(|m| m.id == monitor_id)
-        .map(|m| m.scale_factor)
-        .unwrap_or(1.0)
-}
-
 /// Crop a BGRA frame to a specified region.
 fn crop_frame(
     data: &[u8],
@@ -335,24 +325,16 @@ impl ThumbnailCapture for WindowsThumbnailCapture {
         // Capture single frame from monitor
         let frame = capture_monitor_frame(monitor_id)?;
 
-        // Get scale factor for coordinate conversion
-        let scale = get_monitor_scale_factor(monitor_id);
-
-        // Convert logical coordinates to physical pixels for cropping
-        let crop_x = (x as f64 * scale).round() as i32;
-        let crop_y = (y as f64 * scale).round() as i32;
-        let crop_width = (width as f64 * scale).round() as u32;
-        let crop_height = (height as f64 * scale).round() as u32;
-
-        // Crop the frame to region bounds
+        // Region coordinates are already in physical pixels (matching the frame buffer)
+        // No conversion needed - crop directly
         let cropped = crop_frame(
             &frame.data,
             frame.width,
             frame.height,
-            crop_x,
-            crop_y,
-            crop_width,
-            crop_height,
+            x,
+            y,
+            width,
+            height,
         );
 
         if cropped.is_empty() {
@@ -364,8 +346,8 @@ impl ThumbnailCapture for WindowsThumbnailCapture {
         // Convert to preview (larger than thumbnail)
         let (base64_data, preview_width, preview_height) = bgra_to_jpeg_thumbnail(
             &cropped,
-            crop_width,
-            crop_height,
+            width,
+            height,
             PREVIEW_MAX_WIDTH,
             PREVIEW_MAX_HEIGHT,
         )

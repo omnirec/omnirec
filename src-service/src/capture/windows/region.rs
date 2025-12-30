@@ -22,7 +22,6 @@ pub struct RegionCaptureFlags {
     pub frame_tx: mpsc::Sender<CapturedFrame>,
     pub stop_flag: Arc<AtomicBool>,
     pub region: CaptureRegion,
-    pub scale_factor: f64,
 }
 
 /// Frame capture handler for monitor-based region capture.
@@ -30,7 +29,6 @@ struct RegionCaptureHandler {
     frame_tx: mpsc::Sender<CapturedFrame>,
     stop_flag: Arc<AtomicBool>,
     region: CaptureRegion,
-    scale_factor: f64,
     #[allow(dead_code)]
     frame_count: u64,
     #[allow(dead_code)]
@@ -46,7 +44,6 @@ impl GraphicsCaptureApiHandler for RegionCaptureHandler {
             frame_tx: ctx.flags.frame_tx,
             stop_flag: ctx.flags.stop_flag,
             region: ctx.flags.region,
-            scale_factor: ctx.flags.scale_factor,
             frame_count: 0,
             dropped_count: 0,
         })
@@ -72,31 +69,27 @@ impl GraphicsCaptureApiHandler for RegionCaptureHandler {
         // Calculate stride (bytes per row in the buffer)
         let buffer_stride = raw_data.len() / full_height as usize;
 
-        // Region coordinates from the frontend are in logical pixels
-        // Convert to physical pixels for cropping the frame buffer
-        let scale = self.scale_factor;
-        let region_x_physical = ((self.region.x.max(0) as f64) * scale).round() as u32;
-        let region_y_physical = ((self.region.y.max(0) as f64) * scale).round() as u32;
-        let region_width_physical = ((self.region.width as f64) * scale).round() as u32;
-        let region_height_physical = ((self.region.height as f64) * scale).round() as u32;
+        // Region coordinates from the frontend are already in physical pixels
+        // (matching the frame buffer coordinates). No conversion needed.
+        let region_x = self.region.x.max(0) as u32;
+        let region_y = self.region.y.max(0) as u32;
+        let region_width = self.region.width;
+        let region_height = self.region.height;
 
         // Debug: log frame dimensions on first frame
         if self.frame_count == 0 {
             eprintln!("[Windows] First frame received:");
             eprintln!("[Windows]   Frame dimensions: {}x{}", full_width, full_height);
             eprintln!("[Windows]   Buffer stride: {} bytes/row", buffer_stride);
-            eprintln!("[Windows]   Region (logical): x={}, y={}, {}x{}", 
-                self.region.x, self.region.y, self.region.width, self.region.height);
             eprintln!("[Windows]   Region (physical): x={}, y={}, {}x{}", 
-                region_x_physical, region_y_physical, region_width_physical, region_height_physical);
-            eprintln!("[Windows]   Scale factor: {}", scale);
+                region_x, region_y, region_width, region_height);
         }
 
         // Clamp to frame bounds
-        let region_x = region_x_physical.min(full_width);
-        let region_y = region_y_physical.min(full_height);
-        let region_width = region_width_physical.min(full_width.saturating_sub(region_x));
-        let region_height = region_height_physical.min(full_height.saturating_sub(region_y));
+        let region_x = region_x.min(full_width);
+        let region_y = region_y.min(full_height);
+        let region_width = region_width.min(full_width.saturating_sub(region_x));
+        let region_height = region_height.min(full_height.saturating_sub(region_y));
 
         if region_width == 0 || region_height == 0 {
             // Skip invalid frames
@@ -224,24 +217,23 @@ pub fn start_region_capture(
         ));
     }
 
-    // Look up monitor info to get scale factor
+    // Look up monitor info for validation/debugging
     let monitors = monitor_list::list_monitors();
     let monitor_info = monitors
         .iter()
         .find(|m| m.id == region.monitor_id)
         .ok_or_else(|| format!("Monitor not found: {}", region.monitor_id))?;
-    let scale_factor = monitor_info.scale_factor;
 
     eprintln!("[Windows] === REGION CAPTURE DEBUG ===");
     eprintln!(
-        "[Windows] Input region (logical coords): monitor_id={}, x={}, y={}, {}x{}",
+        "[Windows] Input region (physical coords): monitor_id={}, x={}, y={}, {}x{}",
         region.monitor_id, region.x, region.y, region.width, region.height
     );
     eprintln!(
         "[Windows] Target monitor: pos=({}, {}), size={}x{}, scale={}",
-        monitor_info.x, monitor_info.y, monitor_info.width, monitor_info.height, scale_factor
+        monitor_info.x, monitor_info.y, monitor_info.width, monitor_info.height, monitor_info.scale_factor
     );
-    eprintln!("[Windows] All monitors (logical coords):");
+    eprintln!("[Windows] All monitors (physical coords):");
     for m in &monitors {
         eprintln!("[Windows]   {} at ({}, {}) {}x{} scale={}", m.id, m.x, m.y, m.width, m.height, m.scale_factor);
     }
@@ -262,7 +254,6 @@ pub fn start_region_capture(
         frame_tx,
         stop_flag: stop_flag_clone,
         region,
-        scale_factor,
     };
 
     // Configure capture settings

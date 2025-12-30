@@ -168,8 +168,8 @@ async function emitRegionUpdate(): Promise<void> {
   } catch (e) {
     console.error("Failed to get position from Hyprland:", e);
     // Fallback to Tauri (Windows/macOS)
-    // Tauri returns PhysicalPosition/PhysicalSize - convert to logical coordinates
-    // to match the monitor coordinate system (which is also in logical coordinates)
+    // Tauri returns PhysicalPosition/PhysicalSize - use physical coordinates directly
+    // to match the monitor coordinate system (which is also in physical coordinates)
     const scaleFactor = await currentWindow.scaleFactor();
     const pos = await currentWindow.outerPosition();
     const outerSize = await currentWindow.outerSize();
@@ -189,35 +189,38 @@ async function emitRegionUpdate(): Promise<void> {
     const frameLeftPhysical = Math.round((outerSize.width - innerSize.width) / 2);
     const frameTopPhysical = 0;  // No top frame on Windows transparent windows
     
-    // Content area position in physical pixels
-    const contentX = pos.x + frameLeftPhysical;
-    const contentY = pos.y + frameTopPhysical;
+    // Content area position in physical pixels - use directly, no conversion
+    windowX = pos.x + frameLeftPhysical;
+    windowY = pos.y + frameTopPhysical;
+    windowWidth = innerSize.width;
+    windowHeight = innerSize.height;
     
     console.log("Frame offset (physical):", frameLeftPhysical, "x", frameTopPhysical);
-    console.log("Content position (physical):", contentX, contentY);
-    
-    // Convert to logical coordinates
-    windowX = Math.round(contentX / scaleFactor);
-    windowY = Math.round(contentY / scaleFactor);
-    windowWidth = Math.round(innerSize.width / scaleFactor);
-    windowHeight = Math.round(innerSize.height / scaleFactor);
-    
-    console.log("Content area (logical):", windowX, windowY, windowWidth, "x", windowHeight);
+    console.log("Content area (physical):", windowX, windowY, windowWidth, "x", windowHeight);
   }
 
   // The actual recording area is inside the border
-  // BORDER_WIDTH is in CSS/logical pixels, add 2 extra pixels for safety
-  // At fractional DPI scales (e.g., 150%), rounding errors can cause 1px of border to appear
-  const borderOffset = BORDER_WIDTH + 2;
-  const recordX = windowX + borderOffset;
-  const recordY = windowY + borderOffset;
-  const recordWidth = windowWidth - (borderOffset * 2);
-  const recordHeight = windowHeight - (borderOffset * 2);
+  // BORDER_WIDTH is in CSS pixels, need to convert to physical pixels
+  // Get scale factor for the conversion (use 1.0 for Hyprland since it already returns physical)
+  let physicalBorderOffset: number;
+  if (isHyprland) {
+    // Hyprland already returns physical pixels, CSS pixels match physical
+    physicalBorderOffset = BORDER_WIDTH + 2;
+  } else {
+    // Windows/macOS: convert CSS border to physical pixels
+    const scaleFactor = await currentWindow.scaleFactor();
+    physicalBorderOffset = Math.round((BORDER_WIDTH + 2) * scaleFactor);
+  }
   
-  console.log("=== REGION CALCULATION (logical coords) ===");
+  const recordX = windowX + physicalBorderOffset;
+  const recordY = windowY + physicalBorderOffset;
+  const recordWidth = windowWidth - (physicalBorderOffset * 2);
+  const recordHeight = windowHeight - (physicalBorderOffset * 2);
+  
+  console.log("=== REGION CALCULATION (physical coords) ===");
   console.log("Window position:", windowX, windowY);
   console.log("Window size:", windowWidth, "x", windowHeight);
-  console.log("Border offset:", borderOffset);
+  console.log("Border offset (physical):", physicalBorderOffset);
   console.log("Record area:", recordX, recordY, recordWidth, "x", recordHeight);
 
   // Find which monitor the center of the selection is on
@@ -258,8 +261,8 @@ async function emitRegionUpdate(): Promise<void> {
   };
 
   console.log("Selected monitor:", monitor.id, "at", monitor.x, ",", monitor.y);
-  console.log("Region (monitor-relative physical):", region.x, ",", region.y, "size:", region.width, "x", region.height);
-  console.log("==========================");
+  console.log("Region (monitor-relative, physical pixels):", region.x, ",", region.y, "size:", region.width, "x", region.height);
+  console.log("==============================================");
   
   // Emit to main window
   const mainWindow = await Window.getByLabel("main");

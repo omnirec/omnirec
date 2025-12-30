@@ -13,6 +13,34 @@ use std::sync::Arc;
 use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
 
+/// Set Per-Monitor DPI Awareness v2 for consistent coordinate handling.
+///
+/// This must be called before any other Windows API calls. It ensures that
+/// this process receives physical pixel coordinates from APIs like
+/// `GetMonitorInfoW` and `EnumDisplayMonitors`, matching what Tauri reports.
+#[cfg(windows)]
+fn set_dpi_awareness() {
+    use windows::Win32::UI::HiDpi::{
+        SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
+    };
+
+    unsafe {
+        // Per-Monitor DPI Aware v2 gives us:
+        // - Physical pixel coordinates from monitor enumeration
+        // - Automatic scaling of non-client areas
+        // - Correct behavior on multi-monitor setups with different DPIs
+        let result = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+        if result.is_err() {
+            // This can fail if already set (e.g., by a manifest or another call)
+            // It's not fatal - we just need to be aware of the current mode
+            eprintln!(
+                "Warning: SetProcessDpiAwarenessContext failed (may already be set): {:?}",
+                result
+            );
+        }
+    }
+}
+
 /// Global shutdown flag
 static SHUTDOWN_FLAG: std::sync::OnceLock<Arc<AtomicBool>> = std::sync::OnceLock::new();
 
@@ -35,6 +63,12 @@ pub fn is_shutdown_requested() -> bool {
 }
 
 fn main() {
+    // Set DPI awareness before any other Windows API calls
+    #[cfg(windows)]
+    {
+        set_dpi_awareness();
+    }
+
     // Initialize logging with RUST_LOG env var support
     tracing_subscriber::fmt()
         .with_env_filter(

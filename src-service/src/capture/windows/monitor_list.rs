@@ -60,24 +60,28 @@ unsafe extern "system" fn enum_monitor_callback(
         let display_name = get_display_friendly_name(&device_name)
             .unwrap_or_else(|| format_monitor_name(&device_name, is_primary));
 
-        // Get DPI scale factor for this monitor
+        // Get DPI scale factor for this monitor (still useful for UI scaling)
         let scale_factor = get_monitor_scale_factor(hmonitor);
 
-        // Convert from physical to logical coordinates
-        // Windows returns physical coordinates, but we want logical for consistency
-        // with Tauri's coordinate system (which the frontend uses)
-        let logical_x = (rect.left as f64 / scale_factor).round() as i32;
-        let logical_y = (rect.top as f64 / scale_factor).round() as i32;
-        let logical_width = ((rect.right - rect.left) as f64 / scale_factor).round() as u32;
-        let logical_height = ((rect.bottom - rect.top) as f64 / scale_factor).round() as u32;
+        // With Per-Monitor DPI Aware v2 (set in main.rs), Windows returns physical
+        // pixel coordinates in the virtual screen coordinate space. These match
+        // the coordinates that Tauri's window.outerPosition() returns.
+        //
+        // We return physical coordinates directly - no conversion needed.
+        // The frontend should also use physical coordinates from Tauri directly.
+        // This keeps everything in a consistent coordinate space.
+        let physical_x = rect.left;
+        let physical_y = rect.top;
+        let physical_width = (rect.right - rect.left) as u32;
+        let physical_height = (rect.bottom - rect.top) as u32;
 
         monitors.push(MonitorInfo {
             id: device_name,
             name: display_name,
-            x: logical_x,
-            y: logical_y,
-            width: logical_width,
-            height: logical_height,
+            x: physical_x,
+            y: physical_y,
+            width: physical_width,
+            height: physical_height,
             is_primary,
             scale_factor,
         });
@@ -204,23 +208,26 @@ mod tests {
             );
         }
         // Print full monitor info for debugging
-        println!("\n=== MONITOR INFO DEBUG ===");
+        // Note: width/height are now physical pixels (no conversion needed)
+        println!("\n=== MONITOR INFO DEBUG (Physical Coordinates) ===");
         for monitor in &monitors {
+            let logical_width = (monitor.width as f64 / monitor.scale_factor).round() as u32;
+            let logical_height = (monitor.height as f64 / monitor.scale_factor).round() as u32;
             println!(
-                "Monitor '{}' (id={}):\n  Position: ({}, {})\n  Size: {}x{} (physical)\n  Logical size: {}x{}\n  Scale: {:.0}% (factor: {})\n  Primary: {}",
+                "Monitor '{}' (id={}):\n  Physical Position: ({}, {})\n  Physical Size: {}x{}\n  Logical size: {}x{}\n  Scale: {:.0}% (factor: {})\n  Primary: {}",
                 monitor.name,
                 monitor.id,
                 monitor.x,
                 monitor.y,
                 monitor.width,
                 monitor.height,
-                (monitor.width as f64 / monitor.scale_factor).round() as u32,
-                (monitor.height as f64 / monitor.scale_factor).round() as u32,
+                logical_width,
+                logical_height,
                 monitor.scale_factor * 100.0,
                 monitor.scale_factor,
                 monitor.is_primary
             );
         }
-        println!("==========================\n");
+        println!("=================================================\n");
     }
 }
