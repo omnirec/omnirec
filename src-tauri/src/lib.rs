@@ -23,7 +23,7 @@ use tokio::sync::Mutex;
 
 
 // Re-export tray types for use in commands
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 pub use tray::TrayState;
 
 // Legacy alias for backwards compatibility
@@ -175,6 +175,16 @@ pub fn run() {
             });
 
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            // On Windows, hide the window instead of closing it when the close button is clicked.
+            // The app continues running in the system tray. Use "Exit" from tray menu to quit.
+            #[cfg(target_os = "windows")]
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                eprintln!("[Window] Close requested - hiding window (use tray Exit to quit)");
+                api.prevent_close();
+                let _ = window.hide();
+            }
         })
         .invoke_handler(tauri::generate_handler![
             // Capture commands

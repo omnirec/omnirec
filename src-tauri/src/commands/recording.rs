@@ -178,17 +178,17 @@ pub async fn start_gnome_recording(
 }
 
 /// Update tray icon visibility based on recording state.
-/// When recording: hide tray icon (system indicator is used to stop).
-/// When idle: show tray icon with menu.
+/// Update tray icon state based on recording status.
+/// - Linux: hide tray icon during recording (system indicator is used to stop).
+/// - Windows: change tray icon to recording indicator (red icon).
 #[tauri::command]
 pub async fn set_tray_recording_state(
     app: tauri::AppHandle,
     recording: bool,
 ) -> Result<(), String> {
     tracing::debug!(
-        "set_tray_recording_state: recording={}, visible={}",
-        recording,
-        !recording
+        "set_tray_recording_state: recording={}",
+        recording
     );
 
     #[cfg(target_os = "linux")]
@@ -215,9 +215,15 @@ pub async fn set_tray_recording_state(
         }
     }
 
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "windows")]
     {
-        let _ = (app, recording); // Suppress unused warnings
+        // Update tray icon to recording state
+        crate::tray::set_recording_state(&app, recording);
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let _ = (app, recording); // Suppress unused warnings - macOS tray is a stub
     }
 
     Ok(())

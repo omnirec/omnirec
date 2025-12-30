@@ -2,7 +2,7 @@
 //!
 //! This module provides a unified tray interface across all platforms:
 //! - Linux: Full implementation with tray icon and menu
-//! - Windows: Stub (future implementation)
+//! - Windows: Full implementation with tray icon and menu
 //! - macOS: Stub (future implementation)
 //!
 //! On Linux portal-mode desktops (GNOME, KDE, COSMIC), the tray provides
@@ -67,7 +67,7 @@ pub mod icon_names {
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 use tauri::tray::TrayIcon;
 
 /// System tray state.
@@ -75,8 +75,8 @@ use tauri::tray::TrayIcon;
 /// This struct holds the tray icon handle and recording state.
 /// On platforms without tray support, only the recording state is tracked.
 pub struct TrayState {
-    /// The tray icon handle (Linux only for now).
-    #[cfg(target_os = "linux")]
+    /// The tray icon handle (Linux and Windows).
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
     pub tray: std::sync::Mutex<TrayIcon>,
 
     /// Whether a recording is currently in progress.
@@ -124,6 +124,22 @@ pub fn set_tray_visible(app: &tauri::AppHandle, visible: bool) {
 #[cfg(target_os = "macos")]
 pub fn set_tray_visible(app: &tauri::AppHandle, visible: bool) {
     macos::set_tray_visible(app, visible)
+}
+
+/// Update the tray icon to reflect recording state.
+///
+/// When recording, the icon changes to a red indicator.
+/// When idle, the normal application icon is shown.
+/// This also updates the menu item enabled states.
+#[cfg(target_os = "windows")]
+pub fn set_recording_state(app: &tauri::AppHandle, recording: bool) {
+    windows::set_recording_state(app, recording)
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn set_recording_state(_app: &tauri::AppHandle, _recording: bool) {
+    // No-op on other platforms for now
+    // Linux uses GNOME's system indicator during recording
 }
 
 /// Check if running in portal mode.
