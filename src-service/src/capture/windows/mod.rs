@@ -9,12 +9,11 @@ pub mod thumbnail;
 mod window_list;
 
 use crate::capture::error::{CaptureError, EnumerationError};
-use crate::capture::types::{
-    AudioReceiver, AudioSource, CaptureRegion, FrameReceiver, MonitorInfo, StopHandle, WindowInfo,
-};
+use crate::capture::types::{AudioReceiver, FrameReceiver, StopHandle};
 use crate::capture::{
-    AudioCaptureBackend, AudioEnumerator, CaptureBackend, HighlightProvider, MonitorEnumerator,
-    ThumbnailCapture, ThumbnailResult, WindowEnumerator,
+    AudioCaptureBackend, AudioEnumerator, AudioSource, CaptureBackend, CaptureRegion,
+    HighlightProvider, MonitorEnumerator, MonitorInfo, ThumbnailCapture, ThumbnailResult,
+    WindowEnumerator, WindowInfo,
 };
 
 /// Windows platform capture backend.

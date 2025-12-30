@@ -1,6 +1,6 @@
 //! Monitor enumeration using Windows API.
 
-use crate::capture::types::MonitorInfo;
+use crate::capture::MonitorInfo;
 use std::ffi::OsString;
 use std::os::windows::ffi::OsStringExt;
 use windows::Win32::Foundation::{BOOL, LPARAM, RECT};

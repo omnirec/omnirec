@@ -180,50 +180,33 @@ pub async fn handle_request(request: Request) -> Response {
 
         // === Thumbnails ===
         Request::GetWindowThumbnail { window_handle } => {
-            #[cfg(target_os = "linux")]
-            {
-                use crate::capture::linux::thumbnail::LinuxThumbnailCapture;
-                use crate::capture::ThumbnailCapture;
-
-                let capture = LinuxThumbnailCapture::new();
-                match capture.capture_window_thumbnail(window_handle) {
-                    Ok(result) => Response::Thumbnail {
-                        data: result.data,
-                        width: result.width,
-                        height: result.height,
-                    },
-                    Err(e) => Response::error(format!("Failed to capture thumbnail: {}", e)),
+            use crate::capture::ThumbnailCapture;
+            let backend = capture::get_backend();
+            match backend.capture_window_thumbnail(window_handle) {
+                Ok(result) => Response::Thumbnail {
+                    data: result.data,
+                    width: result.width,
+                    height: result.height,
+                },
+                Err(e) => {
+                    warn!("Failed to capture window thumbnail: {}", e);
+                    Response::error(format!("Failed to capture thumbnail: {}", e))
                 }
-            }
-            #[cfg(not(target_os = "linux"))]
-            {
-                warn!(
-                    "GetWindowThumbnail not implemented: handle={}",
-                    window_handle
-                );
-                Response::error("Not implemented")
             }
         }
         Request::GetDisplayThumbnail { monitor_id } => {
-            #[cfg(target_os = "linux")]
-            {
-                use crate::capture::linux::thumbnail::LinuxThumbnailCapture;
-                use crate::capture::ThumbnailCapture;
-
-                let capture = LinuxThumbnailCapture::new();
-                match capture.capture_display_thumbnail(&monitor_id) {
-                    Ok(result) => Response::Thumbnail {
-                        data: result.data,
-                        width: result.width,
-                        height: result.height,
-                    },
-                    Err(e) => Response::error(format!("Failed to capture thumbnail: {}", e)),
+            use crate::capture::ThumbnailCapture;
+            let backend = capture::get_backend();
+            match backend.capture_display_thumbnail(&monitor_id) {
+                Ok(result) => Response::Thumbnail {
+                    data: result.data,
+                    width: result.width,
+                    height: result.height,
+                },
+                Err(e) => {
+                    warn!("Failed to capture display thumbnail: {}", e);
+                    Response::error(format!("Failed to capture thumbnail: {}", e))
                 }
-            }
-            #[cfg(not(target_os = "linux"))]
-            {
-                warn!("GetDisplayThumbnail not implemented: {}", monitor_id);
-                Response::error("Not implemented")
             }
         }
         Request::GetRegionPreview {
@@ -233,28 +216,18 @@ pub async fn handle_request(request: Request) -> Response {
             width,
             height,
         } => {
-            #[cfg(target_os = "linux")]
-            {
-                use crate::capture::linux::thumbnail::LinuxThumbnailCapture;
-                use crate::capture::ThumbnailCapture;
-
-                let capture = LinuxThumbnailCapture::new();
-                match capture.capture_region_preview(&monitor_id, x, y, width, height) {
-                    Ok(result) => Response::Thumbnail {
-                        data: result.data,
-                        width: result.width,
-                        height: result.height,
-                    },
-                    Err(e) => Response::error(format!("Failed to capture preview: {}", e)),
+            use crate::capture::ThumbnailCapture;
+            let backend = capture::get_backend();
+            match backend.capture_region_preview(&monitor_id, x, y, width, height) {
+                Ok(result) => Response::Thumbnail {
+                    data: result.data,
+                    width: result.width,
+                    height: result.height,
+                },
+                Err(e) => {
+                    warn!("Failed to capture region preview: {}", e);
+                    Response::error(format!("Failed to capture preview: {}", e))
                 }
-            }
-            #[cfg(not(target_os = "linux"))]
-            {
-                warn!(
-                    "GetRegionPreview not implemented: {}x{} at ({},{}) on {}",
-                    width, height, x, y, monitor_id
-                );
-                Response::error("Not implemented")
             }
         }
 

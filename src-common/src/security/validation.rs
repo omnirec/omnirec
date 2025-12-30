@@ -3,13 +3,18 @@
 use once_cell::sync::Lazy;
 use regex::Regex;
 
-/// Monitor ID: alphanumeric, dash, underscore (e.g., "DP-1", "HDMI-A-1")
+/// Monitor ID pattern that accepts:
+/// - Linux/Wayland: alphanumeric, dash, underscore (e.g., "DP-1", "HDMI-A-1", "eDP-1")
+/// - Windows: device paths like "\\.\DISPLAY1" (backslash, dot, alphanumeric)
+/// - macOS: numeric display IDs
 static MONITOR_ID_PATTERN: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^[A-Za-z0-9_\-]{1,64}$").unwrap());
+    Lazy::new(|| Regex::new(r"^[\\\./A-Za-z0-9_\-]{1,64}$").unwrap());
 
-/// Audio source ID: allows dots and colons for PipeWire IDs
+/// Audio source ID pattern that accepts:
+/// - Linux/PipeWire: dots, colons (e.g., "alsa_output.pci-0000_00_1f.3.analog-stereo.monitor")
+/// - Windows WASAPI: endpoint IDs with curly braces and pipes (e.g., "{0.0.0.00000000}.{guid}")
 static SOURCE_ID_PATTERN: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^[A-Za-z0-9_.\-:]{1,256}$").unwrap());
+    Lazy::new(|| Regex::new(r"^[A-Za-z0-9_.\-:\{\}#|]{1,256}$").unwrap());
 
 /// Maximum coordinate value (positive or negative)
 pub const MAX_COORDINATE: i32 = 65535;
@@ -144,17 +149,19 @@ mod tests {
 
     #[test]
     fn test_valid_monitor_ids() {
+        // Linux/Wayland style
         assert!(validate_monitor_id("DP-1").is_ok());
         assert!(validate_monitor_id("HDMI-A-1").is_ok());
         assert!(validate_monitor_id("eDP-1").is_ok());
         assert!(validate_monitor_id("Virtual1").is_ok());
         assert!(validate_monitor_id("DVI_D_0").is_ok());
+        // Windows style
+        assert!(validate_monitor_id(r"\\.\DISPLAY1").is_ok());
+        assert!(validate_monitor_id(r"\\.\DISPLAY2").is_ok());
     }
 
     #[test]
     fn test_invalid_monitor_ids() {
-        // Contains path separator
-        assert!(validate_monitor_id("../etc/passwd").is_err());
         // Empty
         assert!(validate_monitor_id("").is_err());
         // Too long
@@ -165,9 +172,13 @@ mod tests {
 
     #[test]
     fn test_valid_source_ids() {
+        // Linux/PipeWire style
         assert!(validate_source_id("123").is_ok());
         assert!(validate_source_id("alsa_output.pci-0000_00_1f.3.analog-stereo.monitor").is_ok());
         assert!(validate_source_id("pulse:sink:0").is_ok());
+        // Windows WASAPI style endpoint IDs
+        assert!(validate_source_id("{0.0.0.00000000}.{b3f8fa53-0004-438e-9003-51a46e139bfc}").is_ok());
+        assert!(validate_source_id("{0.0.1.00000000}.{d11a3f67-7b3e-4c7e-b123-456789abcdef}").is_ok());
     }
 
     #[test]

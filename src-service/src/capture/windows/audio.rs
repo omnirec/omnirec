@@ -20,7 +20,8 @@
 //! - Input devices (AudioSourceType::Input): Use direct WASAPI capture for microphone input
 
 use crate::capture::error::{CaptureError, EnumerationError};
-use crate::capture::types::{AudioReceiver, AudioSample, AudioSource, AudioSourceType, StopHandle};
+use crate::capture::types::{AudioReceiver, AudioSample, StopHandle};
+use crate::capture::{AudioSource, AudioSourceType};
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;

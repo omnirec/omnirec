@@ -1,6 +1,6 @@
 //! Window enumeration using Windows API.
 
-use crate::capture::types::WindowInfo;
+use crate::capture::WindowInfo;
 use std::ffi::OsString;
 use std::os::windows::ffi::OsStringExt;
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM};

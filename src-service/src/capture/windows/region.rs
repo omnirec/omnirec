@@ -1,6 +1,7 @@
 //! Region recording using Windows.Graphics.Capture API for monitor capture with cropping.
 
-use crate::capture::types::{CapturedFrame, CaptureRegion};
+use crate::capture::types::CapturedFrame;
+use crate::capture::CaptureRegion;
 use crate::capture::windows::monitor_list;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
