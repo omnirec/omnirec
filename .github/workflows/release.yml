@@ -107,6 +107,7 @@ jobs:
             src-tauri -> target
             src-service -> target
             src-common -> target
+            src-cli -> target
 
       - name: TypeScript type check
         run: pnpm exec tsc --noEmit
@@ -123,6 +124,10 @@ jobs:
         working-directory: src-tauri
         run: cargo clippy --all-targets --all-features -- -D warnings
 
+      - name: Rust lint (clippy) - CLI
+        working-directory: src-cli
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
       - name: Rust tests - common library
         working-directory: src-common
         run: cargo test --all-features
@@ -133,6 +138,10 @@ jobs:
 
       - name: Rust tests - main app
         working-directory: src-tauri
+        run: cargo test --all-features
+
+      - name: Rust tests - CLI
+        working-directory: src-cli
         run: cargo test --all-features
 
       - name: Build picker (C++)
@@ -202,6 +211,7 @@ jobs:
             src-tauri -> target
             src-service -> target
             src-common -> target
+            src-cli -> target
 
       - name: Build service binary (Linux)
         if: matrix.platform == 'ubuntu-22.04'
@@ -219,6 +229,45 @@ jobs:
         if: matrix.platform == 'windows-latest'
         working-directory: src-service
         run: cargo build --release
+
+      - name: Build CLI binary (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        working-directory: src-cli
+        run: cargo build --release
+
+      - name: Build CLI binary (macOS)
+        if: matrix.platform == 'macos-latest'
+        working-directory: src-cli
+        run: |
+          cargo build --release --target aarch64-apple-darwin
+          cargo build --release --target x86_64-apple-darwin
+
+      - name: Build CLI binary (Windows)
+        if: matrix.platform == 'windows-latest'
+        working-directory: src-cli
+        run: cargo build --release
+
+      - name: Stage CLI binary for Tauri bundle (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          mkdir -p src-tauri/binaries
+          cp src-cli/target/release/omnirec src-tauri/binaries/omnirec-cli-x86_64-unknown-linux-gnu
+
+      - name: Stage CLI binary for Tauri bundle (macOS)
+        if: matrix.platform == 'macos-latest'
+        run: |
+          mkdir -p src-tauri/binaries
+          if [[ "${{ matrix.args }}" == *"aarch64"* ]]; then
+            cp src-cli/target/aarch64-apple-darwin/release/omnirec src-tauri/binaries/omnirec-cli-aarch64-apple-darwin
+          else
+            cp src-cli/target/x86_64-apple-darwin/release/omnirec src-tauri/binaries/omnirec-cli-x86_64-apple-darwin
+          fi
+
+      - name: Stage CLI binary for Tauri bundle (Windows)
+        if: matrix.platform == 'windows-latest'
+        run: |
+          mkdir -p src-tauri/binaries
+          cp src-cli/target/release/omnirec.exe src-tauri/binaries/omnirec-cli-x86_64-pc-windows-msvc.exe
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0.6.0
@@ -251,6 +300,9 @@ jobs:
 
           # Copy service binary
           cp src-service/target/release/omnirec-service "$ARCHIVE_NAME/"
+
+          # Copy CLI binary
+          cp src-cli/target/release/omnirec "$ARCHIVE_NAME/omnirec-cli"
 
           # Copy picker binary (built with CMake)
           cp src-picker/build/omnirec-picker "$ARCHIVE_NAME/"

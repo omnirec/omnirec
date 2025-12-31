@@ -33,7 +33,6 @@
 
 - **Voice Transcription** — Streaming speech-to-text for automatic captions and searchable recordings
 - **Global Hotkeys** — Start, stop, and pause recordings from anywhere with customizable shortcuts
-- **Command Line Interface** — Scriptable recording for automation and power users
 
 ## Use Cases
 
@@ -127,6 +126,84 @@ OmniRec is accessed from the taskbar in KDE Plasma.
 #### COSMIC
 
 On Pop!_OS with the COSMIC desktop environment, OmniRec runs as a system tray application similar to GNOME.
+
+## Command Line Interface
+
+OmniRec includes a CLI (`omnirec-cli`) for headless recording and automation.
+
+### Quick Start
+
+```bash
+# List available capture sources
+omnirec-cli list windows
+omnirec-cli list displays
+omnirec-cli list audio
+
+# Record a window (use handle from 'list windows')
+omnirec-cli record window 12345
+
+# Record a display (use ID from 'list displays')
+omnirec-cli record display 0
+
+# Record a region
+omnirec-cli record region --display 0 --x 100 --y 100 --width 800 --height 600
+
+# Stop recording (or press Ctrl+C)
+omnirec-cli stop
+
+# Check recording status
+omnirec-cli status
+```
+
+### Recording Options
+
+```bash
+# Specify output format
+omnirec-cli record window 12345 --format webm
+
+# Auto-stop after duration
+omnirec-cli record display 0 --duration 60
+
+# Configure audio sources
+omnirec-cli record window 12345 --audio <source-id> --microphone <mic-id>
+
+# Disable audio
+omnirec-cli record display 0 --audio none --microphone none
+```
+
+### JSON Output
+
+Use `--json` for machine-readable output (useful for scripts):
+
+```bash
+omnirec-cli list displays --json
+omnirec-cli status --json
+```
+
+### Wayland Desktop Environments
+
+On GNOME, KDE Plasma, COSMIC, and Cinnamon (Wayland), specific window/display/region selection is not supported due to Wayland security restrictions. Use portal-based recording instead:
+
+```bash
+# Opens the desktop's native screen picker
+omnirec-cli record portal
+```
+
+When using `record window`, `display`, or `region` on these desktops, the CLI will warn and fall back to portal mode. Use `--strict` to fail instead of falling back.
+
+### Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | General error |
+| 2 | Invalid arguments |
+| 3 | Service connection failed |
+| 4 | Recording failed to start |
+| 5 | Recording failed during capture |
+| 6 | Transcoding failed |
+| 7 | Portal required (with --strict) |
+| 8 | User cancelled |
 
 ## Development
 

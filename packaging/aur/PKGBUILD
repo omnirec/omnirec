@@ -45,6 +45,9 @@ package() {
     # Install picker binary
     install -Dm755 "omnirec-picker" "${pkgdir}/usr/bin/omnirec-picker"
 
+    # Install CLI binary
+    install -Dm755 "omnirec-cli" "${pkgdir}/usr/bin/omnirec-cli"
+
     # Install desktop entry (from packaging dir, not archive)
     install -Dm644 "../omnirec.desktop" "${pkgdir}/usr/share/applications/omnirec.desktop"
 

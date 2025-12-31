@@ -1,0 +1,39 @@
+[package]
+name = "omnirec-cli"
+version = "0.1.4"
+edition = "2021"
+description = "Command-line interface for OmniRec screen recording"
+
+[[bin]]
+name = "omnirec"
+path = "src/main.rs"
+
+[dependencies]
+# Shared types and IPC protocol
+omnirec-common = { path = "../src-common" }
+
+# CLI argument parsing
+clap = { version = "4", features = ["derive", "color"] }
+
+# Colored terminal output
+owo-colors = "4"
+
+# Terminal detection
+is-terminal = "0.4"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Async runtime
+tokio = { version = "1", features = ["full", "signal"] }
+
+# File paths
+directories = "5"
+
+# Find executables in PATH
+which = "6"
+
+# Platform-specific dependencies for peer verification
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
