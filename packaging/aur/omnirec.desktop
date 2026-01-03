@@ -1,7 +1,7 @@
 [Desktop Entry]
 Name=OmniRec
 Comment=High-performance screen, window, and region recording
-Exec=omnirec
+Exec=omnirec-app
 Icon=omnirec
 Terminal=false
 Type=Application

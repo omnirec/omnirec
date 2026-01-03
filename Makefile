@@ -167,9 +167,9 @@ run-service-release: service-release
 # Check if all binaries exist (after build)
 check-binaries:
 	@echo "Checking built binaries..."
-	@test -f src-tauri/target/release/omnirec && echo "  [OK] omnirec" || echo "  [MISSING] omnirec"
+	@test -f src-tauri/target/release/omnirec-app && echo "  [OK] omnirec-app" || echo "  [MISSING] omnirec-app"
+	@test -f src-cli/target/release/omnirec && echo "  [OK] omnirec" || echo "  [MISSING] omnirec"
 	@test -f src-service/target/release/omnirec-service && echo "  [OK] omnirec-service" || echo "  [MISSING] omnirec-service"
-	@test -f src-cli/target/release/omnirec && echo "  [OK] omnirec-cli" || echo "  [MISSING] omnirec-cli"
 	@test -f src-picker/build/omnirec-picker && echo "  [OK] omnirec-picker" || echo "  [MISSING] omnirec-picker"
 
 # Build and run CLI in foreground (for testing)

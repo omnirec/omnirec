@@ -93,3 +93,5 @@ The CI workflow enforces these checks on all platforms. Code that passes locally
 ## Documentation and Notes
 
 - Update the project `README.md` document any time significant features are added or changed.
+- Maintain the `docs/cli.md` document to accurately and completely reflect the commands, options and arguments supported by the command-line interface.
+

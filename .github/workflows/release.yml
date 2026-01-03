@@ -251,23 +251,23 @@ jobs:
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           mkdir -p src-tauri/binaries
-          cp src-cli/target/release/omnirec src-tauri/binaries/omnirec-cli-x86_64-unknown-linux-gnu
+          cp src-cli/target/release/omnirec src-tauri/binaries/omnirec-x86_64-unknown-linux-gnu
 
       - name: Stage CLI binary for Tauri bundle (macOS)
         if: matrix.platform == 'macos-latest'
         run: |
           mkdir -p src-tauri/binaries
           if [[ "${{ matrix.args }}" == *"aarch64"* ]]; then
-            cp src-cli/target/aarch64-apple-darwin/release/omnirec src-tauri/binaries/omnirec-cli-aarch64-apple-darwin
+            cp src-cli/target/aarch64-apple-darwin/release/omnirec src-tauri/binaries/omnirec-aarch64-apple-darwin
           else
-            cp src-cli/target/x86_64-apple-darwin/release/omnirec src-tauri/binaries/omnirec-cli-x86_64-apple-darwin
+            cp src-cli/target/x86_64-apple-darwin/release/omnirec src-tauri/binaries/omnirec-x86_64-apple-darwin
           fi
 
       - name: Stage CLI binary for Tauri bundle (Windows)
         if: matrix.platform == 'windows-latest'
         run: |
           mkdir -p src-tauri/binaries
-          cp src-cli/target/release/omnirec.exe src-tauri/binaries/omnirec-cli-x86_64-pc-windows-msvc.exe
+          cp src-cli/target/release/omnirec.exe src-tauri/binaries/omnirec-x86_64-pc-windows-msvc.exe
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0.6.0
@@ -295,14 +295,14 @@ jobs:
 
           mkdir -p "$ARCHIVE_NAME/icons"
 
-          # Copy main binary
-          cp src-tauri/target/release/omnirec "$ARCHIVE_NAME/"
+          # Copy GUI app binary
+          cp src-tauri/target/release/omnirec-app "$ARCHIVE_NAME/"
+
+          # Copy CLI binary
+          cp src-cli/target/release/omnirec "$ARCHIVE_NAME/"
 
           # Copy service binary
           cp src-service/target/release/omnirec-service "$ARCHIVE_NAME/"
-
-          # Copy CLI binary
-          cp src-cli/target/release/omnirec "$ARCHIVE_NAME/omnirec-cli"
 
           # Copy picker binary (built with CMake)
           cp src-picker/build/omnirec-picker "$ARCHIVE_NAME/"

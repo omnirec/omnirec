@@ -36,7 +36,10 @@ sha256sums=(
 package() {
     cd "${srcdir}/omnirec-${pkgver}-linux-x86_64"
 
-    # Install main binary
+    # Install GUI app binary
+    install -Dm755 "omnirec-app" "${pkgdir}/usr/bin/omnirec-app"
+
+    # Install CLI binary
     install -Dm755 "omnirec" "${pkgdir}/usr/bin/omnirec"
 
     # Install service binary
@@ -44,9 +47,6 @@ package() {
 
     # Install picker binary
     install -Dm755 "omnirec-picker" "${pkgdir}/usr/bin/omnirec-picker"
-
-    # Install CLI binary
-    install -Dm755 "omnirec-cli" "${pkgdir}/usr/bin/omnirec-cli"
 
     # Install desktop entry (from packaging dir, not archive)
     install -Dm644 "../omnirec.desktop" "${pkgdir}/usr/share/applications/omnirec.desktop"
