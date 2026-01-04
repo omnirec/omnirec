@@ -72,9 +72,12 @@ static QByteArray readLengthPrefixedMessage(QLocalSocket& socket, QString* error
     char lenBytes[4];
     qint64 bytesRead = 0;
     while (bytesRead < 4) {
-        if (!socket.waitForReadyRead(5000)) {
-            if (errorOut) *errorOut = QString("Timeout waiting for response length: %1").arg(socket.errorString());
-            return QByteArray();
+        // Only wait if no data is available - data might already be buffered
+        if (socket.bytesAvailable() == 0) {
+            if (!socket.waitForReadyRead(5000)) {
+                if (errorOut) *errorOut = QString("Timeout waiting for response length: %1").arg(socket.errorString());
+                return QByteArray();
+            }
         }
         qint64 n = socket.read(lenBytes + bytesRead, 4 - bytesRead);
         if (n <= 0) {
@@ -101,9 +104,12 @@ static QByteArray readLengthPrefixedMessage(QLocalSocket& socket, QString* error
     data.resize(static_cast<int>(len));
     bytesRead = 0;
     while (bytesRead < static_cast<qint64>(len)) {
-        if (!socket.waitForReadyRead(5000)) {
-            if (errorOut) *errorOut = QString("Timeout waiting for response body: %1").arg(socket.errorString());
-            return QByteArray();
+        // Only wait if no data is available - data might already be buffered
+        if (socket.bytesAvailable() == 0) {
+            if (!socket.waitForReadyRead(5000)) {
+                if (errorOut) *errorOut = QString("Timeout waiting for response body: %1").arg(socket.errorString());
+                return QByteArray();
+            }
         }
         qint64 n = socket.read(data.data() + bytesRead, len - bytesRead);
         if (n <= 0) {

@@ -157,12 +157,12 @@ install-deps:
 # Build and run service in foreground (for testing)
 run-service: service-debug
 	@echo "==> Running omnirec-service..."
-	./src-service/target/debug/omnirec-service
+	./target/debug/omnirec-service
 
 # Build and run service in release mode
 run-service-release: service-release
 	@echo "==> Running omnirec-service (release)..."
-	./src-service/target/release/omnirec-service
+	./target/release/omnirec-service
 
 # Check if all binaries exist (after build)
 check-binaries:

@@ -95,14 +95,13 @@ fn verify_executable(exe_path: &Path) -> Result<(), PeerVerifyError> {
         .any(|d| exe_dir == Path::new(d));
     let same_as_self = self_dir.as_ref().map(|d| exe_dir == d).unwrap_or(false);
 
-    // During development, also allow cargo target directories
-    let in_target_dir = exe_dir
-        .to_string_lossy()
-        .contains("target")
-        && (exe_dir.to_string_lossy().contains("debug")
-            || exe_dir.to_string_lossy().contains("release"));
+    // During development, also allow cargo target directories and CMake build directories
+    let exe_dir_str = exe_dir.to_string_lossy();
+    let in_target_dir = exe_dir_str.contains("target")
+        && (exe_dir_str.contains("debug") || exe_dir_str.contains("release"));
+    let in_cmake_build = exe_dir_str.contains("src-picker") && exe_dir_str.contains("build");
 
-    if !in_trusted_dir && !same_as_self && !in_target_dir {
+    if !in_trusted_dir && !same_as_self && !in_target_dir && !in_cmake_build {
         return Err(PeerVerifyError::UntrustedDirectory(exe_path.to_path_buf()));
     }
 

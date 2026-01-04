@@ -263,7 +263,7 @@ pub async fn handle_request(request: Request) -> Response {
                 use crate::capture::linux::approval_token;
                 use omnirec_common::ipc::SelectionGeometry;
                 if let Some(state) = crate::capture::linux::get_ipc_state() {
-                    let guard = state.blocking_read();
+                    let guard = state.read().await;
                     if let Some(ref selection) = guard.selection {
                         let geometry = selection.geometry.as_ref().map(|g| SelectionGeometry {
                             x: g.x,

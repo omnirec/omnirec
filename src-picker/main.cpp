@@ -130,6 +130,10 @@ static int runPicker()
                 .arg(response.sourceId)
                 .arg(response.hasApprovalToken ? "true" : "false"));
             
+            // Track whether user selected "Always Allow"
+            bool shouldStoreToken = false;
+            QString token;
+            
             // Check if we need to show approval dialog
             if (!response.hasApprovalToken) {
                 pickerLog("[omnirec-picker] No approval token, showing dialog...");
@@ -137,22 +141,12 @@ static int runPicker()
                 DialogResult dialogResult = showApprovalDialog(response.sourceType, response.sourceId);
                 
                 switch (dialogResult) {
-                    case DialogResult::AlwaysAllow: {
+                    case DialogResult::AlwaysAllow:
                         pickerLog("[omnirec-picker] User approved (always_allow=true)");
-                        
-                        // Generate and store token
-                        QString token = generateApprovalToken();
-                        pickerLog("[omnirec-picker] Generated approval token, storing via IPC...");
-                        
-                        QString storeError;
-                        if (!storeToken(token, &storeError)) {
-                            pickerLog(QString("[omnirec-picker] Failed to store token: %1").arg(storeError));
-                            // Continue anyway - recording will still work, just won't be persistent
-                        } else {
-                            pickerLog("[omnirec-picker] Token stored successfully");
-                        }
+                        // Generate token now, but store it AFTER outputting to XDPH
+                        token = generateApprovalToken();
+                        shouldStoreToken = true;
                         break;
-                    }
                     case DialogResult::AllowOnce:
                         pickerLog("[omnirec-picker] User approved (always_allow=false)");
                         break;
@@ -184,8 +178,25 @@ static int runPicker()
                 return 1;
             }
             
+            // Output to XDPH FIRST - this unblocks the portal immediately
+            // This is critical: XDPH may kill the picker if stdout is not written quickly
             pickerLog(QString("[omnirec-picker] Output: %1").arg(output));
             std::cout << output.toStdString() << std::endl;
+            std::cout.flush();  // Ensure output is flushed immediately
+            
+            // Now store the token (after XDPH has received our output)
+            // If this fails or we're killed before it completes, recording still works
+            if (shouldStoreToken) {
+                pickerLog("[omnirec-picker] Storing approval token via IPC...");
+                QString storeError;
+                if (!storeToken(token, &storeError)) {
+                    pickerLog(QString("[omnirec-picker] Failed to store token: %1").arg(storeError));
+                    // Not fatal - recording will still work, just won't be persistent
+                } else {
+                    pickerLog("[omnirec-picker] Token stored successfully");
+                }
+            }
+            
             pickerLog("[omnirec-picker] Exiting with SUCCESS");
             return 0;
         }
