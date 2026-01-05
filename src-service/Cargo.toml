@@ -8,7 +8,24 @@ description = "Background service for OmniRec screen recording"
 name = "omnirec-service"
 path = "src/main.rs"
 
+[features]
+default = []
+# Enable CUDA GPU acceleration for transcription
+# - Linux: Requires NVIDIA CUDA Toolkit (nvcc, cuBLAS) installed at build time
+#          whisper.cpp is built from source with -DGGML_CUDA=ON
+# - Windows: Uses prebuilt CUDA binaries (no build-time dependencies, ~457MB download)
+# - macOS: No effect (uses Metal acceleration via prebuilt framework)
+cuda = []
+
+[build-dependencies]
+reqwest = { version = "0.12", features = ["blocking"] }
+zip = "2"
+
 [dependencies]
+# Dynamic library loading for whisper.cpp FFI
+libloading = "0.8"
+# HTTP client for model downloading
+reqwest = { version = "0.12", features = ["blocking"] }
 # Shared types and IPC protocol
 omnirec-common = { path = "../src-common" }
 

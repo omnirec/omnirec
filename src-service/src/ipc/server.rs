@@ -2,7 +2,7 @@
 
 use omnirec_common::ipc::{read_json, write_json, Request, Response};
 use tokio::io::{AsyncRead, AsyncWrite};
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 
 #[cfg(unix)]
 use omnirec_common::ipc::get_socket_path;

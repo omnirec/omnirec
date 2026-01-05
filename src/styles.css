@@ -1138,6 +1138,42 @@ button:disabled {
   color: var(--accent-danger);
 }
 
+/* ===== Quick Toggle (controls row) ===== */
+.quick-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto; /* Push to right side */
+  cursor: pointer;
+  font-size: 0.9em;
+  color: var(--text-secondary);
+  transition: color 0.15s;
+}
+
+.quick-toggle:hover {
+  color: var(--text-primary);
+}
+
+.quick-toggle.hidden {
+  display: none;
+}
+
+.quick-toggle input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--accent-primary);
+}
+
+.quick-toggle__label {
+  user-select: none;
+}
+
+.quick-toggle.disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
 /* ===== Status Overlay ===== */
 .status-overlay {
   position: fixed;

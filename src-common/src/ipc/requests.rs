@@ -99,6 +99,14 @@ pub enum Request {
     /// Store approval token
     StoreToken { token: String },
 
+    // === Transcription ===
+    /// Get transcription configuration
+    GetTranscriptionConfig,
+    /// Set transcription configuration
+    SetTranscriptionConfig { enabled: bool },
+    /// Get transcription status
+    GetTranscriptionStatus,
+
     // === Service Control ===
     /// Request service shutdown
     Shutdown,

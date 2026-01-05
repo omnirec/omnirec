@@ -4,18 +4,23 @@
 //! - Recording state (idle, recording, saving)
 //! - Output format configuration
 //! - Audio configuration
+//! - Transcription configuration
 //! - Elapsed time tracking
 //! - Event broadcasting to subscribed clients
 
 use crate::capture::{
     AudioCaptureBackend, AudioReceiver, CaptureBackend, CaptureRegion, FrameReceiver, StopHandle,
 };
-use crate::encoder::{encode_frames, encode_frames_with_audio, AudioEncoderConfig};
-use omnirec_common::{AudioConfig, OutputFormat, RecordingState};
+use crate::encoder::{
+    encode_frames, encode_frames_with_audio, encode_frames_with_audio_and_transcription,
+    AudioEncoderConfig,
+};
+use crate::transcription::TranscribeState;
+use omnirec_common::{AudioConfig, OutputFormat, RecordingState, TranscriptionConfig};
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::time::Instant;
-use tokio::sync::{broadcast, Mutex, RwLock};
+use tokio::sync::{broadcast, mpsc, Mutex, RwLock};
 use tracing::{error, info, warn};
 
 /// Result of a completed recording.
@@ -52,6 +57,12 @@ pub struct RecordingManager {
     encoding_task: Mutex<Option<tokio::task::JoinHandle<Result<PathBuf, String>>>>,
     output_format: RwLock<OutputFormat>,
     audio_config: RwLock<AudioConfig>,
+    /// Transcription configuration
+    transcription_config: RwLock<TranscriptionConfig>,
+    /// Transcription state (active during recording)
+    transcription_state: Mutex<TranscribeState>,
+    /// Transcription processing task handle
+    transcription_task: Mutex<Option<tokio::task::JoinHandle<()>>>,
     /// Broadcast channel for events
     event_tx: broadcast::Sender<ServiceEvent>,
     /// Elapsed time update task handle
@@ -70,6 +81,9 @@ impl RecordingManager {
             encoding_task: Mutex::new(None),
             output_format: RwLock::new(OutputFormat::default()),
             audio_config: RwLock::new(AudioConfig::default()),
+            transcription_config: RwLock::new(TranscriptionConfig::default()),
+            transcription_state: Mutex::new(TranscribeState::new()),
+            transcription_task: Mutex::new(None),
             event_tx,
             elapsed_task: Mutex::new(None),
         }
@@ -142,6 +156,39 @@ impl RecordingManager {
         *cfg = config;
         info!("Audio configuration updated");
         Ok(())
+    }
+
+    /// Get the current transcription configuration.
+    pub async fn get_transcription_config(&self) -> TranscriptionConfig {
+        self.transcription_config.read().await.clone()
+    }
+
+    /// Set the transcription configuration.
+    pub async fn set_transcription_config(&self, config: TranscriptionConfig) -> Result<(), String> {
+        let state = self.state.read().await;
+        if *state != RecordingState::Idle {
+            return Err("Cannot change transcription config while recording".to_string());
+        }
+        let enabled = config.enabled;
+        let mut cfg = self.transcription_config.write().await;
+        *cfg = config;
+        info!("Transcription configuration updated: enabled={}", enabled);
+        Ok(())
+    }
+
+    /// Get current transcription status.
+    pub async fn get_transcription_status(&self) -> omnirec_common::TranscriptionStatus {
+        let state = self.transcription_state.lock().await;
+        let active = state.is_active();
+        let queue = state.queue();
+
+        omnirec_common::TranscriptionStatus {
+            model_loaded: false, // TODO: Check if model is loaded
+            active,
+            segments_processed: queue.segments_processed() as u32,
+            queue_depth: queue.queue_depth() as u32,
+            error: None,
+        }
     }
 
     /// Get a clone of the stop flag (for external stop monitoring).
@@ -230,6 +277,20 @@ impl RecordingManager {
         let has_microphone = audio_cfg.enabled && audio_cfg.microphone_id.is_some();
         let audio_enabled = has_system_audio || has_microphone;
 
+        // Get transcription config
+        let transcription_cfg = self.get_transcription_config().await;
+        // Transcription requires system audio (can't transcribe mic-only reliably)
+        let transcription_enabled = transcription_cfg.enabled && has_system_audio;
+
+        eprintln!(
+            "[Recording] Audio config: enabled={}, source_id={:?}, mic_id={:?}, has_system_audio={}, has_mic={}, audio_enabled={}",
+            audio_cfg.enabled, audio_cfg.source_id, audio_cfg.microphone_id, has_system_audio, has_microphone, audio_enabled
+        );
+        eprintln!(
+            "[Recording] Transcription config: enabled={}, transcription_enabled={}",
+            transcription_cfg.enabled, transcription_enabled
+        );
+
         // Store video stop flag
         {
             let mut flag = self.stop_flag.lock().await;
@@ -239,8 +300,8 @@ impl RecordingManager {
         // Start encoding task (with or without audio)
         let encoding_handle = if audio_enabled {
             info!(
-                "Starting recording with audio - system: {:?}, mic: {:?}, AEC: {}",
-                audio_cfg.source_id, audio_cfg.microphone_id, audio_cfg.echo_cancellation
+                "Starting recording with audio - system: {:?}, mic: {:?}, AEC: {}, transcription: {}",
+                audio_cfg.source_id, audio_cfg.microphone_id, audio_cfg.echo_cancellation, transcription_enabled
             );
 
             match self
@@ -259,12 +320,49 @@ impl RecordingManager {
                     }
 
                     let audio_encoder_config = AudioEncoderConfig::default();
-                    tokio::spawn(encode_frames_with_audio(
-                        frame_rx,
-                        audio_rx,
-                        stop_flag.clone(),
-                        audio_encoder_config,
-                    ))
+
+                    if transcription_enabled {
+                        eprintln!("[Transcription] Transcription is ENABLED - creating channel and starting task");
+                        
+                        // Generate output path upfront so transcription can use the same base name
+                        let video_output_path = match crate::encoder::generate_output_path() {
+                            Ok(path) => path,
+                            Err(e) => {
+                                error!("Failed to generate output path: {}", e);
+                                return Err(e);
+                            }
+                        };
+                        eprintln!("[Transcription] Video output path: {:?}", video_output_path);
+                        
+                        // Create transcription channel
+                        let (transcription_tx, transcription_rx) = mpsc::channel::<Vec<f32>>(256);
+
+                        // Start transcription processing task with video output path
+                        // Note: Transcription uses channel disconnection to detect stop, not the stop_flag,
+                        // because the video capture stop_flag can be set during PipeWire format renegotiation.
+                        self.start_transcription_task(transcription_rx, video_output_path.clone())
+                            .await;
+
+                        // Use encoder with transcription support, passing the pre-generated output path
+                        tokio::spawn(encode_frames_with_audio_and_transcription(
+                            frame_rx,
+                            audio_rx,
+                            stop_flag.clone(),
+                            audio_encoder_config,
+                            Some(transcription_tx),
+                            Some(video_output_path),
+                        ))
+                    } else {
+                        eprintln!("[Transcription] Transcription is DISABLED (config.enabled={}, has_system_audio={})", 
+                            transcription_cfg.enabled, has_system_audio);
+                        // Standard audio encoding without transcription
+                        tokio::spawn(encode_frames_with_audio(
+                            frame_rx,
+                            audio_rx,
+                            stop_flag.clone(),
+                            audio_encoder_config,
+                        ))
+                    }
                 }
                 Err(e) => {
                     warn!("Audio capture failed, recording video only: {}", e);
@@ -295,6 +393,141 @@ impl RecordingManager {
 
         info!("Recording started");
         Ok(())
+    }
+
+    /// Start the transcription processing task.
+    ///
+    /// This task receives audio samples from the encoder and feeds them to the
+    /// transcription state machine for voice detection and transcription.
+    ///
+    /// # Arguments
+    /// * `transcription_rx` - Channel to receive audio samples from the encoder
+    /// * `video_output_path` - Path to the video output file (transcript will be derived from this)
+    async fn start_transcription_task(
+        &self,
+        transcription_rx: mpsc::Receiver<Vec<f32>>,
+        video_output_path: PathBuf,
+    ) {
+        // Initialize transcription state with the video output path
+        {
+            let mut state = self.transcription_state.lock().await;
+            if let Err(e) = state.start(video_output_path.clone(), 48000, 2) {
+                error!("Failed to start transcription: {}", e);
+                return;
+            }
+        }
+
+        // Get queue reference for final stats
+        let transcription_state = self.transcription_state.lock().await;
+        let queue = transcription_state.queue();
+        drop(transcription_state);
+
+        // Use a std channel for the blocking thread
+        let (std_tx, std_rx) = std::sync::mpsc::channel::<Vec<f32>>();
+
+        // Spawn a blocking thread for transcription processing
+        // TranscribeState.process_samples() is synchronous
+        let queue_clone = queue.clone();
+        let video_path_for_thread = video_output_path.clone();
+        let transcription_thread = std::thread::spawn(move || {
+            eprintln!("[Transcription] Worker thread started");
+            let mut transcribe_state = TranscribeState::new();
+
+            // Start the transcription state with the video output path
+            if let Err(e) = transcribe_state.start(video_path_for_thread, 48000, 2) {
+                eprintln!("[Transcription] Failed to start transcription in thread: {}", e);
+                return;
+            }
+            eprintln!("[Transcription] TranscribeState initialized in worker thread");
+
+            let mut total_samples_received: u64 = 0;
+            let mut last_stats_time = std::time::Instant::now();
+
+            // Note: We don't check stop_flag here because it can be set by PipeWire during
+            // format renegotiation, which is normal behavior. Instead, we rely on the channel
+            // being disconnected when the encoder finishes (which happens when recording stops).
+            loop {
+                // Receive with timeout to allow periodic logging
+                match std_rx.recv_timeout(std::time::Duration::from_millis(100)) {
+                    Ok(samples) => {
+                        total_samples_received += samples.len() as u64;
+                        transcribe_state.process_samples(&samples);
+                        
+                        // Log stats every 5 seconds
+                        if last_stats_time.elapsed().as_secs() >= 5 {
+                            let duration_secs = total_samples_received as f64 / 48000.0 / 2.0; // stereo
+                            eprintln!(
+                                "[Transcription] Received {:.1}s of audio ({} samples), queue depth: {}",
+                                duration_secs,
+                                total_samples_received,
+                                queue_clone.queue_depth()
+                            );
+                            last_stats_time = std::time::Instant::now();
+                        }
+                    }
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                        continue;
+                    }
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                        eprintln!("[Transcription] Channel disconnected, exiting loop");
+                        break;
+                    }
+                }
+            }
+
+            // Finalize transcription
+            transcribe_state.stop();
+            eprintln!(
+                "[Transcription] Thread finished - total {:.1}s of audio, {} segments processed",
+                total_samples_received as f64 / 48000.0 / 2.0,
+                queue_clone.segments_processed()
+            );
+        });
+
+        // Spawn async task to forward samples from async channel to std channel
+        // Note: We don't check stop_flag here because it can be set by PipeWire during
+        // format renegotiation. The encoder will close the transcription_tx channel when
+        // recording actually ends, which will cause recv() to return None.
+        let mut transcription_rx = transcription_rx;
+        let handle = tokio::spawn(async move {
+            let mut forwarded_count: u64 = 0;
+            
+            loop {
+                match transcription_rx.recv().await {
+                    Some(samples) => {
+                        forwarded_count += 1;
+                        // Forward to the blocking thread
+                        if std_tx.send(samples).is_err() {
+                            // Thread has exited
+                            tracing::warn!("[Transcription] Forwarder: worker thread exited");
+                            break;
+                        }
+                    }
+                    None => {
+                        // Channel closed - encoder has finished
+                        eprintln!("[Transcription] Forwarder: channel closed after {} batches", forwarded_count);
+                        break;
+                    }
+                }
+            }
+
+            // Drop sender to signal thread to stop
+            drop(std_tx);
+
+            // Wait for thread to finish
+            let _ = transcription_thread.join();
+
+            info!(
+                "[Transcription] Task finished ({} segments processed)",
+                queue.segments_processed()
+            );
+        });
+
+        // Store the task handle
+        {
+            let mut task = self.transcription_task.lock().await;
+            *task = Some(handle);
+        }
     }
 
     /// Start audio capture from up to two sources with optional AEC.
@@ -444,6 +677,20 @@ impl RecordingManager {
 
     /// Clean up internal state and reset to idle.
     async fn cleanup(&self) {
+        // Stop transcription if active
+        {
+            let mut state = self.transcription_state.lock().await;
+            if state.is_active() {
+                state.stop();
+            }
+        }
+        // Wait for transcription task to complete
+        {
+            let mut task = self.transcription_task.lock().await;
+            if let Some(handle) = task.take() {
+                let _ = handle.await;
+            }
+        }
         {
             let mut flag = self.stop_flag.lock().await;
             *flag = None;

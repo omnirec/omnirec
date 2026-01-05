@@ -5,7 +5,7 @@
 use crate::capture;
 use crate::state::get_recording_manager;
 use omnirec_common::ipc::{Request, Response};
-use omnirec_common::{AudioConfig, CaptureRegion, OutputFormat};
+use omnirec_common::{AudioConfig, CaptureRegion, OutputFormat, TranscriptionConfig};
 use tracing::{debug, error, info, warn};
 
 /// Handle an IPC request and return a response.
@@ -305,6 +305,27 @@ pub async fn handle_request(request: Request) -> Response {
             #[cfg(not(target_os = "linux"))]
             let _ = token; // Silence unused variable warning on non-Linux
             Response::TokenStored
+        }
+
+        // === Transcription ===
+        Request::GetTranscriptionConfig => {
+            let manager = get_recording_manager();
+            let config = manager.get_transcription_config().await;
+            Response::TranscriptionConfig(config)
+        }
+        Request::SetTranscriptionConfig { enabled } => {
+            info!("SetTranscriptionConfig: enabled={}", enabled);
+            let config = TranscriptionConfig { enabled };
+            let manager = get_recording_manager();
+            match manager.set_transcription_config(config).await {
+                Ok(()) => Response::ok(),
+                Err(e) => Response::error(e),
+            }
+        }
+        Request::GetTranscriptionStatus => {
+            let manager = get_recording_manager();
+            let status = manager.get_transcription_status().await;
+            Response::TranscriptionStatus(status)
         }
 
         // === Service Control ===

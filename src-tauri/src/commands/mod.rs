@@ -8,9 +8,11 @@ mod capture;
 mod config;
 mod platform;
 mod recording;
+mod transcription;
 
 pub use audio::*;
 pub use capture::*;
 pub use config::*;
 pub use platform::*;
 pub use recording::*;
+pub use transcription::*;

@@ -7,6 +7,7 @@ mod capture;
 mod encoder;
 mod ipc;
 mod state;
+mod transcription;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;

@@ -187,3 +187,27 @@ impl Default for AudioConfig {
         }
     }
 }
+
+/// Transcription configuration for recording.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct TranscriptionConfig {
+    /// Whether transcription is enabled.
+    #[serde(default)]
+    pub enabled: bool,
+}
+
+/// Status of the transcription system.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TranscriptionStatus {
+    /// Whether the whisper model is loaded.
+    pub model_loaded: bool,
+    /// Whether transcription is currently active.
+    pub active: bool,
+    /// Number of segments processed so far.
+    pub segments_processed: u32,
+    /// Current queue depth (segments waiting to be processed).
+    pub queue_depth: u32,
+    /// Error message if transcription failed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}

@@ -2,7 +2,10 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::types::{AudioConfig, AudioSource, MonitorInfo, RecordingState, WindowInfo};
+use crate::types::{
+    AudioConfig, AudioSource, MonitorInfo, RecordingState, TranscriptionConfig,
+    TranscriptionStatus, WindowInfo,
+};
 
 /// Geometry for region selection (picker compatibility).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -41,6 +44,10 @@ pub enum Response {
     OutputFormat { format: String },
     /// Current audio configuration
     AudioConfig(AudioConfig),
+    /// Current transcription configuration
+    TranscriptionConfig(TranscriptionConfig),
+    /// Current transcription status
+    TranscriptionStatus(TranscriptionStatus),
 
     /// Thumbnail data (base64-encoded image)
     Thumbnail {

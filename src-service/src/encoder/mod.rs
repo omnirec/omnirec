@@ -101,7 +101,7 @@ impl VideoEncoder {
     /// Create a new encoder with the given frame dimensions.
     /// Dimensions will be rounded down to even numbers for codec compatibility.
     pub fn new(width: u32, height: u32) -> Result<Self, String> {
-        Self::new_with_audio(width, height, None)
+        Self::new_with_options(width, height, None, None)
     }
 
     /// Create a new encoder with the given frame dimensions and optional audio.
@@ -110,7 +110,20 @@ impl VideoEncoder {
         height: u32,
         audio_config: Option<AudioEncoderConfig>,
     ) -> Result<Self, String> {
-        let output_path = generate_output_path()?;
+        Self::new_with_options(width, height, audio_config, None)
+    }
+
+    /// Create a new encoder with the given frame dimensions, audio config, and optional output path.
+    pub fn new_with_options(
+        width: u32,
+        height: u32,
+        audio_config: Option<AudioEncoderConfig>,
+        output_path: Option<PathBuf>,
+    ) -> Result<Self, String> {
+        let output_path = match output_path {
+            Some(p) => p,
+            None => generate_output_path()?,
+        };
 
         // Ensure dimensions are even (required by many codecs including h264)
         let width = width & !1;
@@ -254,6 +267,11 @@ impl VideoEncoder {
             }
         }
         Ok(())
+    }
+
+    /// Get the output path.
+    pub fn output_path(&self) -> &PathBuf {
+        &self.output_path
     }
 
     /// Finalize the encoding and close the output file.
@@ -514,7 +532,7 @@ pub fn mux_audio_video(
 }
 
 /// Generate a unique output filename in the default output directory (Videos folder).
-fn generate_output_path() -> Result<PathBuf, String> {
+pub fn generate_output_path() -> Result<PathBuf, String> {
     // Use system Videos directory or fallback to temp
     let output_dir = get_default_output_dir()?;
 
@@ -793,6 +811,195 @@ pub async fn encode_frames_with_audio(
         }
         audio_encoder.write_samples(&audio_sample.data)?;
         audio_samples_written += audio_sample.data.len() as u64;
+    }
+
+    let elapsed = video_start_time.elapsed().as_secs_f64();
+    eprintln!(
+        "[Encoder] Recording complete: {:.1}s, {} video frames, {} audio samples",
+        elapsed, video_frames_written, audio_samples_written
+    );
+
+    // Finalize both encoders
+    let video_path = video_encoder.finish()?;
+    let audio_path = audio_encoder.finish()?;
+
+    // Mux video and audio together
+    if audio_samples_written > 0 {
+        // Calculate audio delay relative to video start
+        let audio_delay_ms = first_audio_time
+            .map(|t| t.duration_since(video_start_time).as_millis() as i64)
+            .unwrap_or(0);
+
+        eprintln!("[Encoder] Muxing audio and video (audio delay: {}ms)...", audio_delay_ms);
+        mux_audio_video(&video_path, &audio_path, audio_delay_ms)?;
+    } else {
+        eprintln!("[Encoder] No audio recorded, keeping video-only");
+        // Clean up empty audio file
+        let _ = std::fs::remove_file(&audio_path);
+    }
+
+    Ok(video_path)
+}
+
+/// Encoding task with optional transcription support.
+///
+/// Similar to `encode_frames_with_audio`, but also sends audio samples to a transcription
+/// channel for real-time voice transcription.
+///
+/// # Arguments
+/// * `frame_rx` - Channel to receive video frames
+/// * `audio_rx` - Channel to receive audio samples
+/// * `stop_flag` - Flag to signal recording should stop
+/// * `audio_config` - Audio encoder configuration
+/// * `transcription_tx` - Optional channel to send audio samples for transcription
+/// * `output_path` - Optional pre-generated output path (generated if None)
+pub async fn encode_frames_with_audio_and_transcription(
+    mut frame_rx: mpsc::Receiver<CapturedFrame>,
+    mut audio_rx: mpsc::Receiver<AudioSample>,
+    stop_flag: Arc<AtomicBool>,
+    audio_config: AudioEncoderConfig,
+    transcription_tx: Option<mpsc::Sender<Vec<f32>>>,
+    output_path: Option<PathBuf>,
+) -> Result<PathBuf, String> {
+    eprintln!("[Encoder] encode_frames_with_audio_and_transcription task started (transcription: {})", 
+        transcription_tx.is_some());
+
+    // Wait for first video frame to get dimensions
+    let first_frame = frame_rx
+        .recv()
+        .await
+        .ok_or_else(|| "No video frames received".to_string())?;
+
+    // Record the exact moment we received the first video frame
+    // This is our reference point for A/V sync
+    let video_start_time = std::time::Instant::now();
+
+    eprintln!(
+        "[Encoder] Got first frame: {}x{}",
+        first_frame.width, first_frame.height
+    );
+
+    // Create video encoder with optional output path
+    let mut video_encoder = VideoEncoder::new_with_options(
+        first_frame.width,
+        first_frame.height,
+        Some(audio_config.clone()),
+        output_path,
+    )?;
+    video_encoder.start()?;
+    eprintln!("[Encoder] Video output path: {:?}", video_encoder.output_path());
+
+    // Create audio encoder
+    let mut audio_encoder = AudioEncoder::new(audio_config.sample_rate, audio_config.channels)?;
+    audio_encoder.start()?;
+
+    // Write first video frame
+    video_encoder.write_frame(&first_frame)?;
+
+    eprintln!("[Encoder] Encoders initialized, entering main loop...");
+
+    let mut video_frames_written = 1u64;
+    let mut audio_samples_written = 0u64;
+    let mut last_frame = first_frame;
+    let mut next_frame_time = video_start_time + std::time::Duration::from_millis(FRAME_INTERVAL_MS);
+
+    // Track when first audio sample arrives (for A/V sync)
+    let mut first_audio_time: Option<std::time::Instant> = None;
+
+    let mut consecutive_empty_polls = 0u32;
+    const MAX_EMPTY_POLLS: u32 = 100;
+
+    loop {
+        let now = std::time::Instant::now();
+
+        // Check stop flag
+        if stop_flag.load(Ordering::Relaxed) {
+            eprintln!("[Encoder] Stop flag set, exiting loop");
+            break;
+        }
+
+        // Process video frames
+        match frame_rx.try_recv() {
+            Ok(frame) => {
+                last_frame = frame;
+                consecutive_empty_polls = 0;
+            }
+            Err(mpsc::error::TryRecvError::Empty) => {
+                consecutive_empty_polls += 1;
+                if stop_flag.load(Ordering::Relaxed) && consecutive_empty_polls > 10 {
+                    eprintln!("[Encoder] Stop flag set and no frames, exiting");
+                    break;
+                }
+                if consecutive_empty_polls > MAX_EMPTY_POLLS {
+                    if stop_flag.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    consecutive_empty_polls = 0;
+                }
+            }
+            Err(mpsc::error::TryRecvError::Disconnected) => {
+                eprintln!("[Encoder] Video channel disconnected");
+                break;
+            }
+        }
+
+        // Process all available audio samples
+        while let Ok(audio_sample) = audio_rx.try_recv() {
+            // Record when first audio sample arrives
+            if first_audio_time.is_none() {
+                first_audio_time = Some(std::time::Instant::now());
+                let delay_ms = first_audio_time.unwrap().duration_since(video_start_time).as_millis();
+                eprintln!("[Encoder] First audio sample received, delay from video start: {}ms", delay_ms);
+            }
+
+            // Write to audio encoder
+            audio_encoder.write_samples(&audio_sample.data)?;
+            audio_samples_written += audio_sample.data.len() as u64;
+
+            // Fork samples to transcription if enabled
+            if let Some(ref tx) = transcription_tx {
+                // Non-blocking send - drop samples if queue is full
+                match tx.try_send(audio_sample.data) {
+                    Ok(()) => {}
+                    Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                        // Log occasionally if queue is full
+                        if audio_samples_written.is_multiple_of(100000) {
+                            eprintln!("[Encoder] Transcription channel full, dropping samples");
+                        }
+                    }
+                    Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+                        eprintln!("[Encoder] Transcription channel closed");
+                    }
+                }
+            }
+        }
+
+        // Write video frames to maintain target FPS
+        while next_frame_time <= now {
+            video_encoder.write_frame(&last_frame)?;
+            video_frames_written += 1;
+            next_frame_time += std::time::Duration::from_millis(FRAME_INTERVAL_MS);
+        }
+
+        // Sleep until next frame time
+        let sleep_duration = next_frame_time.saturating_duration_since(std::time::Instant::now());
+        if !sleep_duration.is_zero() {
+            tokio::time::sleep(sleep_duration.min(std::time::Duration::from_millis(10))).await;
+        }
+    }
+
+    // Drain any remaining audio samples
+    while let Ok(audio_sample) = audio_rx.try_recv() {
+        if first_audio_time.is_none() {
+            first_audio_time = Some(std::time::Instant::now());
+        }
+        audio_encoder.write_samples(&audio_sample.data)?;
+        audio_samples_written += audio_sample.data.len() as u64;
+
+        // Fork to transcription
+        if let Some(ref tx) = transcription_tx {
+            let _ = tx.try_send(audio_sample.data);
+        }
     }
 
     let elapsed = video_start_time.elapsed().as_secs_f64();

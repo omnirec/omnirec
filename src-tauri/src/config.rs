@@ -105,6 +105,14 @@ impl Default for AudioConfig {
     }
 }
 
+/// Transcription-related configuration.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TranscriptionConfig {
+    /// Whether transcription is enabled.
+    #[serde(default)]
+    pub enabled: bool,
+}
+
 /// Application configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AppConfig {
@@ -114,6 +122,9 @@ pub struct AppConfig {
     /// Audio settings group.
     #[serde(default)]
     pub audio: AudioConfig,
+    /// Transcription settings group.
+    #[serde(default)]
+    pub transcription: TranscriptionConfig,
     /// Appearance settings group.
     #[serde(default)]
     pub appearance: AppearanceConfig,

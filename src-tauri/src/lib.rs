@@ -77,12 +77,48 @@ impl AppState {
             Ok(()) => {
                 self.service_ready.store(true, Ordering::SeqCst);
                 eprintln!("[AppState] Service is ready");
+                
+                // Sync local config to service
+                self.sync_config_to_service().await;
+                
                 Ok(())
             }
             Err(e) => {
                 eprintln!("[AppState] Service failed to start: {}", e);
                 Err(format!("Service failed to start: {}", e))
             }
+        }
+    }
+    
+    /// Sync local configuration to the service.
+    /// Called after connecting to ensure service has latest settings.
+    async fn sync_config_to_service(&self) {
+        let config = self.app_config.lock().await;
+        
+        // Sync audio config
+        eprintln!("[AppState] Syncing audio config to service: enabled={}, source_id={:?}, mic_id={:?}, aec={}",
+            config.audio.enabled,
+            config.audio.source_id,
+            config.audio.microphone_id,
+            config.audio.echo_cancellation
+        );
+        if let Err(e) = self.service_client.set_audio_config(
+            config.audio.enabled,
+            config.audio.source_id.clone(),
+            config.audio.microphone_id.clone(),
+            config.audio.echo_cancellation,
+        ).await {
+            eprintln!("[AppState] Failed to sync audio config: {}", e);
+        }
+        
+        // Sync transcription config
+        eprintln!("[AppState] Syncing transcription config to service: enabled={}",
+            config.transcription.enabled
+        );
+        if let Err(e) = self.service_client.set_transcription_config(
+            config.transcription.enabled,
+        ).await {
+            eprintln!("[AppState] Failed to sync transcription config: {}", e);
         }
     }
 
@@ -159,6 +195,8 @@ pub fn run() {
             let service_client = app_state.service_client.clone();
             let service_ready = app_state.service_ready.clone();
 
+            let app_config = app_state.app_config.clone();
+            
             tauri::async_runtime::spawn(async move {
                 // Use reconnect_or_spawn which handles all cases:
                 // - Service already running: connects directly
@@ -167,6 +205,35 @@ pub fn run() {
                     Ok(()) => {
                         service_ready.store(true, std::sync::atomic::Ordering::SeqCst);
                         eprintln!("[Setup] Service connected and ready");
+                        
+                        // Sync local config to service
+                        let config = app_config.lock().await;
+                        
+                        eprintln!("[Setup] Syncing audio config: enabled={}, source={:?}, mic={:?}, aec={}",
+                            config.audio.enabled,
+                            config.audio.source_id,
+                            config.audio.microphone_id,
+                            config.audio.echo_cancellation
+                        );
+                        if let Err(e) = service_client.set_audio_config(
+                            config.audio.enabled,
+                            config.audio.source_id.clone(),
+                            config.audio.microphone_id.clone(),
+                            config.audio.echo_cancellation,
+                        ).await {
+                            eprintln!("[Setup] Failed to sync audio config: {}", e);
+                        }
+                        
+                        eprintln!("[Setup] Syncing transcription config: enabled={}",
+                            config.transcription.enabled
+                        );
+                        if let Err(e) = service_client.set_transcription_config(
+                            config.transcription.enabled,
+                        ).await {
+                            eprintln!("[Setup] Failed to sync transcription config: {}", e);
+                        }
+                        
+                        eprintln!("[Setup] Config sync complete");
                     }
                     Err(e) => {
                         eprintln!("[Setup] Failed to connect to service: {}", e);
@@ -176,15 +243,19 @@ pub fn run() {
 
             Ok(())
         })
-        .on_window_event(|window, event| {
+        .on_window_event(|_window, event| {
             // On Windows, hide the window instead of closing it when the close button is clicked.
             // The app continues running in the system tray. Use "Exit" from tray menu to quit.
             #[cfg(target_os = "windows")]
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 eprintln!("[Window] Close requested - hiding window (use tray Exit to quit)");
                 api.prevent_close();
-                let _ = window.hide();
+                let _ = _window.hide();
             }
+            
+            // Suppress unused variable warning on non-Windows
+            #[cfg(not(target_os = "windows"))]
+            let _ = event;
         })
         .invoke_handler(tauri::generate_handler![
             // Capture commands
@@ -231,6 +302,10 @@ pub fn run() {
             commands::save_theme,
             // Service status
             commands::is_service_ready,
+            // Transcription commands
+            commands::get_transcription_config,
+            commands::save_transcription_config,
+            commands::get_transcription_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

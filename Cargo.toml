@@ -1,3 +1,7 @@
 [workspace]
 members = ["src-tauri", "src-common", "src-service", "src-cli"]
 resolver = "2"
+
+# Note: CUDA acceleration for transcription is enabled via:
+#   cargo build -p omnirec-service --features cuda
+# Or use the Makefile targets: make build-cuda, make service-cuda

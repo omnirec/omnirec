@@ -649,6 +649,46 @@ impl ServiceClient {
         }
     }
 
+    /// Get transcription configuration.
+    pub async fn get_transcription_config(
+        &self,
+    ) -> Result<omnirec_common::TranscriptionConfig, ServiceError> {
+        match self.request(Request::GetTranscriptionConfig).await? {
+            Response::TranscriptionConfig(config) => Ok(config),
+            other => Err(ServiceError::ServiceError(format!(
+                "Unexpected response: {:?}",
+                other
+            ))),
+        }
+    }
+
+    /// Set transcription configuration.
+    pub async fn set_transcription_config(&self, enabled: bool) -> Result<(), ServiceError> {
+        match self
+            .request(Request::SetTranscriptionConfig { enabled })
+            .await?
+        {
+            Response::Ok => Ok(()),
+            other => Err(ServiceError::ServiceError(format!(
+                "Unexpected response: {:?}",
+                other
+            ))),
+        }
+    }
+
+    /// Get transcription status.
+    pub async fn get_transcription_status(
+        &self,
+    ) -> Result<omnirec_common::TranscriptionStatus, ServiceError> {
+        match self.request(Request::GetTranscriptionStatus).await? {
+            Response::TranscriptionStatus(status) => Ok(status),
+            other => Err(ServiceError::ServiceError(format!(
+                "Unexpected response: {:?}",
+                other
+            ))),
+        }
+    }
+
     /// Ensure the service is connected, reconnecting if necessary.
     ///
     /// This method checks if the connection is still valid by sending a ping.

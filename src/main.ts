@@ -53,6 +53,11 @@ interface AudioConfig {
   echo_cancellation: boolean;
 }
 
+// TranscriptionConfig used in loadTranscriptionConfig
+interface TranscriptionConfig {
+  enabled: boolean;
+}
+
 type ThemeMode = "auto" | "light" | "dark";
 
 interface AppConfig {
@@ -209,6 +214,10 @@ let aboutVersionEl: HTMLElement | null;
 let aboutWebsiteLink: HTMLAnchorElement | null;
 let aboutGithubLink: HTMLAnchorElement | null;
 let aboutLicenseLink: HTMLAnchorElement | null;
+let transcriptionCheckbox: HTMLInputElement | null;
+let transcriptionConfigItem: HTMLElement | null;
+let transcriptionQuickToggle: HTMLElement | null;
+let transcriptionQuickCheckbox: HTMLInputElement | null;
 
 // Platform state
 let currentPlatform: "macos" | "linux" | "windows" = "linux";
@@ -332,6 +341,10 @@ window.addEventListener("DOMContentLoaded", () => {
   aboutWebsiteLink = document.querySelector("#about-website-link");
   aboutGithubLink = document.querySelector("#about-github-link");
   aboutLicenseLink = document.querySelector("#about-license-link");
+  transcriptionCheckbox = document.querySelector("#transcription-checkbox");
+  transcriptionConfigItem = document.querySelector("#transcription-config-item");
+  transcriptionQuickToggle = document.querySelector("#transcription-quick-toggle");
+  transcriptionQuickCheckbox = document.querySelector("#transcription-quick-checkbox");
 
   // Set up event listeners
   closeBtn?.addEventListener("click", async () => {
@@ -418,6 +431,8 @@ window.addEventListener("DOMContentLoaded", () => {
   refreshAudioBtn?.addEventListener("click", loadAudioSources);
   themeSelect?.addEventListener("change", handleThemeChange);
   macosSystemAudioCheckbox?.addEventListener("change", handleMacosSystemAudioChange);
+  transcriptionCheckbox?.addEventListener("change", handleTranscriptionChange);
+  transcriptionQuickCheckbox?.addEventListener("change", handleTranscriptionQuickToggleChange);
 
   // Listen for region updates from selector window (continuous updates as user moves/resizes)
   listen<CaptureRegion>("region-updated", (event) => {
@@ -1592,6 +1607,14 @@ function disableSelection(disabled: boolean): void {
       el.classList.remove("disabled");
     }
   });
+
+  // Disable transcription quick toggle during recording
+  if (transcriptionQuickToggle) {
+    transcriptionQuickToggle.classList.toggle("disabled", disabled);
+  }
+  if (transcriptionQuickCheckbox) {
+    transcriptionQuickCheckbox.disabled = disabled;
+  }
 }
 
 // Show result overlay with auto-dismiss
@@ -1914,6 +1937,12 @@ async function loadAudioSources(): Promise<void> {
     // Update AEC visibility (only show when mic is selected)
     updateAecVisibility();
     
+    // Update transcription visibility (only show when system audio is enabled)
+    updateTranscriptionVisibility();
+    
+    // Load transcription config
+    await loadTranscriptionConfig();
+    
     console.log("[Audio] Platform:", currentPlatform, ", macOS system audio available:", macosSystemAudioAvailable);
     console.log("[Audio] Loaded", sources.length, "audio sources (", 
       inputSources.length, "inputs,", outputSources.length, "outputs)");
@@ -1940,6 +1969,9 @@ async function handleAudioConfigChange(): Promise<void> {
   
   // Update AEC visibility
   updateAecVisibility();
+  
+  // Update transcription visibility
+  updateTranscriptionVisibility();
   
   try {
     await invoke("save_audio_config", {
@@ -1970,8 +2002,87 @@ async function handleMacosSystemAudioChange(): Promise<void> {
       echoCancellation: aecCheckbox?.checked ?? false,
     });
     console.log("[Audio] macOS system audio:", enabled ? "enabled" : "disabled");
+    
+    // Update transcription visibility
+    updateTranscriptionVisibility();
   } catch (error) {
     console.error("[Audio] Failed to save macOS audio config:", error);
+  }
+}
+
+// Update transcription checkbox visibility based on system audio selection
+function updateTranscriptionVisibility(): void {
+  // On macOS, check the system audio checkbox; on Linux/Windows, check the dropdown
+  let hasSystemAudio = false;
+  if (currentPlatform === "macos") {
+    hasSystemAudio = macosSystemAudioCheckbox?.checked ?? false;
+  } else {
+    hasSystemAudio = (audioSourceSelect?.value ?? "") !== "";
+  }
+  
+  // Update settings view checkbox visibility
+  if (transcriptionConfigItem) {
+    transcriptionConfigItem.classList.toggle("hidden", !hasSystemAudio);
+  }
+  
+  // Update quick toggle visibility in controls
+  if (transcriptionQuickToggle) {
+    transcriptionQuickToggle.classList.toggle("hidden", !hasSystemAudio);
+  }
+}
+
+// Handle transcription checkbox change (settings view)
+async function handleTranscriptionChange(): Promise<void> {
+  if (!transcriptionCheckbox) return;
+  
+  const enabled = transcriptionCheckbox.checked;
+  
+  // Sync with quick toggle
+  if (transcriptionQuickCheckbox) {
+    transcriptionQuickCheckbox.checked = enabled;
+  }
+  
+  try {
+    await invoke("save_transcription_config", { enabled });
+    console.log("[Transcription] Saved config: enabled=", enabled);
+  } catch (error) {
+    console.error("[Transcription] Failed to save config:", error);
+  }
+}
+
+// Load transcription configuration
+async function loadTranscriptionConfig(): Promise<void> {
+  try {
+    const config = await invoke<TranscriptionConfig>("get_transcription_config");
+    // Sync both settings checkbox and quick toggle
+    if (transcriptionCheckbox) {
+      transcriptionCheckbox.checked = config.enabled;
+    }
+    if (transcriptionQuickCheckbox) {
+      transcriptionQuickCheckbox.checked = config.enabled;
+    }
+    console.log("[Transcription] Loaded config: enabled=", config.enabled);
+  } catch (error) {
+    console.error("[Transcription] Failed to load config:", error);
+  }
+}
+
+// Handle quick toggle change (sync with settings and save)
+async function handleTranscriptionQuickToggleChange(): Promise<void> {
+  if (!transcriptionQuickCheckbox) return;
+  
+  const enabled = transcriptionQuickCheckbox.checked;
+  
+  // Sync with settings checkbox
+  if (transcriptionCheckbox) {
+    transcriptionCheckbox.checked = enabled;
+  }
+  
+  try {
+    await invoke("save_transcription_config", { enabled });
+    console.log("[Transcription] Quick toggle: enabled=", enabled);
+  } catch (error) {
+    console.error("[Transcription] Failed to save config:", error);
   }
 }
 

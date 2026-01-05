@@ -24,6 +24,7 @@
 - **Universal Capture** — Record any window, entire display, or custom screen region
 - **Audio Recording** — Capture system audio, microphone, or both with dual-source mixing
 - **Echo Cancellation** — Built-in AEC removes speaker feedback when recording with a microphone
+- **Voice Transcription** — Automatic speech-to-text creates timestamped transcripts alongside your recordings
 - **Multiple Formats** — Export to MP4, WebM, MKV, QuickTime, GIF, APNG, or WebP
 - **Cross-Platform** — Works on Windows, macOS (12.3+), and Linux (Hyprland, GNOME, KDE, COSMIC)
 - **Privacy-First** — All processing happens locally — your recordings never leave your machine
@@ -31,7 +32,6 @@
 
 ## Coming Soon
 
-- **Voice Transcription** — Streaming speech-to-text for automatic captions and searchable recordings
 - **Global Hotkeys** — Start, stop, and pause recordings from anywhere with customizable shortcuts
 
 ## Use Cases
@@ -126,6 +126,40 @@ OmniRec is accessed from the taskbar in KDE Plasma.
 #### COSMIC
 
 On Pop!_OS with the COSMIC desktop environment, OmniRec runs as a system tray application similar to GNOME.
+
+## Voice Transcription
+
+OmniRec can automatically transcribe speech during recording, creating a timestamped markdown transcript alongside your video file.
+
+### Enabling Transcription
+
+1. Enable **System Audio** in Settings (transcription requires system audio)
+2. Check the **Transcribe voice** option in Settings or use the quick toggle on the record button row
+3. Record as normal — the transcript will be saved as `{video_name}_transcript.md`
+
+### Whisper Model
+
+Transcription uses [whisper.cpp](https://github.com/ggerganov/whisper.cpp) with the `ggml-medium.en` model (~1.5GB). The model is downloaded automatically on first use and cached in:
+
+| Platform | Location |
+|----------|----------|
+| Linux | `~/.cache/omnirec/ggml-medium.en.bin` |
+| macOS | `~/Library/Caches/omnirec/ggml-medium.en.bin` |
+| Windows | `%LOCALAPPDATA%\omnirec\cache\ggml-medium.en.bin` |
+
+### GPU Acceleration (CUDA)
+
+For faster transcription on NVIDIA GPUs, build with CUDA support:
+
+```bash
+# Build with CUDA acceleration
+cargo build -p omnirec-service --features cuda --release
+
+# Or use the Makefile target
+make build-cuda
+```
+
+Requires CUDA toolkit installed on your system.
 
 ## Command Line Interface
 
