@@ -170,6 +170,13 @@ impl ServiceClient {
         *conn = ConnectionState::Disconnected;
     }
 
+    /// Check if the service is available (Windows: named pipe exists).
+    #[cfg(windows)]
+    fn is_service_available(&self) -> bool {
+        let pipe_path = r"\\.\pipe\omnirec-service";
+        std::path::Path::new(pipe_path).exists()
+    }
+
     /// Send a request to the service and wait for a response.
     pub async fn request(&self, request: Request) -> Result<Response, ServiceError> {
         // Ensure connected
