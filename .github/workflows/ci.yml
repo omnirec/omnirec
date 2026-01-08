@@ -35,7 +35,8 @@ jobs:
             libpipewire-0.3-dev \
             libspa-0.2-dev \
             libclang-dev \
-            qt6-base-dev
+            qt6-base-dev \
+            cmake
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -56,11 +57,7 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: |
-            src-tauri -> target
-            src-service -> target
-            src-common -> target
-            src-cli -> target
+          workspaces: . -> target
 
       - name: TypeScript type check
         run: pnpm exec tsc --noEmit
@@ -71,7 +68,8 @@ jobs:
 
       - name: Rust lint (clippy) - service
         working-directory: src-service
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        # Note: --all-features omitted because 'cuda' feature requires NVIDIA CUDA Toolkit
+        run: cargo clippy --all-targets -- -D warnings
 
       - name: Rust lint (clippy) - main app
         working-directory: src-tauri
@@ -87,7 +85,8 @@ jobs:
 
       - name: Rust tests - service
         working-directory: src-service
-        run: cargo test --all-features
+        # Note: --all-features omitted because 'cuda' feature requires NVIDIA CUDA Toolkit
+        run: cargo test
 
       - name: Rust tests - main app
         working-directory: src-tauri
