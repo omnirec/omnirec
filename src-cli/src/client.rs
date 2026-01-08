@@ -300,24 +300,6 @@ impl ServiceClient {
         }
     }
 
-    /// Check if the service is available (socket/pipe exists).
-    pub fn is_service_available(&self) -> bool {
-        #[cfg(unix)]
-        {
-            self.socket_path.exists()
-        }
-
-        #[cfg(windows)]
-        {
-            use std::fs::OpenOptions;
-            let pipe_path = r"\\.\pipe\omnirec-service";
-            OpenOptions::new()
-                .read(true)
-                .write(true)
-                .open(pipe_path)
-                .is_ok()
-        }
-    }
 
     /// Wait for the service to become available.
     pub async fn wait_for_service(&self, timeout: Duration) -> Result<(), ServiceError> {
