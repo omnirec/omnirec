@@ -5,12 +5,11 @@
 //!
 //! Ported from FlowSTT's `transcribe_mode.rs` and tuned for OmniRec's longer segments.
 
-/// Ring buffer capacity: 35 seconds at 48kHz mono (for whisper input)
-/// 48000 * 35 = 1,680,000 samples
+/// Ring buffer capacity: 35 seconds at 16kHz mono (whisper's sample rate)
+/// 16000 * 35 = 560,000 samples
 ///
-/// OmniRec uses 35s (vs FlowSTT's 30s) to accommodate:
-/// - 20s segment threshold + 2s grace period + 30s absolute max with margin
-const RING_BUFFER_CAPACITY: usize = 48000 * 35;
+/// 35 seconds is enough for max segment duration (15s) with comfortable margin
+const RING_BUFFER_CAPACITY: usize = 16000 * 35;
 
 /// Overflow threshold: 90% of buffer capacity
 #[allow(dead_code)]
@@ -66,6 +65,7 @@ impl SegmentRingBuffer {
     }
 
     /// Get buffer capacity
+    #[allow(dead_code)]
     pub fn capacity(&self) -> usize {
         self.capacity
     }

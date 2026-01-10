@@ -44,14 +44,9 @@ use super::voice_detector::{SpeechStateChange, VoiceDetector};
 /// Whisper expects 16kHz mono audio
 const WHISPER_SAMPLE_RATE: u32 = 16000;
 
-/// Maximum segment duration before forced submission (30 seconds)
-const MAX_SEGMENT_DURATION_SECS: f64 = 30.0;
-
-/// Segment duration threshold before seeking word break (20 seconds)
-const SEGMENT_THRESHOLD_SECS: f64 = 20.0;
-
-/// Grace period after threshold before forced submission (2 seconds)
-const WORD_BREAK_GRACE_SECS: f64 = 2.0;
+/// Maximum segment duration before forced submission (15 seconds)
+/// Shorter segments = more frequent transcription updates
+const MAX_SEGMENT_DURATION_SECS: f64 = 15.0;
 
 /// Minimum segment duration for transcription (500ms)
 const MIN_SEGMENT_DURATION_SECS: f64 = 0.5;
@@ -80,10 +75,6 @@ pub struct TranscribeState {
     segment_sample_count: u64,
     /// Lookback samples at start of current segment
     lookback_sample_count: usize,
-    /// Whether we're seeking a word break (duration threshold exceeded)
-    seeking_word_break: bool,
-    /// Sample count when we started seeking word break
-    word_break_seek_start_samples: u64,
     /// Recording start time (for timestamps)
     recording_start: Option<Instant>,
     /// Output path for video file (used to derive transcript path)
@@ -108,8 +99,6 @@ impl TranscribeState {
             segment_start_idx: 0,
             segment_sample_count: 0,
             lookback_sample_count: 0,
-            seeking_word_break: false,
-            word_break_seek_start_samples: 0,
             recording_start: None,
             output_path: None,
             resample_buffer: Vec::new(),
@@ -181,8 +170,6 @@ impl TranscribeState {
         self.segment_start_idx = 0;
         self.segment_sample_count = 0;
         self.lookback_sample_count = 0;
-        self.seeking_word_break = false;
-        self.word_break_seek_start_samples = 0;
         self.resample_buffer.clear();
         self.input_sample_rate = input_sample_rate;
         self.input_channels = input_channels;
@@ -282,12 +269,9 @@ impl TranscribeState {
                 SpeechStateChange::None => {}
             }
 
-            // Handle word breaks if seeking
-            if self.seeking_word_break {
-                if let Some(word_break) = self.voice_detector.take_word_break_event() {
-                    self.on_word_break(word_break.offset_ms, word_break.gap_duration_ms);
-                }
-            }
+            // Discard word break events - they were causing dropped speech
+            // Rely on speech-end detection (500ms silence) and max duration instead
+            let _ = self.voice_detector.take_word_break_event();
 
             // Update segment tracking
             if self.in_speech {
@@ -351,6 +335,7 @@ impl TranscribeState {
     /// Handle speech started event.
     fn on_speech_started(&mut self, lookback_samples: usize) {
         if self.in_speech {
+            eprintln!("[TranscribeState] Speech STARTED ignored - already in_speech");
             return; // Already in speech
         }
 
@@ -358,83 +343,44 @@ impl TranscribeState {
         self.segment_start_idx = self.ring_buffer.index_from_lookback(lookback_samples);
         self.segment_sample_count = 0;
         self.lookback_sample_count = lookback_samples;
-        self.seeking_word_break = false;
 
         eprintln!(
-            "[TranscribeState] Speech STARTED (lookback: {} samples, idx: {})",
-            lookback_samples, self.segment_start_idx
+            "[TranscribeState] Speech STARTED (lookback: {} samples, start_idx: {}, ring_buffer write_pos: {})",
+            lookback_samples, self.segment_start_idx, self.ring_buffer.write_position()
         );
     }
 
     /// Handle speech ended event.
     fn on_speech_ended(&mut self) {
         if !self.in_speech {
+            eprintln!("[TranscribeState] Speech ENDED ignored - not in_speech");
             return;
         }
 
         let duration_secs = self.segment_sample_count as f64 / WHISPER_SAMPLE_RATE as f64;
-        eprintln!("[TranscribeState] Speech ENDED after {:.2}s", duration_secs);
+        eprintln!(
+            "[TranscribeState] Speech ENDED after {:.2}s, finalizing segment",
+            duration_secs
+        );
 
         self.finalize_current_segment();
+
+        eprintln!(
+            "[TranscribeState] After finalize: in_speech={}, ready for new speech",
+            self.in_speech
+        );
     }
 
-    /// Handle word break event during seeking.
-    fn on_word_break(&mut self, offset_ms: u32, _gap_duration_ms: u32) {
-        if !self.in_speech || !self.seeking_word_break {
-            return;
-        }
-
-        // Calculate extraction point (at the word break)
-        let offset_samples = (offset_ms as u64 * WHISPER_SAMPLE_RATE as u64 / 1000) as usize;
-        let extraction_length = self.lookback_sample_count + offset_samples;
-
-        // Extract segment up to word break
-        let end_idx = (self.segment_start_idx + extraction_length) % self.ring_buffer.capacity();
-        let segment = self
-            .ring_buffer
-            .extract_segment_to(self.segment_start_idx, end_idx);
-
-        if self.validate_and_queue_segment(segment) {
-            // Update state for continuation
-            self.segment_start_idx = end_idx;
-            self.lookback_sample_count = 0;
-            self.segment_sample_count = self
-                .segment_sample_count
-                .saturating_sub(offset_samples as u64);
-            self.seeking_word_break = false;
-        }
-    }
-
-    /// Check segment duration and handle thresholds.
+    /// Check segment duration and force extraction if max duration reached.
     fn check_segment_duration(&mut self) {
         let duration_secs = self.segment_sample_count as f64 / WHISPER_SAMPLE_RATE as f64;
 
-        // Check for absolute maximum
         if duration_secs >= MAX_SEGMENT_DURATION_SECS {
-            tracing::debug!("Max segment duration reached, force extracting");
-            self.finalize_current_segment();
-            return;
-        }
-
-        // Check if we should start seeking word break
-        if !self.seeking_word_break && duration_secs >= SEGMENT_THRESHOLD_SECS {
-            self.seeking_word_break = true;
-            self.word_break_seek_start_samples = self.segment_sample_count;
-            tracing::debug!(
-                "Segment threshold reached ({:.1}s), seeking word break",
+            eprintln!(
+                "[TranscribeState] Max segment duration reached ({:.1}s), force extracting",
                 duration_secs
             );
-        }
-
-        // Check grace period expiration
-        if self.seeking_word_break {
-            let samples_since_seek = self.segment_sample_count - self.word_break_seek_start_samples;
-            let grace_secs = samples_since_seek as f64 / WHISPER_SAMPLE_RATE as f64;
-
-            if grace_secs >= WORD_BREAK_GRACE_SECS {
-                tracing::debug!("Grace period expired, force extracting");
-                self.finalize_current_segment();
-            }
+            self.finalize_current_segment();
         }
     }
 
@@ -453,7 +399,6 @@ impl TranscribeState {
         self.in_speech = false;
         self.segment_sample_count = 0;
         self.lookback_sample_count = 0;
-        self.seeking_word_break = false;
     }
 
     /// Validate and queue a segment for transcription.

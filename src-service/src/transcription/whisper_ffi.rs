@@ -137,9 +137,15 @@ impl WhisperFullParams {
     ///
     /// Unlike FlowSTT which processes short 2-4s segments, OmniRec processes
     /// longer segments (up to 30s) where context and coherence matter more.
+    ///
+    /// Also includes hallucination mitigation settings to prevent repetition loops.
     pub fn configure_for_long_audio(&mut self) {
-        // Use past transcription as context for better coherence
-        self.no_context = false;
+        // IMPORTANT: Disable cross-segment context to prevent repetition propagation
+        // When true, each segment is transcribed independently without using the
+        // previous segment's output as a prompt. This prevents a single repetition
+        // from snowballing into massive loops across multiple segments.
+        self.no_context = true;
+
         // Allow multiple output segments per chunk
         self.single_segment = false;
         // Suppress blank outputs
@@ -155,15 +161,36 @@ impl WhisperFullParams {
         // Process full audio (no duration limit)
         self.duration_ms = 0;
 
-        // Allow longer output
-        self.max_tokens = 256;
+        // Max tokens limit - must accommodate longest possible segments
+        // At ~150 wpm speaking rate, 30s = ~75 words ≈ 100 tokens
+        // Use 0 to disable the limit and let whisper process all audio
+        // Hallucination mitigation is handled by no_context=true and post-processing
+        self.max_tokens = 0;
 
-        // Use default thresholds (don't suppress low-entropy)
+        // === Hallucination mitigation settings ===
+
+        // Entropy threshold: segments with entropy above this are considered uncertain
+        // Higher value = more aggressive filtering of uncertain outputs
         self.entropy_thold = 2.4;
-        self.logprob_thold = -1.0;
 
-        // Enable temperature fallback for better results
+        // Log probability threshold: segments with avg logprob below this are filtered
+        // Higher (less negative) = more aggressive filtering
+        self.logprob_thold = -0.8;
+
+        // No-speech threshold: probability above which a segment is considered silence
+        // Higher value = more likely to detect silence vs hallucinating content
+        self.no_speech_thold = 0.6;
+
+        // Suppress non-speech tokens (reduces hallucination of music/sounds as words)
+        self.suppress_nst = true;
+
+        // Temperature settings for fallback decoding
+        // Start with deterministic decoding, increase on failure
+        self.temperature = 0.0;
         self.temperature_inc = 0.2;
+
+        // Length penalty to discourage very long outputs (hallucination mitigation)
+        self.length_penalty = 1.0;
     }
 }
 
