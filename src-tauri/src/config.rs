@@ -292,7 +292,7 @@ pub fn get_whisper_cache_dir() -> PathBuf {
 }
 
 /// Transcription-related configuration.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TranscriptionConfig {
     /// Whether transcription is enabled.
     #[serde(default)]
@@ -300,6 +300,23 @@ pub struct TranscriptionConfig {
     /// The whisper model to use for transcription.
     #[serde(default)]
     pub model: WhisperModel,
+    /// Whether to show the transcript window when recording starts.
+    #[serde(default = "default_show_transcript_window")]
+    pub show_transcript_window: bool,
+}
+
+fn default_show_transcript_window() -> bool {
+    true
+}
+
+impl Default for TranscriptionConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            model: WhisperModel::default(),
+            show_transcript_window: true,
+        }
+    }
 }
 
 /// Application configuration.
@@ -587,6 +604,7 @@ mod tests {
         let config = TranscriptionConfig {
             enabled: true,
             model: WhisperModel::SmallEn,
+            show_transcript_window: false,
         };
 
         let json = serde_json::to_string(&config).unwrap();
@@ -594,6 +612,7 @@ mod tests {
 
         assert!(parsed.enabled);
         assert_eq!(parsed.model, WhisperModel::SmallEn);
+        assert!(!parsed.show_transcript_window);
     }
 
     #[test]

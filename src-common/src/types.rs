@@ -215,3 +215,12 @@ pub struct TranscriptionStatus {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
+
+/// A single transcription segment produced during recording.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TranscriptionSegment {
+    /// Timestamp in seconds from the start of recording
+    pub timestamp_secs: f64,
+    /// The transcribed text
+    pub text: String,
+}

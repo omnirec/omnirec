@@ -111,6 +111,11 @@ pub enum Request {
     },
     /// Get transcription status
     GetTranscriptionStatus,
+    /// Get pending transcription segments (for live display)
+    /// The `since_index` parameter allows incremental fetching:
+    /// - Pass 0 to get all segments
+    /// - Pass the last segment index + 1 to get only new segments
+    GetTranscriptionSegments { since_index: u32 },
 
     // === Service Control ===
     /// Request service shutdown

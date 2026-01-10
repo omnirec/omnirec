@@ -88,6 +88,7 @@ pub async fn get_transcription_config(
 pub async fn save_transcription_config(
     enabled: bool,
     model: Option<String>,
+    show_transcript_window: Option<bool>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     // Update local config and get model path
@@ -102,6 +103,11 @@ pub async fn save_transcription_config(
             } else {
                 return Err(format!("Invalid model: {}", model_str));
             }
+        }
+
+        // Update show_transcript_window if provided
+        if let Some(show) = show_transcript_window {
+            config.transcription.show_transcript_window = show;
         }
 
         // Save to disk
@@ -119,9 +125,10 @@ pub async fn save_transcription_config(
         .map_err(|e| e.to_string())?;
 
     tracing::info!(
-        "Saved transcription config: enabled={}, model={:?}",
+        "Saved transcription config: enabled={}, model={:?}, show_transcript_window={:?}",
         enabled,
-        model
+        model,
+        show_transcript_window
     );
 
     Ok(())
@@ -375,5 +382,160 @@ async fn download_with_progress(
 
     tracing::info!("Download completed: {:?}", path);
 
+    Ok(())
+}
+
+/// Get transcription segments since a given index.
+/// Returns segments for live display in the transcript window.
+#[tauri::command]
+pub async fn get_transcription_segments(
+    since_index: u32,
+    state: State<'_, AppState>,
+) -> Result<TranscriptionSegmentsResponse, String> {
+    let (segments, total_count) = state
+        .service_client
+        .get_transcription_segments(since_index)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(TranscriptionSegmentsResponse {
+        segments,
+        total_count,
+    })
+}
+
+/// Response for transcription segments request
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TranscriptionSegmentsResponse {
+    pub segments: Vec<omnirec_common::TranscriptionSegment>,
+    pub total_count: u32,
+}
+
+/// Open the transcript window
+#[tauri::command]
+pub async fn open_transcript_window(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+
+    // Check if window already exists
+    if let Some(window) = app.get_webview_window("transcript") {
+        window.show().map_err(|e| e.to_string())?;
+        window.set_focus().map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+
+    // Get main window - required for positioning and visibility check
+    let main_window = app
+        .get_webview_window("main")
+        .ok_or("Main window not found")?;
+
+    // Only open transcript window if main window is visible
+    if !main_window.is_visible().unwrap_or(false) {
+        tracing::info!("Main window not visible, skipping transcript window");
+        return Ok(());
+    }
+
+    // Determine the URL based on environment
+    let url = if cfg!(debug_assertions) {
+        WebviewUrl::External(
+            "http://localhost:1420/src/transcript-view.html"
+                .parse()
+                .unwrap(),
+        )
+    } else {
+        WebviewUrl::App("src/transcript-view.html".into())
+    };
+
+    let gap = 12.0_f64;
+
+    // Get scale factor first
+    let scale = main_window.scale_factor().map_err(|e| e.to_string())?;
+
+    // Get main window position and size (these return physical pixels)
+    let main_pos = main_window.outer_position().unwrap_or_default();
+    let main_size = main_window.outer_size().unwrap_or_default();
+
+    // Convert to logical pixels
+    let main_left = main_pos.x as f64 / scale;
+    let main_top = main_pos.y as f64 / scale;
+    let main_width = main_size.width as f64 / scale;
+    let main_height = main_size.height as f64 / scale;
+    let main_right = main_left + main_width;
+
+    // Transcript window dimensions: same height as main, 20% wider than original 300px
+    let transcript_width = 360.0_f64;
+    let transcript_height = main_height;
+
+    // Get the monitor that the main window is on
+    let monitor = main_window
+        .current_monitor()
+        .map_err(|e| e.to_string())?
+        .ok_or("Could not determine current monitor")?;
+
+    let monitor_pos = monitor.position();
+    let monitor_size = monitor.size();
+
+    // Calculate screen bounds (convert physical to logical)
+    let screen_left = monitor_pos.x as f64 / scale;
+    let screen_right = screen_left + (monitor_size.width as f64 / scale);
+
+    // Calculate space available on each side
+    let space_right = screen_right - main_right;
+    let space_left = main_left - screen_left;
+
+    // Determine position: prefer right side, fall back to left if not enough space
+    let pos_x = if space_right >= transcript_width + gap {
+        // Place on the right
+        main_right + gap
+    } else if space_left >= transcript_width + gap {
+        // Place on the left
+        main_left - transcript_width - gap
+    } else {
+        // Not enough space on either side, place on right anyway (will be partially off-screen)
+        main_right + gap
+    };
+
+    // Vertical position: align with top of main window
+    let pos_y = main_top;
+
+    // Create the transcript window with custom chrome (no OS decorations)
+    // Note: transparent windows require the "transcript" window to be listed
+    // in capabilities/default.json for drag permissions to work
+    let transcript_window = WebviewWindowBuilder::new(&app, "transcript", url)
+        .title("Transcript")
+        .decorations(false)
+        .transparent(true)
+        .shadow(false)
+        .resizable(true)
+        .accept_first_mouse(true)
+        .inner_size(transcript_width, transcript_height)
+        .min_inner_size(200.0, 200.0)
+        .position(pos_x, pos_y)
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    // Bring transcript window to front, then restore focus to main window
+    // This ensures transcript is visible but main window remains interactive
+    let _ = transcript_window.set_focus();
+    let _ = main_window.set_focus();
+
+    tracing::info!(
+        "Opened transcript window at ({}, {}), space_right={}, space_left={}",
+        pos_x,
+        pos_y,
+        space_right,
+        space_left
+    );
+    Ok(())
+}
+
+/// Close the transcript window
+#[tauri::command]
+pub async fn close_transcript_window(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+
+    if let Some(window) = app.get_webview_window("transcript") {
+        window.close().map_err(|e| e.to_string())?;
+        tracing::info!("Closed transcript window");
+    }
     Ok(())
 }

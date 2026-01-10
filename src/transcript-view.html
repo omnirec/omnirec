@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="./transcript-view.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Transcript</title>
+    <script type="module" src="./transcript-view.ts" defer></script>
+  </head>
+
+  <body>
+    <div class="transcript-container" data-tauri-drag-region>
+      <button id="close-btn" class="close-btn" type="button" title="Close">&times;</button>
+      <header class="transcript-header" data-tauri-drag-region>
+        <span class="transcript-title">Transcript</span>
+      </header>
+      <main id="transcript-content" class="transcript-content">
+        <p class="transcript-placeholder">Waiting for transcription...</p>
+      </main>
+    </div>
+  </body>
+</html>

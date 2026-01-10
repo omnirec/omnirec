@@ -691,6 +691,30 @@ impl ServiceClient {
         }
     }
 
+    /// Get transcription segments since a given index.
+    ///
+    /// Returns a tuple of (segments, total_count).
+    /// Pass 0 as `since_index` to get all segments, or pass the last known
+    /// total_count to get only new segments.
+    pub async fn get_transcription_segments(
+        &self,
+        since_index: u32,
+    ) -> Result<(Vec<omnirec_common::TranscriptionSegment>, u32), ServiceError> {
+        match self
+            .request(Request::GetTranscriptionSegments { since_index })
+            .await?
+        {
+            Response::TranscriptionSegments {
+                segments,
+                total_count,
+            } => Ok((segments, total_count)),
+            other => Err(ServiceError::ServiceError(format!(
+                "Unexpected response: {:?}",
+                other
+            ))),
+        }
+    }
+
     /// Ensure the service is connected, reconnecting if necessary.
     ///
     /// This method checks if the connection is still valid by sending a ping.

@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window, region selector, and display highlight",
-  "windows": ["main", "region-selector", "display-highlight-*"],
+  "description": "Capability for the main window, region selector, display highlight, and transcript",
+  "windows": ["main", "region-selector", "display-highlight-*", "transcript"],
   "permissions": [
     "core:default",
     "core:app:default",

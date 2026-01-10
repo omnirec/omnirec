@@ -16,6 +16,10 @@ use std::time::Duration;
 use super::transcriber::Transcriber;
 use super::transcript_writer::TranscriptWriter;
 
+/// Callback type for when a transcription segment is produced.
+/// Parameters: (timestamp_secs, text)
+pub type OnSegmentCallback = Box<dyn Fn(f64, String) + Send + Sync + 'static>;
+
 /// Maximum queue size for transcription segments
 const MAX_QUEUE_SIZE: usize = 10;
 
@@ -87,7 +91,23 @@ impl TranscriptionQueue {
     /// # Arguments
     /// * `transcript_path` - Path to the transcript markdown file
     /// * `model_path` - Optional custom model path (uses default if None)
+    #[allow(dead_code)] // Used by start_worker_with_callback; kept for API completeness
     pub fn start_worker(&self, transcript_path: PathBuf, model_path: Option<PathBuf>) {
+        self.start_worker_with_callback(transcript_path, model_path, None);
+    }
+
+    /// Start the transcription worker thread with an optional callback for segment events.
+    ///
+    /// # Arguments
+    /// * `transcript_path` - Path to the transcript markdown file
+    /// * `model_path` - Optional custom model path (uses default if None)
+    /// * `on_segment` - Optional callback invoked when a segment is transcribed
+    pub fn start_worker_with_callback(
+        &self,
+        transcript_path: PathBuf,
+        model_path: Option<PathBuf>,
+        on_segment: Option<Arc<OnSegmentCallback>>,
+    ) {
         if self.worker_active.load(Ordering::SeqCst) {
             return; // Already running
         }
@@ -190,6 +210,10 @@ impl TranscriptionQueue {
                                             "[TranscriptionQueue] Failed to write transcript: {}",
                                             e
                                         );
+                                    }
+                                    // Invoke callback if provided
+                                    if let Some(ref callback) = on_segment {
+                                        callback(seg.timestamp_secs, text);
                                     }
                                 } else {
                                     eprintln!(

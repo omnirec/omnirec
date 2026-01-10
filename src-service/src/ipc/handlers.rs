@@ -346,6 +346,14 @@ pub async fn handle_request(request: Request) -> Response {
             let status = manager.get_transcription_status().await;
             Response::TranscriptionStatus(status)
         }
+        Request::GetTranscriptionSegments { since_index } => {
+            let manager = get_recording_manager();
+            let (segments, total_count) = manager.get_transcription_segments(since_index);
+            Response::TranscriptionSegments {
+                segments,
+                total_count,
+            }
+        }
 
         // === Service Control ===
         Request::Shutdown => {

@@ -50,7 +50,7 @@ pub mod whisper_ffi;
 // Re-export main types for convenience
 // These are public API for external use, even if not used internally
 #[allow(unused_imports)]
-pub use queue::{QueuedSegment, TranscriptionQueue};
+pub use queue::{OnSegmentCallback, QueuedSegment, TranscriptionQueue};
 #[allow(unused_imports)]
 pub use segment_buffer::SegmentRingBuffer;
 pub use transcribe_state::TranscribeState;

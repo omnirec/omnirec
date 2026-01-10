@@ -36,7 +36,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 
-use super::queue::{QueuedSegment, TranscriptionQueue};
+use super::queue::{OnSegmentCallback, QueuedSegment, TranscriptionQueue};
 use super::segment_buffer::SegmentRingBuffer;
 use super::transcript_writer::transcript_filename_from_video;
 use super::voice_detector::{SpeechStateChange, VoiceDetector};
@@ -142,6 +142,31 @@ impl TranscribeState {
         input_channels: u16,
         model_path: Option<PathBuf>,
     ) -> Result<(), String> {
+        self.start_with_model_and_callback(
+            output_path,
+            input_sample_rate,
+            input_channels,
+            model_path,
+            None,
+        )
+    }
+
+    /// Start transcription for a recording with an optional callback for segment events.
+    ///
+    /// # Arguments
+    /// * `output_path` - Path to the video output file (transcript will be derived from this)
+    /// * `input_sample_rate` - Sample rate of input audio (typically 48000)
+    /// * `input_channels` - Number of channels in input audio (typically 2)
+    /// * `model_path` - Optional custom model path (uses default if None)
+    /// * `on_segment` - Optional callback invoked when a segment is transcribed
+    pub fn start_with_model_and_callback(
+        &mut self,
+        output_path: PathBuf,
+        input_sample_rate: u32,
+        input_channels: u16,
+        model_path: Option<PathBuf>,
+        on_segment: Option<Arc<OnSegmentCallback>>,
+    ) -> Result<(), String> {
         if self.is_active {
             return Err("Transcription already active".to_string());
         }
@@ -169,9 +194,12 @@ impl TranscribeState {
             transcript_path, input_sample_rate, input_channels, model_path
         );
 
-        // Start the transcription worker
-        self.transcription_queue
-            .start_worker(transcript_path, model_path);
+        // Start the transcription worker with optional callback
+        self.transcription_queue.start_worker_with_callback(
+            transcript_path,
+            model_path,
+            on_segment,
+        );
 
         self.is_active = true;
 

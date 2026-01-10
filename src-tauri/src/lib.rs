@@ -318,6 +318,9 @@ pub fn run() {
             commands::get_transcription_config,
             commands::save_transcription_config,
             commands::get_transcription_status,
+            commands::get_transcription_segments,
+            commands::open_transcript_window,
+            commands::close_transcript_window,
             // Model management commands
             commands::get_model_status,
             commands::list_available_models,

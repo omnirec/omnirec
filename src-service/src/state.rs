@@ -16,7 +16,9 @@ use crate::encoder::{
     AudioEncoderConfig,
 };
 use crate::transcription::TranscribeState;
-use omnirec_common::{AudioConfig, OutputFormat, RecordingState, TranscriptionConfig};
+use omnirec_common::{
+    AudioConfig, OutputFormat, RecordingState, TranscriptionConfig, TranscriptionSegment,
+};
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::time::Instant;
@@ -44,6 +46,8 @@ pub enum ServiceEvent {
     TranscodingStarted { format: String },
     /// Transcoding completed
     TranscodingComplete { success: bool, path: Option<String> },
+    /// A transcription segment was produced
+    TranscriptionSegment { timestamp_secs: f64, text: String },
     /// Service is shutting down
     Shutdown,
 }
@@ -67,6 +71,9 @@ pub struct RecordingManager {
     event_tx: broadcast::Sender<ServiceEvent>,
     /// Elapsed time update task handle
     elapsed_task: Mutex<Option<tokio::task::JoinHandle<()>>>,
+    /// Transcription segments produced during the current recording (for live display)
+    /// Uses Arc<std::sync::Mutex> because it's accessed from blocking callback threads
+    transcription_segments: std::sync::Arc<std::sync::Mutex<Vec<TranscriptionSegment>>>,
 }
 
 impl RecordingManager {
@@ -86,6 +93,7 @@ impl RecordingManager {
             transcription_task: Mutex::new(None),
             event_tx,
             elapsed_task: Mutex::new(None),
+            transcription_segments: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
         }
     }
 
@@ -194,6 +202,28 @@ impl RecordingManager {
         }
     }
 
+    /// Get transcription segments since a given index.
+    ///
+    /// Returns segments starting from `since_index` and the total count.
+    /// Pass 0 to get all segments.
+    pub fn get_transcription_segments(&self, since_index: u32) -> (Vec<TranscriptionSegment>, u32) {
+        let segments = self.transcription_segments.lock().unwrap();
+        let total = segments.len() as u32;
+        let from = since_index as usize;
+
+        if from >= segments.len() {
+            (Vec::new(), total)
+        } else {
+            (segments[from..].to_vec(), total)
+        }
+    }
+
+    /// Clear all transcription segments (called when starting a new recording).
+    pub fn clear_transcription_segments(&self) {
+        let mut segments = self.transcription_segments.lock().unwrap();
+        segments.clear();
+    }
+
     /// Get a clone of the stop flag (for external stop monitoring).
     #[allow(dead_code)] // Will be used for external stop monitoring
     pub async fn get_stop_flag(&self) -> Option<StopHandle> {
@@ -272,6 +302,9 @@ impl RecordingManager {
         frame_rx: FrameReceiver,
         stop_flag: StopHandle,
     ) -> Result<(), String> {
+        // Clear any previous transcription segments
+        self.clear_transcription_segments();
+
         // Get audio config
         let audio_cfg = self.get_audio_config().await;
         let has_system_audio = audio_cfg.enabled && audio_cfg.source_id.is_some();
@@ -438,21 +471,42 @@ impl RecordingManager {
         // Use a std channel for the blocking thread
         let (std_tx, std_rx) = std::sync::mpsc::channel::<Vec<f32>>();
 
+        // Create callback for segment events
+        let event_tx = self.event_tx.clone();
+        let segments_storage = self.transcription_segments.clone();
+        let on_segment: std::sync::Arc<crate::transcription::OnSegmentCallback> =
+            std::sync::Arc::new(Box::new(move |timestamp_secs, text| {
+                // Store segment for polling-based retrieval
+                if let Ok(mut segments) = segments_storage.lock() {
+                    segments.push(TranscriptionSegment {
+                        timestamp_secs,
+                        text: text.clone(),
+                    });
+                }
+                // Also broadcast as event (for future streaming support)
+                let _ = event_tx.send(ServiceEvent::TranscriptionSegment {
+                    timestamp_secs,
+                    text,
+                });
+            }));
+
         // Spawn a blocking thread for transcription processing
         // TranscribeState.process_samples() is synchronous
         let queue_clone = queue.clone();
         let video_path_for_thread = video_output_path.clone();
         let model_path_for_thread = model_path.clone();
+        let on_segment_clone = on_segment.clone();
         let transcription_thread = std::thread::spawn(move || {
             eprintln!("[Transcription] Worker thread started");
             let mut transcribe_state = TranscribeState::new();
 
-            // Start the transcription state with the video output path and model path
-            if let Err(e) = transcribe_state.start_with_model(
+            // Start the transcription state with the video output path, model path, and callback
+            if let Err(e) = transcribe_state.start_with_model_and_callback(
                 video_path_for_thread,
                 48000,
                 2,
                 model_path_for_thread,
+                Some(on_segment_clone),
             ) {
                 eprintln!(
                     "[Transcription] Failed to start transcription in thread: {}",

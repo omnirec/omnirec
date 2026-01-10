@@ -57,6 +57,7 @@ interface AudioConfig {
 interface TranscriptionConfig {
   enabled: boolean;
   model: string;
+  show_transcript_window: boolean;
 }
 
 // Model info for dropdown
@@ -260,6 +261,8 @@ let modelCancelBtn: HTMLButtonElement | null;
 let modelProgressContainer: HTMLElement | null;
 let modelProgressFill: HTMLElement | null;
 let modelProgressText: HTMLElement | null;
+let showTranscriptConfigItem: HTMLElement | null;
+let showTranscriptCheckbox: HTMLInputElement | null;
 
 // Model download state
 let isModelDownloading = false;
@@ -399,6 +402,8 @@ window.addEventListener("DOMContentLoaded", () => {
   modelProgressContainer = document.querySelector("#model-progress-container");
   modelProgressFill = document.querySelector("#model-progress-fill");
   modelProgressText = document.querySelector("#model-progress-text");
+  showTranscriptConfigItem = document.querySelector("#show-transcript-config-item");
+  showTranscriptCheckbox = document.querySelector("#show-transcript-checkbox");
 
   // Set up event listeners
   closeBtn?.addEventListener("click", async () => {
@@ -490,6 +495,7 @@ window.addEventListener("DOMContentLoaded", () => {
   modelSelect?.addEventListener("change", handleModelChange);
   modelDownloadBtn?.addEventListener("click", handleModelDownload);
   modelCancelBtn?.addEventListener("click", handleModelCancel);
+  showTranscriptCheckbox?.addEventListener("change", handleShowTranscriptChange);
 
   // Listen for model download progress events
   listen<DownloadProgress>("model-download-progress", (event) => {
@@ -1483,6 +1489,14 @@ async function startRecording(): Promise<void> {
     updateRecordButton();
     startTimer();
     setStatus("Recording...");
+    
+    // Open transcript window if transcription is enabled and setting is on
+    // Fire and forget - don't await to avoid blocking
+    if (transcriptionEnabled && showTranscriptCheckbox?.checked) {
+      invoke("open_transcript_window")
+        .then(() => console.log("[Recording] Opened transcript window"))
+        .catch((error) => console.error("[Recording] Failed to open transcript window:", error));
+    }
   } catch (error) {
     setStatus(`Failed to start recording: ${error}`, true);
     disableSelection(false);
@@ -2113,6 +2127,11 @@ function updateTranscriptionVisibility(): void {
   if (modelConfigItem) {
     modelConfigItem.classList.toggle("hidden", !showModelConfig);
   }
+  
+  // Show transcript window config is visible when transcription is enabled
+  if (showTranscriptConfigItem) {
+    showTranscriptConfigItem.classList.toggle("hidden", !showModelConfig);
+  }
 }
 
 // Handle transcription checkbox change (settings view)
@@ -2155,6 +2174,11 @@ async function loadTranscriptionConfig(): Promise<void> {
       transcriptionQuickCheckbox.checked = config.enabled;
     }
     
+    // Set show transcript window checkbox
+    if (showTranscriptCheckbox) {
+      showTranscriptCheckbox.checked = config.show_transcript_window;
+    }
+    
     // Load available models and select the configured one
     await loadAvailableModels();
     if (modelSelect && config.model) {
@@ -2167,7 +2191,7 @@ async function loadTranscriptionConfig(): Promise<void> {
     // Update visibility (model config depends on transcription being enabled)
     updateTranscriptionVisibility();
     
-    console.log("[Transcription] Loaded config: enabled=", config.enabled, "model=", config.model);
+    console.log("[Transcription] Loaded config: enabled=", config.enabled, "model=", config.model, "show_transcript_window=", config.show_transcript_window);
   } catch (error) {
     console.error("[Transcription] Failed to load config:", error);
   }
@@ -2189,6 +2213,23 @@ async function handleTranscriptionQuickToggleChange(): Promise<void> {
     console.log("[Transcription] Quick toggle: enabled=", enabled);
   } catch (error) {
     console.error("[Transcription] Failed to save config:", error);
+  }
+}
+
+// Handle show transcript window checkbox change
+async function handleShowTranscriptChange(): Promise<void> {
+  if (!showTranscriptCheckbox) return;
+  
+  const show = showTranscriptCheckbox.checked;
+  
+  try {
+    await invoke("save_transcription_config", {
+      enabled: transcriptionCheckbox?.checked ?? false,
+      showTranscriptWindow: show,
+    });
+    console.log("[Transcription] Show transcript window:", show);
+  } catch (error) {
+    console.error("[Transcription] Failed to save show transcript setting:", error);
   }
 }
 

@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::types::{
     AudioConfig, AudioSource, MonitorInfo, RecordingState, TranscriptionConfig,
-    TranscriptionStatus, WindowInfo,
+    TranscriptionSegment, TranscriptionStatus, WindowInfo,
 };
 
 /// Geometry for region selection (picker compatibility).
@@ -48,6 +48,13 @@ pub enum Response {
     TranscriptionConfig(TranscriptionConfig),
     /// Current transcription status
     TranscriptionStatus(TranscriptionStatus),
+    /// Transcription segments (for live display)
+    TranscriptionSegments {
+        /// The segments (may be empty if no new segments)
+        segments: Vec<TranscriptionSegment>,
+        /// The total number of segments produced so far
+        total_count: u32,
+    },
 
     /// Thumbnail data (base64-encoded image)
     Thumbnail {
@@ -100,8 +107,15 @@ pub enum EventType {
     ElapsedTime { seconds: u64 },
     /// Transcoding started
     TranscodingStarted { format: String },
-    /// Transcoding completed
+    /// Transcoding complete
     TranscodingComplete { success: bool, path: Option<String> },
+    /// A transcription segment was produced
+    TranscriptionSegment {
+        /// Timestamp in seconds from recording start
+        timestamp_secs: f64,
+        /// The transcribed text
+        text: String,
+    },
     /// Service is shutting down
     Shutdown,
 }
