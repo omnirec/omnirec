@@ -80,8 +80,7 @@ pub struct IpcServerState {
 
 /// Get the IPC socket path.
 pub fn get_socket_path() -> PathBuf {
-    let runtime_dir =
-        std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| "/tmp".to_string());
+    let runtime_dir = std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| "/tmp".to_string());
     PathBuf::from(runtime_dir)
         .join("omnirec")
         .join("picker.sock")
@@ -144,27 +143,28 @@ async fn handle_client(
         }
         IpcRequest::ValidateToken { token } => {
             let is_valid = approval_token::validate_token(&token);
-            eprintln!("[IPC] Token validation: {}", if is_valid { "valid" } else { "invalid" });
+            eprintln!(
+                "[IPC] Token validation: {}",
+                if is_valid { "valid" } else { "invalid" }
+            );
             if is_valid {
                 IpcResponse::TokenValid
             } else {
                 IpcResponse::TokenInvalid
             }
         }
-        IpcRequest::StoreToken { token } => {
-            match approval_token::write_token(&token) {
-                Ok(()) => {
-                    eprintln!("[IPC] Token stored successfully");
-                    IpcResponse::TokenStored
-                }
-                Err(e) => {
-                    eprintln!("[IPC] Failed to store token: {}", e);
-                    IpcResponse::Error {
-                        message: format!("Failed to store token: {}", e),
-                    }
+        IpcRequest::StoreToken { token } => match approval_token::write_token(&token) {
+            Ok(()) => {
+                eprintln!("[IPC] Token stored successfully");
+                IpcResponse::TokenStored
+            }
+            Err(e) => {
+                eprintln!("[IPC] Failed to store token: {}", e);
+                IpcResponse::Error {
+                    message: format!("Failed to store token: {}", e),
                 }
             }
-        }
+        },
     };
 
     // Send response
@@ -179,8 +179,8 @@ async fn handle_client(
 /// Start the IPC server.
 ///
 /// Returns a handle to the server state that can be used to update the selection.
-pub async fn start_ipc_server() -> Result<Arc<RwLock<IpcServerState>>, Box<dyn std::error::Error + Send + Sync>>
-{
+pub async fn start_ipc_server(
+) -> Result<Arc<RwLock<IpcServerState>>, Box<dyn std::error::Error + Send + Sync>> {
     let socket_path = get_socket_path();
 
     // Create parent directory if needed
@@ -221,12 +221,11 @@ pub async fn start_ipc_server() -> Result<Arc<RwLock<IpcServerState>>, Box<dyn s
 
 /// Update the current capture selection.
 #[allow(dead_code)]
-pub async fn set_selection(
-    state: &Arc<RwLock<IpcServerState>>,
-    selection: CaptureSelection,
-) {
-    eprintln!("[IPC] Setting selection: type={}, id={}, geometry={:?}", 
-        selection.source_type, selection.source_id, selection.geometry);
+pub async fn set_selection(state: &Arc<RwLock<IpcServerState>>, selection: CaptureSelection) {
+    eprintln!(
+        "[IPC] Setting selection: type={}, id={}, geometry={:?}",
+        selection.source_type, selection.source_id, selection.geometry
+    );
     let mut state = state.write().await;
     state.selection = Some(selection);
 }

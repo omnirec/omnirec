@@ -26,7 +26,10 @@ pub fn list_monitors() -> Vec<MonitorInfo> {
     };
 
     if result != 0 {
-        eprintln!("[macOS] CGGetActiveDisplayList failed with error: {}", result);
+        eprintln!(
+            "[macOS] CGGetActiveDisplayList failed with error: {}",
+            result
+        );
         return monitors;
     }
 
@@ -48,11 +51,11 @@ pub fn list_monitors() -> Vec<MonitorInfo> {
 
         // Get physical pixel dimensions (for calculating scale factor)
         let physical_width = display.pixels_wide() as f64;
-        
+
         // bounds.size gives logical dimensions
         let logical_width = bounds.size.width;
         let logical_height = bounds.size.height;
-        
+
         // Calculate scale factor (physical pixels / logical pixels)
         // This is typically 2.0 for Retina displays, 1.0 for standard displays
         let scale_factor = if logical_width > 0.0 {
@@ -65,7 +68,7 @@ pub fn list_monitors() -> Vec<MonitorInfo> {
         // Frontend will convert Tauri's physical coords to logical to match
         let logical_x = bounds.origin.x as i32;
         let logical_y = bounds.origin.y as i32;
-        
+
         monitors.push(MonitorInfo {
             id: display_id.to_string(),
             name,

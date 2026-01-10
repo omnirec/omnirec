@@ -50,10 +50,7 @@ fn secure_socket_file(socket_path: &Path) -> std::io::Result<()> {
     // Verify permissions were set
     let actual = std::fs::metadata(socket_path)?.permissions().mode() & 0o777;
     if actual != SOCKET_MODE {
-        warn!(
-            "Socket mode is {:o}, expected {:o}",
-            actual, SOCKET_MODE
-        );
+        warn!("Socket mode is {:o}, expected {:o}", actual, SOCKET_MODE);
     }
 
     Ok(())
@@ -188,13 +185,13 @@ fn create_security_attributes() -> Result<
     use std::ptr::null_mut;
     use windows::core::PCWSTR;
     use windows::Win32::Foundation::{CloseHandle, LocalFree, HANDLE};
-    use windows::Win32::Security::{
-        GetSecurityDescriptorLength, GetTokenInformation, TokenUser, PSECURITY_DESCRIPTOR,
-        SECURITY_ATTRIBUTES, TOKEN_QUERY, TOKEN_USER,
-    };
     use windows::Win32::Security::Authorization::{
         ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW,
         SDDL_REVISION_1,
+    };
+    use windows::Win32::Security::{
+        GetSecurityDescriptorLength, GetTokenInformation, TokenUser, PSECURITY_DESCRIPTOR,
+        SECURITY_ATTRIBUTES, TOKEN_QUERY, TOKEN_USER,
     };
     use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 
@@ -230,7 +227,9 @@ fn create_security_attributes() -> Result<
 
         // Copy the string and free the original
         let sid_string = sid_string_ptr.to_string()?;
-        let _ = LocalFree(windows::Win32::Foundation::HLOCAL(sid_string_ptr.0 as *mut _));
+        let _ = LocalFree(windows::Win32::Foundation::HLOCAL(
+            sid_string_ptr.0 as *mut _,
+        ));
 
         sid_string
     };
@@ -267,7 +266,10 @@ fn create_security_attributes() -> Result<
         bInheritHandle: false.into(),
     };
 
-    info!("Created named pipe with security for user: {}", user_sid_string);
+    info!(
+        "Created named pipe with security for user: {}",
+        user_sid_string
+    );
 
     Ok((sa, sd_bytes))
 }

@@ -103,7 +103,12 @@ pub enum Request {
     /// Get transcription configuration
     GetTranscriptionConfig,
     /// Set transcription configuration
-    SetTranscriptionConfig { enabled: bool },
+    SetTranscriptionConfig {
+        enabled: bool,
+        /// Optional path to the whisper model file
+        #[serde(skip_serializing_if = "Option::is_none")]
+        model_path: Option<String>,
+    },
     /// Get transcription status
     GetTranscriptionStatus,
 

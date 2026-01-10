@@ -101,8 +101,11 @@ impl TranscriptionQueue {
         let segments_processed = Arc::clone(&self.segments_processed);
 
         thread::spawn(move || {
-            eprintln!("[TranscriptionQueue] Worker thread starting, transcript: {:?}", transcript_path);
-            
+            eprintln!(
+                "[TranscriptionQueue] Worker thread starting, transcript: {:?}",
+                transcript_path
+            );
+
             // Initialize transcriber
             let mut transcriber = match model_path {
                 Some(path) => Transcriber::with_model_path(path),
@@ -116,7 +119,10 @@ impl TranscriptionQueue {
                     w
                 }
                 Err(e) => {
-                    eprintln!("[TranscriptionQueue] Failed to create transcript writer: {}", e);
+                    eprintln!(
+                        "[TranscriptionQueue] Failed to create transcript writer: {}",
+                        e
+                    );
                     worker_active.store(false, Ordering::SeqCst);
                     return;
                 }
@@ -126,7 +132,10 @@ impl TranscriptionQueue {
             if transcriber.is_model_available() {
                 eprintln!("[TranscriptionQueue] Model available, pre-loading...");
                 if let Err(e) = transcriber.load_model() {
-                    eprintln!("[TranscriptionQueue] Failed to pre-load whisper model: {}", e);
+                    eprintln!(
+                        "[TranscriptionQueue] Failed to pre-load whisper model: {}",
+                        e
+                    );
                 } else {
                     eprintln!("[TranscriptionQueue] Model loaded successfully");
                 }
@@ -175,13 +184,17 @@ impl TranscriptionQueue {
                                         text.chars().take(80).collect::<String>()
                                     );
                                     // Write to transcript file
-                                    if let Err(e) =
-                                        writer.write_segment(seg.timestamp_secs, &text)
+                                    if let Err(e) = writer.write_segment(seg.timestamp_secs, &text)
                                     {
-                                        eprintln!("[TranscriptionQueue] Failed to write transcript: {}", e);
+                                        eprintln!(
+                                            "[TranscriptionQueue] Failed to write transcript: {}",
+                                            e
+                                        );
                                     }
                                 } else {
-                                    eprintln!("[TranscriptionQueue] Transcription returned empty text");
+                                    eprintln!(
+                                        "[TranscriptionQueue] Transcription returned empty text"
+                                    );
                                 }
                             }
                             Err(e) => {

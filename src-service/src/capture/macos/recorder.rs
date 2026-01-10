@@ -83,7 +83,9 @@ impl StreamOutput for FrameOutputHandler {
         // Get the CVPixelBuffer pointer from the image buffer ref
         // CVImageBufferRef and CVPixelBufferRef are toll-free bridged (same type)
         // The ShareId<CVImageBufferRef> derefs to CVImageBufferRef, and we need the raw pointer
-        let cv_buffer_ptr: *const c_void = sample.image_buf_ref.as_ref()
+        let cv_buffer_ptr: *const c_void = sample
+            .image_buf_ref
+            .as_ref()
             .map(|img_buf| {
                 // ShareId<T> implements Deref<Target = T>, so &**img_buf gives us &T
                 // Then we take a pointer to it. Since T is the opaque CVImageBufferRef,
@@ -92,7 +94,7 @@ impl StreamOutput for FrameOutputHandler {
                 inner_ref as *const _ as *const c_void
             })
             .unwrap_or(std::ptr::null());
-        
+
         let (actual_width, actual_height, bytes_per_row) = if !cv_buffer_ptr.is_null() {
             unsafe {
                 (
@@ -104,16 +106,26 @@ impl StreamOutput for FrameOutputHandler {
         } else {
             (self.width, self.height, (self.width * 4) as usize)
         };
-        
-        let width = if actual_width > 0 { actual_width } else { self.width };
-        let height = if actual_height > 0 { actual_height } else { self.height };
+
+        let width = if actual_width > 0 {
+            actual_width
+        } else {
+            self.width
+        };
+        let height = if actual_height > 0 {
+            actual_height
+        } else {
+            self.height
+        };
         let expected_bytes_per_row = (width * 4) as usize;
-        
+
         // Log first frame info for debugging
         static LOGGED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
         if !LOGGED.swap(true, Ordering::Relaxed) {
-            eprintln!("[macOS] Frame info: {}x{}, bytes_per_row={}, expected={}", 
-                width, height, bytes_per_row, expected_bytes_per_row);
+            eprintln!(
+                "[macOS] Frame info: {}x{}, bytes_per_row={}, expected={}",
+                width, height, bytes_per_row, expected_bytes_per_row
+            );
         }
 
         // If stride matches expected, we can copy directly
@@ -125,7 +137,7 @@ impl StreamOutput for FrameOutputHandler {
             // Stride doesn't match - need to copy row by row, removing padding
             let mut data = Vec::with_capacity((width * height * 4) as usize);
             let src_ptr = base_address as *const u8;
-            
+
             for row in 0..height {
                 let row_start = (row as usize) * bytes_per_row;
                 let row_data = unsafe {

@@ -664,8 +664,8 @@ impl VoiceDetector {
         self.recent_speech_amplitude_count += sample_count;
 
         if self.recent_speech_amplitude_count > self.recent_speech_window_samples {
-            let scale =
-                self.recent_speech_window_samples as f32 / self.recent_speech_amplitude_count as f32;
+            let scale = self.recent_speech_window_samples as f32
+                / self.recent_speech_amplitude_count as f32;
             self.recent_speech_amplitude_sum *= scale;
             self.recent_speech_amplitude_count = self.recent_speech_window_samples;
         }

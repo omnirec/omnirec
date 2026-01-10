@@ -194,6 +194,10 @@ pub struct TranscriptionConfig {
     /// Whether transcription is enabled.
     #[serde(default)]
     pub enabled: bool,
+    /// Path to the whisper model file.
+    /// If not set, the service will use its default path.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_path: Option<String>,
 }
 
 /// Status of the transcription system.

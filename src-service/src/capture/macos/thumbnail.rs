@@ -427,7 +427,10 @@ mod tests {
                 println!("Screen recording permission not granted, skipping test");
             }
             Err(e) => {
-                println!("Display thumbnail capture failed (may be expected in CI): {}", e);
+                println!(
+                    "Display thumbnail capture failed (may be expected in CI): {}",
+                    e
+                );
             }
         }
     }
@@ -465,7 +468,10 @@ mod tests {
                 println!("Screen recording permission not granted, skipping test");
             }
             Err(e) => {
-                println!("Region preview capture failed (may be expected in CI): {}", e);
+                println!(
+                    "Region preview capture failed (may be expected in CI): {}",
+                    e
+                );
             }
         }
     }

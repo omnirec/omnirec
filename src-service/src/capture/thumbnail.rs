@@ -52,21 +52,11 @@ pub fn bgra_to_jpeg_thumbnail(
     }
 
     // Calculate scaled dimensions preserving aspect ratio
-    let (scaled_width, scaled_height) = calculate_scaled_dimensions(
-        width,
-        height,
-        max_width,
-        max_height,
-    );
+    let (scaled_width, scaled_height) =
+        calculate_scaled_dimensions(width, height, max_width, max_height);
 
     // Fast downsampling: sample pixels at intervals and convert BGRA→RGB in one pass
-    let rgb_data = fast_downsample_bgra_to_rgb(
-        data,
-        width,
-        height,
-        scaled_width,
-        scaled_height,
-    );
+    let rgb_data = fast_downsample_bgra_to_rgb(data, width, height, scaled_width, scaled_height);
 
     // Create image buffer directly from downsampled data
     let img: ImageBuffer<Rgb<u8>, Vec<u8>> =
@@ -75,17 +65,15 @@ pub fn bgra_to_jpeg_thumbnail(
 
     // Encode as JPEG
     let mut jpeg_bytes: Vec<u8> = Vec::new();
-    let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(
-        &mut jpeg_bytes,
-        JPEG_QUALITY,
-    );
+    let mut encoder =
+        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg_bytes, JPEG_QUALITY);
     encoder
         .encode_image(&img)
         .map_err(|e| format!("Failed to encode JPEG: {}", e))?;
 
     // Encode as base64
     let base64_str = STANDARD.encode(&jpeg_bytes);
-    
+
     Ok((base64_str, scaled_width, scaled_height))
 }
 
@@ -101,26 +89,26 @@ fn fast_downsample_bgra_to_rgb(
     dst_height: u32,
 ) -> Vec<u8> {
     let mut rgb_data = Vec::with_capacity((dst_width * dst_height * 3) as usize);
-    
+
     // Calculate step sizes for sampling
     let x_ratio = src_width as f64 / dst_width as f64;
     let y_ratio = src_height as f64 / dst_height as f64;
-    
+
     for y in 0..dst_height {
         let src_y = ((y as f64 * y_ratio) as u32).min(src_height - 1);
         let row_offset = (src_y * src_width * 4) as usize;
-        
+
         for x in 0..dst_width {
             let src_x = ((x as f64 * x_ratio) as u32).min(src_width - 1);
             let pixel_offset = row_offset + (src_x * 4) as usize;
-            
+
             // BGRA -> RGB (swap B and R)
             rgb_data.push(data[pixel_offset + 2]); // R (was B)
             rgb_data.push(data[pixel_offset + 1]); // G
-            rgb_data.push(data[pixel_offset]);     // B (was R)
+            rgb_data.push(data[pixel_offset]); // B (was R)
         }
     }
-    
+
     rgb_data
 }
 
@@ -192,35 +180,35 @@ mod tests {
         assert_eq!(scaled_w, 10); // No upscaling
         assert_eq!(scaled_h, 10);
     }
-    
+
     #[test]
     fn test_fast_downsample() {
         // 4x4 BGRA image with known pattern
         let data = vec![
             // Row 0
-            255, 0, 0, 255,   // Blue
-            255, 0, 0, 255,   // Blue
-            0, 255, 0, 255,   // Green
-            0, 255, 0, 255,   // Green
+            255, 0, 0, 255, // Blue
+            255, 0, 0, 255, // Blue
+            0, 255, 0, 255, // Green
+            0, 255, 0, 255, // Green
             // Row 1
-            255, 0, 0, 255,   // Blue
-            255, 0, 0, 255,   // Blue
-            0, 255, 0, 255,   // Green
-            0, 255, 0, 255,   // Green
+            255, 0, 0, 255, // Blue
+            255, 0, 0, 255, // Blue
+            0, 255, 0, 255, // Green
+            0, 255, 0, 255, // Green
             // Row 2
-            0, 0, 255, 255,   // Red
-            0, 0, 255, 255,   // Red
+            0, 0, 255, 255, // Red
+            0, 0, 255, 255, // Red
             255, 255, 255, 255, // White
             255, 255, 255, 255, // White
             // Row 3
-            0, 0, 255, 255,   // Red
-            0, 0, 255, 255,   // Red
+            0, 0, 255, 255, // Red
+            0, 0, 255, 255, // Red
             255, 255, 255, 255, // White
             255, 255, 255, 255, // White
         ];
-        
+
         let rgb = fast_downsample_bgra_to_rgb(&data, 4, 4, 2, 2);
-        
+
         // Should sample (0,0), (2,0), (0,2), (2,2)
         assert_eq!(rgb.len(), 2 * 2 * 3);
         // Top-left: Blue (BGRA 255,0,0) -> RGB (0,0,255)

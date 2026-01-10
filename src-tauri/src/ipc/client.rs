@@ -92,12 +92,8 @@ impl ServiceClient {
             })?;
 
             // Set read/write timeouts
-            stream
-                .set_read_timeout(Some(Duration::from_secs(30)))
-                .ok();
-            stream
-                .set_write_timeout(Some(Duration::from_secs(10)))
-                .ok();
+            stream.set_read_timeout(Some(Duration::from_secs(30))).ok();
+            stream.set_write_timeout(Some(Duration::from_secs(10))).ok();
 
             *conn = ConnectionState::Connected(stream);
             tracing::info!("Connected to service at {}", self.socket_path.display());
@@ -172,15 +168,15 @@ impl ServiceClient {
 
             // Send length-prefixed message
             let len = request_json.len() as u32;
-            stream.write_all(&len.to_le_bytes()).map_err(|e| {
-                ServiceError::SendFailed(format!("Failed to write length: {}", e))
-            })?;
-            stream.write_all(&request_json).map_err(|e| {
-                ServiceError::SendFailed(format!("Failed to write request: {}", e))
-            })?;
-            stream.flush().map_err(|e| {
-                ServiceError::SendFailed(format!("Failed to flush: {}", e))
-            })?;
+            stream
+                .write_all(&len.to_le_bytes())
+                .map_err(|e| ServiceError::SendFailed(format!("Failed to write length: {}", e)))?;
+            stream
+                .write_all(&request_json)
+                .map_err(|e| ServiceError::SendFailed(format!("Failed to write request: {}", e)))?;
+            stream
+                .flush()
+                .map_err(|e| ServiceError::SendFailed(format!("Failed to flush: {}", e)))?;
 
             // Read response length
             let mut len_buf = [0u8; 4];
@@ -232,15 +228,12 @@ impl ServiceClient {
 
             // Send length-prefixed message
             let len = request_json.len() as u32;
-            file.write_all(&len.to_le_bytes()).map_err(|e| {
-                ServiceError::SendFailed(format!("Failed to write length: {}", e))
-            })?;
-            file.write_all(&request_json).map_err(|e| {
-                ServiceError::SendFailed(format!("Failed to write request: {}", e))
-            })?;
-            file.flush().map_err(|e| {
-                ServiceError::SendFailed(format!("Failed to flush: {}", e))
-            })?;
+            file.write_all(&len.to_le_bytes())
+                .map_err(|e| ServiceError::SendFailed(format!("Failed to write length: {}", e)))?;
+            file.write_all(&request_json)
+                .map_err(|e| ServiceError::SendFailed(format!("Failed to write request: {}", e)))?;
+            file.flush()
+                .map_err(|e| ServiceError::SendFailed(format!("Failed to flush: {}", e)))?;
 
             // Read response length
             let mut len_buf = [0u8; 4];
@@ -365,7 +358,9 @@ impl ServiceClient {
     }
 
     /// Get the current recording state.
-    pub async fn get_recording_state(&self) -> Result<omnirec_common::RecordingState, ServiceError> {
+    pub async fn get_recording_state(
+        &self,
+    ) -> Result<omnirec_common::RecordingState, ServiceError> {
         match self.request(Request::GetRecordingState).await? {
             Response::RecordingState { state } => Ok(state),
             other => Err(ServiceError::ServiceError(format!(
@@ -663,9 +658,16 @@ impl ServiceClient {
     }
 
     /// Set transcription configuration.
-    pub async fn set_transcription_config(&self, enabled: bool) -> Result<(), ServiceError> {
+    pub async fn set_transcription_config(
+        &self,
+        enabled: bool,
+        model_path: Option<String>,
+    ) -> Result<(), ServiceError> {
         match self
-            .request(Request::SetTranscriptionConfig { enabled })
+            .request(Request::SetTranscriptionConfig {
+                enabled,
+                model_path,
+            })
             .await?
         {
             Response::Ok => Ok(()),
@@ -732,7 +734,9 @@ impl ServiceClient {
             .stdout(std::process::Stdio::inherit())
             .stderr(std::process::Stdio::inherit())
             .spawn()
-            .map_err(|e| ServiceError::ConnectionFailed(format!("Failed to spawn service: {}", e)))?;
+            .map_err(|e| {
+                ServiceError::ConnectionFailed(format!("Failed to spawn service: {}", e))
+            })?;
 
         // Wait for service to be ready
         self.wait_for_service(std::time::Duration::from_secs(10))

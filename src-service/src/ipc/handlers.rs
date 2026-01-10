@@ -52,7 +52,10 @@ pub async fn handle_request(request: Request) -> Response {
                 width, height, monitor_id
             );
             let manager = get_recording_manager();
-            match manager.start_display_capture(monitor_id, width, height).await {
+            match manager
+                .start_display_capture(monitor_id, width, height)
+                .await
+            {
                 Ok(()) => Response::RecordingStarted,
                 Err(e) => {
                     error!("Failed to start display capture: {}", e);
@@ -163,8 +166,10 @@ pub async fn handle_request(request: Request) -> Response {
             microphone_id,
             echo_cancellation,
         } => {
-            info!("SetAudioConfig: enabled={}, source={:?}, mic={:?}, aec={}", 
-                enabled, source_id, microphone_id, echo_cancellation);
+            info!(
+                "SetAudioConfig: enabled={}, source={:?}, mic={:?}, aec={}",
+                enabled, source_id, microphone_id, echo_cancellation
+            );
             let config = AudioConfig {
                 enabled,
                 source_id,
@@ -245,7 +250,12 @@ pub async fn handle_request(request: Request) -> Response {
             // Get window geometry and show highlight
             let windows = capture::list_windows();
             if let Some(window) = windows.iter().find(|w| w.handle == window_handle) {
-                capture::show_highlight(window.x, window.y, window.width as i32, window.height as i32);
+                capture::show_highlight(
+                    window.x,
+                    window.y,
+                    window.width as i32,
+                    window.height as i32,
+                );
                 Response::ok()
             } else {
                 Response::error("Window not found")
@@ -313,9 +323,18 @@ pub async fn handle_request(request: Request) -> Response {
             let config = manager.get_transcription_config().await;
             Response::TranscriptionConfig(config)
         }
-        Request::SetTranscriptionConfig { enabled } => {
-            info!("SetTranscriptionConfig: enabled={}", enabled);
-            let config = TranscriptionConfig { enabled };
+        Request::SetTranscriptionConfig {
+            enabled,
+            model_path,
+        } => {
+            info!(
+                "SetTranscriptionConfig: enabled={}, model_path={:?}",
+                enabled, model_path
+            );
+            let config = TranscriptionConfig {
+                enabled,
+                model_path,
+            };
             let manager = get_recording_manager();
             match manager.set_transcription_config(config).await {
                 Ok(()) => Response::ok(),

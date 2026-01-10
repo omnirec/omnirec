@@ -12,7 +12,7 @@ use std::sync::Mutex;
 
 use once_cell::sync::Lazy;
 use wayland_client::protocol::{wl_buffer, wl_output, wl_registry, wl_shm, wl_shm_pool};
-use wayland_client::{delegate_noop, Connection, Dispatch, EventQueue, QueueHandle, Proxy};
+use wayland_client::{delegate_noop, Connection, Dispatch, EventQueue, Proxy, QueueHandle};
 use wayland_protocols_wlr::screencopy::v1::client::{
     zwlr_screencopy_frame_v1, zwlr_screencopy_manager_v1,
 };
@@ -53,7 +53,7 @@ struct ScreencopyState {
     shm: Option<wl_shm::WlShm>,
     screencopy_manager: Option<zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1>,
     outputs: Vec<OutputInfo>,
-    
+
     // Frame capture state (reset per capture)
     frame_format: Option<wl_shm::Format>,
     frame_width: u32,
@@ -77,7 +77,7 @@ impl ScreencopyState {
             frame_failed: false,
         }
     }
-    
+
     /// Reset frame capture state for a new capture.
     fn reset_frame_state(&mut self) {
         self.frame_format = None;
@@ -87,7 +87,7 @@ impl ScreencopyState {
         self.frame_ready = false;
         self.frame_failed = false;
     }
-    
+
     /// Find output by name (monitor ID like "DP-1").
     fn find_output_by_name(&self, name: &str) -> Option<&OutputInfo> {
         self.outputs.iter().find(|o| o.done && o.name == name)
@@ -104,49 +104,53 @@ pub fn init() -> Result<(), String> {
 }
 
 /// Initialize or get the cached Wayland connection.
-fn get_or_init_connection() -> Result<std::sync::MutexGuard<'static, Option<WaylandConnection>>, String> {
-    let mut guard = WAYLAND_CONNECTION.lock().map_err(|e| format!("Lock poisoned: {}", e))?;
-    
+fn get_or_init_connection(
+) -> Result<std::sync::MutexGuard<'static, Option<WaylandConnection>>, String> {
+    let mut guard = WAYLAND_CONNECTION
+        .lock()
+        .map_err(|e| format!("Lock poisoned: {}", e))?;
+
     if guard.is_none() {
-        
         // Connect to Wayland display
         let conn = Connection::connect_to_env()
             .map_err(|e| format!("Failed to connect to Wayland display: {}", e))?;
-        
+
         let mut event_queue = conn.new_event_queue();
         let qh = event_queue.handle();
-        
+
         // Get the display and create registry
         let display = conn.display();
         display.get_registry(&qh, ());
-        
+
         // Initial state
         let mut state = ScreencopyState::new();
-        
+
         // Roundtrip to get globals
-        event_queue.roundtrip(&mut state)
+        event_queue
+            .roundtrip(&mut state)
             .map_err(|e| format!("Wayland roundtrip failed: {}", e))?;
-        
+
         // Another roundtrip to get output info
-        event_queue.roundtrip(&mut state)
+        event_queue
+            .roundtrip(&mut state)
             .map_err(|e| format!("Wayland roundtrip failed: {}", e))?;
-        
+
         // Verify we have what we need
         if state.screencopy_manager.is_none() {
             return Err("Compositor does not support wlr-screencopy protocol".to_string());
         }
-        
+
         if state.shm.is_none() {
             return Err("SHM global not found".to_string());
         }
-        
+
         *guard = Some(WaylandConnection {
             conn,
             event_queue,
             state,
         });
     }
-    
+
     Ok(guard)
 }
 
@@ -156,45 +160,52 @@ fn get_or_init_connection() -> Result<std::sync::MutexGuard<'static, Option<Wayl
 pub fn capture_output(monitor_name: &str) -> Result<ScreencopyFrame, String> {
     let mut guard = get_or_init_connection()?;
     let wl_conn = guard.as_mut().ok_or("Connection not initialized")?;
-    
+
     let qh = wl_conn.event_queue.handle();
-    
+
     // Reset frame state for new capture
     wl_conn.state.reset_frame_state();
-    
+
     // Find the target output
-    let output = wl_conn.state.find_output_by_name(monitor_name)
+    let output = wl_conn
+        .state
+        .find_output_by_name(monitor_name)
         .ok_or_else(|| format!("Output '{}' not found", monitor_name))?
-        .output.clone();
-    
+        .output
+        .clone();
+
     // Get globals we need
-    let screencopy_manager = wl_conn.state.screencopy_manager.clone()
+    let screencopy_manager = wl_conn
+        .state
+        .screencopy_manager
+        .clone()
         .ok_or("Screencopy manager not available")?;
-    let shm = wl_conn.state.shm.clone()
-        .ok_or("SHM not available")?;
-    
+    let shm = wl_conn.state.shm.clone().ok_or("SHM not available")?;
+
     // Request a frame capture (overlay_cursor = 1 to include cursor)
     let frame = screencopy_manager.capture_output(1, &output, &qh, ());
-    
+
     // Roundtrip to get buffer event with format/size
-    wl_conn.event_queue.roundtrip(&mut wl_conn.state)
+    wl_conn
+        .event_queue
+        .roundtrip(&mut wl_conn.state)
         .map_err(|e| format!("Wayland roundtrip failed: {}", e))?;
-    
+
     // Check if we got buffer info
     if wl_conn.state.frame_format.is_none() {
         frame.destroy();
         return Err("Did not receive buffer format from compositor".to_string());
     }
-    
+
     let format = wl_conn.state.frame_format.unwrap();
     let width = wl_conn.state.frame_width;
     let height = wl_conn.state.frame_height;
     let stride = wl_conn.state.frame_stride;
     let size = (stride * height) as usize;
-    
+
     // Create SHM buffer
     let fd = create_shm_fd(size)?;
-    
+
     // Create SHM pool and buffer
     let pool = shm.create_pool(fd.as_fd(), size as i32, &qh, ());
     let buffer = pool.create_buffer(
@@ -206,23 +217,25 @@ pub fn capture_output(monitor_name: &str) -> Result<ScreencopyFrame, String> {
         &qh,
         (),
     );
-    
+
     // Copy frame to buffer
     frame.copy(&buffer);
-    
+
     // Wait for ready or failed event
     while !wl_conn.state.frame_ready && !wl_conn.state.frame_failed {
-        wl_conn.event_queue.blocking_dispatch(&mut wl_conn.state)
+        wl_conn
+            .event_queue
+            .blocking_dispatch(&mut wl_conn.state)
             .map_err(|e| format!("Dispatch failed: {}", e))?;
     }
-    
+
     if wl_conn.state.frame_failed {
         frame.destroy();
         buffer.destroy();
         pool.destroy();
         return Err("Frame capture failed".to_string());
     }
-    
+
     // Read the frame data from shared memory
     let frame_data = unsafe {
         let ptr = libc::mmap(
@@ -233,29 +246,29 @@ pub fn capture_output(monitor_name: &str) -> Result<ScreencopyFrame, String> {
             fd.as_fd().as_raw_fd(),
             0,
         );
-        
+
         if ptr == libc::MAP_FAILED {
             frame.destroy();
             buffer.destroy();
             pool.destroy();
             return Err("mmap for read failed".to_string());
         }
-        
+
         let mut data = vec![0u8; size];
         std::ptr::copy_nonoverlapping(ptr as *const u8, data.as_mut_ptr(), size);
-        
+
         libc::munmap(ptr, size);
         data
     };
-    
+
     // Convert to BGRA if needed
     let bgra_data = convert_to_bgra(&frame_data, width, height, stride, format)?;
-    
+
     // Cleanup
     frame.destroy();
     buffer.destroy();
     pool.destroy();
-    
+
     Ok(ScreencopyFrame {
         data: bgra_data,
         width,
@@ -266,22 +279,20 @@ pub fn capture_output(monitor_name: &str) -> Result<ScreencopyFrame, String> {
 /// Create a file descriptor for shared memory.
 fn create_shm_fd(size: usize) -> Result<OwnedFd, String> {
     use std::os::fd::FromRawFd;
-    
+
     let name = std::ffi::CString::new("omnirec-screencopy").unwrap();
-    let fd = unsafe {
-        libc::memfd_create(name.as_ptr(), libc::MFD_CLOEXEC)
-    };
-    
+    let fd = unsafe { libc::memfd_create(name.as_ptr(), libc::MFD_CLOEXEC) };
+
     if fd < 0 {
         return Err("memfd_create failed".to_string());
     }
-    
+
     let fd = unsafe { OwnedFd::from_raw_fd(fd) };
-    
+
     if unsafe { libc::ftruncate(fd.as_fd().as_raw_fd(), size as i64) } < 0 {
         return Err("ftruncate failed".to_string());
     }
-    
+
     Ok(fd)
 }
 
@@ -295,7 +306,7 @@ fn convert_to_bgra(
 ) -> Result<Vec<u8>, String> {
     let pixel_count = (width * height) as usize;
     let mut bgra = vec![0u8; pixel_count * 4];
-    
+
     match format {
         // Already BGRA or BGRx - just copy (removing stride padding if any)
         wl_shm::Format::Argb8888 | wl_shm::Format::Xrgb8888 => {
@@ -313,9 +324,9 @@ fn convert_to_bgra(
                 for x in 0..width as usize {
                     let src_idx = y * stride as usize + x * 4;
                     let dst_idx = (y * width as usize + x) * 4;
-                    bgra[dst_idx] = data[src_idx + 2];     // B <- R
+                    bgra[dst_idx] = data[src_idx + 2]; // B <- R
                     bgra[dst_idx + 1] = data[src_idx + 1]; // G
-                    bgra[dst_idx + 2] = data[src_idx];     // R <- B
+                    bgra[dst_idx + 2] = data[src_idx]; // R <- B
                     bgra[dst_idx + 3] = data[src_idx + 3]; // A
                 }
             }
@@ -324,7 +335,7 @@ fn convert_to_bgra(
             return Err(format!("Unsupported pixel format: {:?}", format));
         }
     }
-    
+
     Ok(bgra)
 }
 
@@ -339,33 +350,30 @@ impl Dispatch<wl_registry::WlRegistry, ()> for ScreencopyState {
         _conn: &Connection,
         qh: &QueueHandle<Self>,
     ) {
-        if let wl_registry::Event::Global { name, interface, version } = event {
+        if let wl_registry::Event::Global {
+            name,
+            interface,
+            version,
+        } = event
+        {
             match interface.as_str() {
                 "wl_shm" => {
-                    let shm = registry.bind::<wl_shm::WlShm, _, _>(
-                        name,
-                        version.min(1),
-                        qh,
-                        (),
-                    );
+                    let shm = registry.bind::<wl_shm::WlShm, _, _>(name, version.min(1), qh, ());
                     state.shm = Some(shm);
                 }
                 "zwlr_screencopy_manager_v1" => {
-                    let manager = registry.bind::<zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1, _, _>(
-                        name,
-                        version.min(3),
-                        qh,
-                        (),
-                    );
+                    let manager = registry
+                        .bind::<zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1, _, _>(
+                            name,
+                            version.min(3),
+                            qh,
+                            (),
+                        );
                     state.screencopy_manager = Some(manager);
                 }
                 "wl_output" => {
-                    let output = registry.bind::<wl_output::WlOutput, _, _>(
-                        name,
-                        version.min(4),
-                        qh,
-                        name,
-                    );
+                    let output =
+                        registry.bind::<wl_output::WlOutput, _, _>(name, version.min(4), qh, name);
                     state.outputs.push(OutputInfo {
                         output,
                         name: String::new(),
@@ -389,11 +397,19 @@ impl Dispatch<wl_output::WlOutput, u32> for ScreencopyState {
         _conn: &Connection,
         _qh: &QueueHandle<Self>,
     ) {
-        let output_info = state.outputs.iter_mut().find(|o| o.output.id() == output.id());
-        
+        let output_info = state
+            .outputs
+            .iter_mut()
+            .find(|o| o.output.id() == output.id());
+
         if let Some(info) = output_info {
             match event {
-                wl_output::Event::Mode { width, height, flags, .. } => {
+                wl_output::Event::Mode {
+                    width,
+                    height,
+                    flags,
+                    ..
+                } => {
                     use wayland_client::WEnum;
                     if let WEnum::Value(mode_flags) = flags {
                         if mode_flags.contains(wl_output::Mode::Current) {
@@ -424,7 +440,12 @@ impl Dispatch<zwlr_screencopy_frame_v1::ZwlrScreencopyFrameV1, ()> for Screencop
         _qh: &QueueHandle<Self>,
     ) {
         match event {
-            zwlr_screencopy_frame_v1::Event::Buffer { format, width, height, stride } => {
+            zwlr_screencopy_frame_v1::Event::Buffer {
+                format,
+                width,
+                height,
+                stride,
+            } => {
                 use wayland_client::WEnum;
                 if let WEnum::Value(fmt) = format {
                     state.frame_format = Some(fmt);
@@ -456,7 +477,7 @@ delegate_noop!(ScreencopyState: ignore zwlr_screencopy_manager_v1::ZwlrScreencop
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_capture_output_no_display() {
         // This test verifies error handling when not connected to Wayland

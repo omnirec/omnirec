@@ -35,10 +35,7 @@ pub fn is_system_audio_available() -> bool {
 fn is_macos_13_or_later() -> bool {
     use std::process::Command;
 
-    let output = Command::new("sw_vers")
-        .arg("-productVersion")
-        .output()
-        .ok();
+    let output = Command::new("sw_vers").arg("-productVersion").output().ok();
 
     if let Some(output) = output {
         if let Ok(version_str) = String::from_utf8(output.stdout) {

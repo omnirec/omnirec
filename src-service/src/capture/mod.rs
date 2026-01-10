@@ -12,12 +12,12 @@ pub mod thumbnail;
 pub mod types;
 
 // Platform-specific modules
-#[cfg(target_os = "windows")]
-pub mod windows;
 #[cfg(target_os = "linux")]
 pub mod linux;
 #[cfg(target_os = "macos")]
 pub mod macos;
+#[cfg(target_os = "windows")]
+pub mod windows;
 
 // Re-export common types from omnirec-common for IPC
 pub use omnirec_common::{
@@ -39,12 +39,12 @@ pub use thumbnail::{
 };
 
 // Platform-specific backend aliases
-#[cfg(target_os = "windows")]
-pub use windows::WindowsBackend as PlatformBackend;
 #[cfg(target_os = "linux")]
 pub use linux::LinuxBackend as PlatformBackend;
 #[cfg(target_os = "macos")]
 pub use macos::MacOSBackend as PlatformBackend;
+#[cfg(target_os = "windows")]
+pub use windows::WindowsBackend as PlatformBackend;
 
 /// Trait for window enumeration operations.
 pub trait WindowEnumerator: Send + Sync {

@@ -77,7 +77,10 @@ pub async fn list_windows(json: bool, quiet: bool) -> ExitCode {
         }
         Ok(other) => {
             if !quiet {
-                eprintln!("{}", colors::error(&format!("Unexpected response: {:?}", other)));
+                eprintln!(
+                    "{}",
+                    colors::error(&format!("Unexpected response: {:?}", other))
+                );
             }
             ExitCode::GeneralError
         }
@@ -162,7 +165,10 @@ pub async fn list_displays(json: bool, quiet: bool) -> ExitCode {
         }
         Ok(other) => {
             if !quiet {
-                eprintln!("{}", colors::error(&format!("Unexpected response: {:?}", other)));
+                eprintln!(
+                    "{}",
+                    colors::error(&format!("Unexpected response: {:?}", other))
+                );
             }
             ExitCode::GeneralError
         }
@@ -195,12 +201,7 @@ pub async fn list_audio(json: bool, quiet: bool) -> ExitCode {
                     println!("{}", colors::dim("No audio sources found."));
                 }
             } else {
-                let id_width = sources
-                    .iter()
-                    .map(|s| s.id.len())
-                    .max()
-                    .unwrap_or(2)
-                    .max(2);
+                let id_width = sources.iter().map(|s| s.id.len()).max().unwrap_or(2).max(2);
 
                 // Separate by type
                 let outputs: Vec<_> = sources
@@ -214,20 +215,36 @@ pub async fn list_audio(json: bool, quiet: bool) -> ExitCode {
 
                 if !outputs.is_empty() {
                     println!("{}", colors::bold("System Audio (--audio):"));
-                    println!("{}  {}", colors::pad_left("ID", id_width, colors::header), colors::header("NAME"));
+                    println!(
+                        "{}  {}",
+                        colors::pad_left("ID", id_width, colors::header),
+                        colors::header("NAME")
+                    );
                     println!("{}  ----", "-".repeat(id_width));
                     for source in outputs {
-                        println!("{}  {}", colors::pad_left(&source.id, id_width, colors::number), source.name);
+                        println!(
+                            "{}  {}",
+                            colors::pad_left(&source.id, id_width, colors::number),
+                            source.name
+                        );
                     }
                     println!();
                 }
 
                 if !inputs.is_empty() {
                     println!("{}", colors::bold("Microphones (--microphone):"));
-                    println!("{}  {}", colors::pad_left("ID", id_width, colors::header), colors::header("NAME"));
+                    println!(
+                        "{}  {}",
+                        colors::pad_left("ID", id_width, colors::header),
+                        colors::header("NAME")
+                    );
                     println!("{}  ----", "-".repeat(id_width));
                     for source in inputs {
-                        println!("{}  {}", colors::pad_left(&source.id, id_width, colors::number), source.name);
+                        println!(
+                            "{}  {}",
+                            colors::pad_left(&source.id, id_width, colors::number),
+                            source.name
+                        );
                     }
                 }
             }
@@ -235,7 +252,10 @@ pub async fn list_audio(json: bool, quiet: bool) -> ExitCode {
         }
         Ok(other) => {
             if !quiet {
-                eprintln!("{}", colors::error(&format!("Unexpected response: {:?}", other)));
+                eprintln!(
+                    "{}",
+                    colors::error(&format!("Unexpected response: {:?}", other))
+                );
             }
             ExitCode::GeneralError
         }
@@ -260,7 +280,8 @@ pub async fn record(target: RecordTarget, json: bool, quiet: bool, verbose: bool
                             "{}",
                             colors::error(&format!(
                                 "Window selection not supported on {} (portal-mode desktop).",
-                                platform::desktop_name().unwrap_or_else(|| "this desktop".to_string())
+                                platform::desktop_name()
+                                    .unwrap_or_else(|| "this desktop".to_string())
                             ))
                         );
                         eprintln!("Use 'omnirec record portal' or remove --strict to fall back to portal.");
@@ -278,7 +299,12 @@ pub async fn record(target: RecordTarget, json: bool, quiet: bool, verbose: bool
                 }
                 (options, Request::StartPortalCapture)
             } else {
-                (options, Request::StartWindowCapture { window_handle: *handle })
+                (
+                    options,
+                    Request::StartWindowCapture {
+                        window_handle: *handle,
+                    },
+                )
             }
         }
         RecordTarget::Display { id, options } => {
@@ -289,7 +315,8 @@ pub async fn record(target: RecordTarget, json: bool, quiet: bool, verbose: bool
                             "{}",
                             colors::error(&format!(
                                 "Display selection not supported on {} (portal-mode desktop).",
-                                platform::desktop_name().unwrap_or_else(|| "this desktop".to_string())
+                                platform::desktop_name()
+                                    .unwrap_or_else(|| "this desktop".to_string())
                             ))
                         );
                         eprintln!("Use 'omnirec record portal' or remove --strict to fall back to portal.");
@@ -322,8 +349,13 @@ pub async fn record(target: RecordTarget, json: bool, quiet: bool, verbose: bool
                             Some(monitor) => (monitor.width, monitor.height),
                             None => {
                                 if !quiet {
-                                    eprintln!("{}", colors::error(&format!("Display '{}' not found.", id)));
-                                    eprintln!("Use 'omnirec list displays' to see available displays.");
+                                    eprintln!(
+                                        "{}",
+                                        colors::error(&format!("Display '{}' not found.", id))
+                                    );
+                                    eprintln!(
+                                        "Use 'omnirec list displays' to see available displays."
+                                    );
                                 }
                                 return ExitCode::InvalidArguments;
                             }
@@ -331,7 +363,10 @@ pub async fn record(target: RecordTarget, json: bool, quiet: bool, verbose: bool
                     }
                     Ok(_) => {
                         if !quiet {
-                            eprintln!("{}", colors::error("Unexpected response when listing displays."));
+                            eprintln!(
+                                "{}",
+                                colors::error("Unexpected response when listing displays.")
+                            );
                         }
                         return ExitCode::GeneralError;
                     }
@@ -368,7 +403,8 @@ pub async fn record(target: RecordTarget, json: bool, quiet: bool, verbose: bool
                             "{}",
                             colors::error(&format!(
                                 "Region selection not supported on {} (portal-mode desktop).",
-                                platform::desktop_name().unwrap_or_else(|| "this desktop".to_string())
+                                platform::desktop_name()
+                                    .unwrap_or_else(|| "this desktop".to_string())
                             ))
                         );
                         eprintln!("Use 'omnirec record portal' or remove --strict to fall back to portal.");
@@ -401,7 +437,10 @@ pub async fn record(target: RecordTarget, json: bool, quiet: bool, verbose: bool
         RecordTarget::Portal { options } => {
             if !platform::is_portal_supported() {
                 if !quiet {
-                    eprintln!("{}", colors::error("Portal-based recording is not supported on this platform."));
+                    eprintln!(
+                        "{}",
+                        colors::error("Portal-based recording is not supported on this platform.")
+                    );
                     eprintln!("Use 'omnirec record window', 'display', or 'region' instead.");
                 }
                 return ExitCode::GeneralError;
@@ -436,7 +475,10 @@ pub async fn record(target: RecordTarget, json: bool, quiet: bool, verbose: bool
     // Health check
     if let Err(e) = client.ping().await {
         if !quiet {
-            eprintln!("{}", colors::error(&format!("Service health check failed: {}", e)));
+            eprintln!(
+                "{}",
+                colors::error(&format!("Service health check failed: {}", e))
+            );
         }
         return ExitCode::ServiceConnectionFailed;
     }
@@ -449,11 +491,7 @@ pub async fn record(target: RecordTarget, json: bool, quiet: bool, verbose: bool
     if options.audio.is_some() || options.microphone.is_some() {
         let audio_enabled = options.audio.as_deref() != Some("none")
             || options.microphone.as_deref() != Some("none");
-        let source_id = options
-            .audio
-            .as_ref()
-            .filter(|s| *s != "none")
-            .cloned();
+        let source_id = options.audio.as_ref().filter(|s| *s != "none").cloned();
         let microphone_id = options
             .microphone
             .as_ref()
@@ -470,7 +508,10 @@ pub async fn record(target: RecordTarget, json: bool, quiet: bool, verbose: bool
             .await
         {
             if !quiet {
-                eprintln!("{}", colors::warning(&format!("Failed to configure audio: {}", e)));
+                eprintln!(
+                    "{}",
+                    colors::warning(&format!("Failed to configure audio: {}", e))
+                );
             }
         } else if verbose && !quiet {
             eprintln!("{}", colors::info("Audio configured."));
@@ -486,10 +527,16 @@ pub async fn record(target: RecordTarget, json: bool, quiet: bool, verbose: bool
             .await
         {
             if !quiet {
-                eprintln!("{}", colors::warning(&format!("Failed to set output format: {}", e)));
+                eprintln!(
+                    "{}",
+                    colors::warning(&format!("Failed to set output format: {}", e))
+                );
             }
         } else if verbose && !quiet {
-            eprintln!("{}", colors::info(&format!("Output format set to {}.", options.format)));
+            eprintln!(
+                "{}",
+                colors::info(&format!("Output format set to {}.", options.format))
+            );
         }
     }
 
@@ -506,13 +553,19 @@ pub async fn record(target: RecordTarget, json: bool, quiet: bool, verbose: bool
         }
         Ok(other) => {
             if !quiet {
-                eprintln!("{}", colors::error(&format!("Unexpected response: {:?}", other)));
+                eprintln!(
+                    "{}",
+                    colors::error(&format!("Unexpected response: {:?}", other))
+                );
             }
             return ExitCode::RecordingFailedToStart;
         }
         Err(e) => {
             if !quiet {
-                eprintln!("{}", colors::error(&format!("Error starting recording: {}", e)));
+                eprintln!(
+                    "{}",
+                    colors::error(&format!("Error starting recording: {}", e))
+                );
             }
             return ExitCode::RecordingFailedToStart;
         }
@@ -521,7 +574,10 @@ pub async fn record(target: RecordTarget, json: bool, quiet: bool, verbose: bool
     // Subscribe to events
     if let Err(e) = client.request(Request::SubscribeEvents).await {
         if verbose && !quiet {
-            eprintln!("{}", colors::warning(&format!("Failed to subscribe to events: {}", e)));
+            eprintln!(
+                "{}",
+                colors::warning(&format!("Failed to subscribe to events: {}", e))
+            );
         }
     }
 
@@ -532,10 +588,12 @@ pub async fn record(target: RecordTarget, json: bool, quiet: bool, verbose: bool
     #[cfg(unix)]
     {
         tokio::spawn(async move {
-            let mut sigint = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
-                .expect("Failed to set up SIGINT handler");
-            let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-                .expect("Failed to set up SIGTERM handler");
+            let mut sigint =
+                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
+                    .expect("Failed to set up SIGINT handler");
+            let mut sigterm =
+                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                    .expect("Failed to set up SIGTERM handler");
 
             tokio::select! {
                 _ = sigint.recv() => {}
@@ -575,7 +633,10 @@ pub async fn record(target: RecordTarget, json: bool, quiet: bool, verbose: bool
         if let Some(limit) = duration_limit {
             if start_time.elapsed() >= limit {
                 if !quiet && !json {
-                    eprintln!("\n{}", colors::info("Duration limit reached. Stopping recording..."));
+                    eprintln!(
+                        "\n{}",
+                        colors::info("Duration limit reached. Stopping recording...")
+                    );
                 }
                 break;
             }
@@ -590,11 +651,17 @@ pub async fn record(target: RecordTarget, json: bool, quiet: bool, verbose: bool
                     last_elapsed = seconds;
                     let mins = seconds / 60;
                     let secs = seconds % 60;
-                    print!("\r{} {}", colors::recording("Recording:"), colors::elapsed_time(mins, secs));
+                    print!(
+                        "\r{} {}",
+                        colors::recording("Recording:"),
+                        colors::elapsed_time(mins, secs)
+                    );
                     std::io::stdout().flush().ok();
                 }
             }
-            Ok(Response::RecordingState { state: RecordingState::Idle }) => {
+            Ok(Response::RecordingState {
+                state: RecordingState::Idle,
+            }) => {
                 // Recording was stopped externally
                 if !quiet && !json {
                     eprintln!("\n{}", colors::info("Recording stopped externally."));
@@ -634,13 +701,19 @@ pub async fn record(target: RecordTarget, json: bool, quiet: bool, verbose: bool
         }
         Ok(other) => {
             if !quiet {
-                eprintln!("\n{}", colors::error(&format!("Unexpected response when stopping: {:?}", other)));
+                eprintln!(
+                    "\n{}",
+                    colors::error(&format!("Unexpected response when stopping: {:?}", other))
+                );
             }
             ExitCode::RecordingFailedDuringCapture
         }
         Err(e) => {
             if !quiet {
-                eprintln!("\n{}", colors::error(&format!("Error stopping recording: {}", e)));
+                eprintln!(
+                    "\n{}",
+                    colors::error(&format!("Error stopping recording: {}", e))
+                );
             }
             ExitCode::RecordingFailedDuringCapture
         }
@@ -669,7 +742,11 @@ pub async fn stop(json: bool, quiet: bool) -> ExitCode {
                     file_path.replace('\\', "\\\\").replace('"', "\\\"")
                 );
             } else if !quiet {
-                println!("{} {}", colors::success("Recording saved:"), colors::path(&file_path));
+                println!(
+                    "{} {}",
+                    colors::success("Recording saved:"),
+                    colors::path(&file_path)
+                );
             }
             ExitCode::Success
         }
@@ -683,7 +760,10 @@ pub async fn stop(json: bool, quiet: bool) -> ExitCode {
         }
         Ok(other) => {
             if !quiet {
-                eprintln!("{}", colors::error(&format!("Unexpected response: {:?}", other)));
+                eprintln!(
+                    "{}",
+                    colors::error(&format!("Unexpected response: {:?}", other))
+                );
             }
             ExitCode::GeneralError
         }
@@ -730,7 +810,11 @@ pub async fn status(json: bool) -> ExitCode {
                             let mins = seconds / 60;
                             let secs = seconds % 60;
                             println!("{} {}", colors::bold("State:"), colors::state(state_str));
-                            println!("{} {}", colors::bold("Elapsed:"), colors::elapsed_time(mins, secs));
+                            println!(
+                                "{} {}",
+                                colors::bold("Elapsed:"),
+                                colors::elapsed_time(mins, secs)
+                            );
                         }
                     }
                     _ => {
@@ -752,7 +836,10 @@ pub async fn status(json: bool) -> ExitCode {
             if json {
                 println!(r#"{{"error": "unexpected_response"}}"#);
             } else {
-                eprintln!("{}", colors::error(&format!("Unexpected response: {:?}", other)));
+                eprintln!(
+                    "{}",
+                    colors::error(&format!("Unexpected response: {:?}", other))
+                );
             }
             ExitCode::GeneralError
         }

@@ -186,10 +186,7 @@ pub async fn set_tray_recording_state(
     app: tauri::AppHandle,
     recording: bool,
 ) -> Result<(), String> {
-    tracing::debug!(
-        "set_tray_recording_state: recording={}",
-        recording
-    );
+    tracing::debug!("set_tray_recording_state: recording={}", recording);
 
     #[cfg(target_os = "linux")]
     {
@@ -238,14 +235,10 @@ pub async fn stop_recording(
 ) -> Result<RecordingResult, String> {
     // Stop recording via IPC and get file paths
     // The service handles transcoding internally if a non-MP4 format is configured
-    let (file_path, source_path) = state
-        .service_client
-        .stop_recording()
-        .await
-        .map_err(|e| {
-            tracing::error!("stop_recording error: {}", e);
-            e.to_string()
-        })?;
+    let (file_path, source_path) = state.service_client.stop_recording().await.map_err(|e| {
+        tracing::error!("stop_recording error: {}", e);
+        e.to_string()
+    })?;
 
     Ok(RecordingResult {
         success: true,

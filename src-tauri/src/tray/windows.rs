@@ -133,10 +133,14 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let is_recording = Arc::new(AtomicBool::new(false));
 
     // Create menu items
-    let record_item =
-        MenuItem::with_id(app, menu_ids::RECORD, menu_labels::RECORD, true, None::<&str>)?;
-    let stop_item =
-        MenuItem::with_id(app, menu_ids::STOP, menu_labels::STOP, false, None::<&str>)?;
+    let record_item = MenuItem::with_id(
+        app,
+        menu_ids::RECORD,
+        menu_labels::RECORD,
+        true,
+        None::<&str>,
+    )?;
+    let stop_item = MenuItem::with_id(app, menu_ids::STOP, menu_labels::STOP, false, None::<&str>)?;
     let configuration = MenuItem::with_id(
         app,
         menu_ids::CONFIGURATION,
@@ -287,9 +291,7 @@ pub fn set_recording_state(app: &tauri::AppHandle, recording: bool) {
 /// Load normal icon using AppHandle (for runtime updates).
 fn load_normal_tray_icon_from_handle(app: &tauri::AppHandle) -> Image<'static> {
     load_tray_icon_from_paths(app.path().resource_dir().ok(), icon_names::COLOR_32)
-        .or_else(|| {
-            load_tray_icon_from_paths(app.path().resource_dir().ok(), icon_names::COLOR_64)
-        })
+        .or_else(|| load_tray_icon_from_paths(app.path().resource_dir().ok(), icon_names::COLOR_64))
         .or_else(|| {
             load_tray_icon_from_paths(app.path().resource_dir().ok(), icon_names::COLOR_128)
         })

@@ -283,10 +283,9 @@ pub fn start_audio_capture(source_id: &str) -> Result<(AudioReceiver, StopHandle
         CaptureError::AudioError(format!("Failed to enumerate audio sources: {:?}", e))
     })?;
 
-    let source = sources
-        .iter()
-        .find(|s| s.id == source_id)
-        .ok_or_else(|| CaptureError::AudioError(format!("Audio device not found: {}", source_id)))?;
+    let source = sources.iter().find(|s| s.id == source_id).ok_or_else(|| {
+        CaptureError::AudioError(format!("Audio device not found: {}", source_id))
+    })?;
 
     let is_loopback = source.source_type == AudioSourceType::Output;
     let source_id_owned = source_id.to_string();
@@ -374,7 +373,10 @@ fn run_capture_loop(
         let device_format = AudioFormat::from_waveformatex(mix_format_ptr);
         eprintln!(
             "[Audio] Device native format: {}Hz, {} channels, {} bits, float={}",
-            device_format.sample_rate, device_format.channels, device_format.bits_per_sample, device_format.is_float
+            device_format.sample_rate,
+            device_format.channels,
+            device_format.bits_per_sample,
+            device_format.is_float
         );
 
         // Create event for buffer notification
@@ -406,7 +408,7 @@ fn run_capture_loop(
 
         // Keep a copy of the format info before freeing
         let capture_format = device_format.clone();
-        
+
         // Free the mix format
         CoTaskMemFree(Some(mix_format_ptr as *const _));
 
@@ -430,11 +432,14 @@ fn run_capture_loop(
         // Capture loop
         let mut total_frames_captured: u64 = 0;
         let mut last_log_time = std::time::Instant::now();
-        
+
         loop {
             // Check stop flag
             if stop_flag.load(Ordering::Relaxed) {
-                eprintln!("[Audio] Stop flag set, exiting capture loop (captured {} frames total)", total_frames_captured);
+                eprintln!(
+                    "[Audio] Stop flag set, exiting capture loop (captured {} frames total)",
+                    total_frames_captured
+                );
                 break;
             }
 
@@ -449,7 +454,10 @@ fn run_capture_loop(
             let packet_length = match capture_client.GetNextPacketSize() {
                 Ok(len) => len,
                 Err(e) => {
-                    eprintln!("[Audio] GetNextPacketSize failed: {:?}, device may be disconnected", e);
+                    eprintln!(
+                        "[Audio] GetNextPacketSize failed: {:?}, device may be disconnected",
+                        e
+                    );
                     break;
                 }
             };
@@ -478,10 +486,13 @@ fn run_capture_loop(
 
                 if num_frames > 0 && !buffer_ptr.is_null() {
                     total_frames_captured += num_frames as u64;
-                    
+
                     // Log progress periodically
                     if last_log_time.elapsed().as_secs() >= 2 {
-                        eprintln!("[Audio] Captured {} frames so far (silent={})", total_frames_captured, is_silent);
+                        eprintln!(
+                            "[Audio] Captured {} frames so far (silent={})",
+                            total_frames_captured, is_silent
+                        );
                         last_log_time = std::time::Instant::now();
                     }
 
@@ -500,7 +511,7 @@ fn run_capture_loop(
                     };
 
                     // Send to channel with target format info
-                    // Note: If device sample rate differs from TARGET_SAMPLE_RATE, 
+                    // Note: If device sample rate differs from TARGET_SAMPLE_RATE,
                     // the encoder will need to handle this
                     let sample = AudioSample {
                         data: samples,
@@ -841,7 +852,8 @@ impl AudioMixer {
         let frame_size = AEC_FRAME_SAMPLES * self.channels as usize;
 
         // Process capture frames when we have enough data from both sources
-        while self.capture_buffer.len() >= frame_size && self.render_mix_buffer.len() >= frame_size {
+        while self.capture_buffer.len() >= frame_size && self.render_mix_buffer.len() >= frame_size
+        {
             let capture_frame: Vec<f32> = self.capture_buffer.drain(0..frame_size).collect();
             let render_frame: Vec<f32> = self.render_mix_buffer.drain(0..frame_size).collect();
 
@@ -928,7 +940,13 @@ impl MultiCaptureManager {
 
         // Spawn mixer thread
         let mixer_thread = thread::spawn(move || {
-            run_mixer_thread(stream_rx, output_tx, num_streams, aec_enabled, mixer_stop_clone);
+            run_mixer_thread(
+                stream_rx,
+                output_tx,
+                num_streams,
+                aec_enabled,
+                mixer_stop_clone,
+            );
         });
 
         let mut stream1 = None;
@@ -1051,9 +1069,7 @@ fn run_stream_capture(
 ) {
     eprintln!(
         "[Audio] Stream {} capture thread started (device={}, loopback={})",
-        stream_index,
-        device_id,
-        is_loopback
+        stream_index, device_id, is_loopback
     );
 
     // Initialize COM for this thread
@@ -1069,7 +1085,13 @@ fn run_stream_capture(
     }
 
     // Run capture loop
-    if let Err(e) = run_stream_capture_loop(&device_id, is_loopback, stream_index, &stream_tx, &stop_flag) {
+    if let Err(e) = run_stream_capture_loop(
+        &device_id,
+        is_loopback,
+        stream_index,
+        &stream_tx,
+        &stop_flag,
+    ) {
         eprintln!("[Audio] Stream {} capture error: {}", stream_index, e);
     }
 
@@ -1164,7 +1186,10 @@ fn run_stream_capture_loop(
                 "[Audio] Stream {} resampling {}Hz -> {}Hz",
                 stream_index, capture_format.sample_rate, TARGET_SAMPLE_RATE
             );
-            Some(Resampler::new(capture_format.sample_rate, TARGET_SAMPLE_RATE))
+            Some(Resampler::new(
+                capture_format.sample_rate,
+                TARGET_SAMPLE_RATE,
+            ))
         } else {
             None
         };
@@ -1302,10 +1327,9 @@ pub fn start_audio_capture_dual(
     })?;
 
     let sys_id = if let Some(id) = system_source_id {
-        let source = sources
-            .iter()
-            .find(|s| s.id == id)
-            .ok_or_else(|| CaptureError::AudioError(format!("System audio device not found: {}", id)))?;
+        let source = sources.iter().find(|s| s.id == id).ok_or_else(|| {
+            CaptureError::AudioError(format!("System audio device not found: {}", id))
+        })?;
         if source.source_type != AudioSourceType::Output {
             return Err(CaptureError::AudioError(format!(
                 "Device {} is not an output device for system audio capture",
@@ -1318,10 +1342,9 @@ pub fn start_audio_capture_dual(
     };
 
     let mic_id = if let Some(id) = mic_source_id {
-        let source = sources
-            .iter()
-            .find(|s| s.id == id)
-            .ok_or_else(|| CaptureError::AudioError(format!("Microphone device not found: {}", id)))?;
+        let source = sources.iter().find(|s| s.id == id).ok_or_else(|| {
+            CaptureError::AudioError(format!("Microphone device not found: {}", id))
+        })?;
         if source.source_type != AudioSourceType::Input {
             return Err(CaptureError::AudioError(format!(
                 "Device {} is not an input device for microphone capture",
@@ -1448,9 +1471,8 @@ mod tests {
     fn test_convert_samples_f32_stereo() {
         // Test float32 stereo pass-through
         let input: Vec<f32> = vec![0.5, -0.5, 0.25, -0.25];
-        let input_bytes = unsafe {
-            std::slice::from_raw_parts(input.as_ptr() as *const u8, input.len() * 4)
-        };
+        let input_bytes =
+            unsafe { std::slice::from_raw_parts(input.as_ptr() as *const u8, input.len() * 4) };
 
         let output = convert_samples_to_f32(input_bytes.as_ptr(), 2, 2, 32, true);
         assert_eq!(output.len(), 4);
@@ -1462,9 +1484,8 @@ mod tests {
     fn test_convert_samples_i16_stereo() {
         // Test int16 stereo conversion
         let input: Vec<i16> = vec![16384, -16384, 8192, -8192]; // ~0.5, -0.5, 0.25, -0.25
-        let input_bytes = unsafe {
-            std::slice::from_raw_parts(input.as_ptr() as *const u8, input.len() * 2)
-        };
+        let input_bytes =
+            unsafe { std::slice::from_raw_parts(input.as_ptr() as *const u8, input.len() * 2) };
 
         let output = convert_samples_to_f32(input_bytes.as_ptr(), 2, 2, 16, false);
         assert_eq!(output.len(), 4);
@@ -1476,9 +1497,8 @@ mod tests {
     fn test_convert_samples_mono_to_stereo() {
         // Test mono to stereo duplication
         let input: Vec<f32> = vec![0.5, -0.5];
-        let input_bytes = unsafe {
-            std::slice::from_raw_parts(input.as_ptr() as *const u8, input.len() * 4)
-        };
+        let input_bytes =
+            unsafe { std::slice::from_raw_parts(input.as_ptr() as *const u8, input.len() * 4) };
 
         let output = convert_samples_to_f32(input_bytes.as_ptr(), 2, 1, 32, true);
         assert_eq!(output.len(), 4); // Mono expanded to stereo
@@ -1492,17 +1512,19 @@ mod tests {
     fn test_audio_capture_integration() {
         // Integration test: actually capture some audio
         let sources = list_audio_sources().expect("Failed to enumerate audio sources");
-        
+
         // Skip if no output devices (loopback capture targets)
-        let output_source = sources.iter().find(|s| s.source_type == AudioSourceType::Output);
+        let output_source = sources
+            .iter()
+            .find(|s| s.source_type == AudioSourceType::Output);
         if output_source.is_none() {
             eprintln!("[Test] No output audio sources found, skipping integration test");
             return;
         }
-        
+
         let source = output_source.unwrap();
         eprintln!("[Test] Testing capture with device: {}", source.name);
-        
+
         // Start capture
         let result = start_audio_capture(&source.id);
         if let Err(ref e) = result {
@@ -1510,26 +1532,23 @@ mod tests {
             // Don't fail the test - device may be in use
             return;
         }
-        
+
         let (mut rx, stop_flag) = result.unwrap();
-        
+
         // Capture for 500ms
         let start = std::time::Instant::now();
         let mut samples_received = 0u64;
         let mut frames_received = 0u32;
-        
+
         // Use a runtime for async operations
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_time()
             .build()
             .unwrap();
-        
+
         rt.block_on(async {
             while start.elapsed().as_millis() < 500 {
-                match tokio::time::timeout(
-                    std::time::Duration::from_millis(100),
-                    rx.recv()
-                ).await {
+                match tokio::time::timeout(std::time::Duration::from_millis(100), rx.recv()).await {
                     Ok(Some(sample)) => {
                         samples_received += sample.data.len() as u64;
                         frames_received += 1;
@@ -1544,17 +1563,17 @@ mod tests {
                 }
             }
         });
-        
+
         // Stop capture
         stop_flag.store(true, Ordering::Relaxed);
-        
+
         eprintln!(
             "[Test] Capture complete: {} samples in {} frames over {}ms",
             samples_received,
             frames_received,
             start.elapsed().as_millis()
         );
-        
+
         // For loopback capture, we might get 0 samples if nothing is playing
         // Just verify we didn't crash
         eprintln!("[Test] Integration test passed");
@@ -1572,7 +1591,9 @@ mod tests {
         mixer.push_samples(&samples, false);
 
         // Should receive them directly (try_recv returns Result<T, TryRecvError>)
-        let sample = rx.try_recv().expect("Should receive samples in single-stream mode");
+        let sample = rx
+            .try_recv()
+            .expect("Should receive samples in single-stream mode");
         assert_eq!(sample.data.len(), 4);
         assert!((sample.data[0] - 0.5).abs() < 0.001);
     }
@@ -1588,7 +1609,9 @@ mod tests {
         let samples = vec![0.3f32, -0.3, 0.15, -0.15];
         mixer.push_samples(&samples, true);
 
-        let sample = rx.try_recv().expect("Should receive samples in single-stream mode");
+        let sample = rx
+            .try_recv()
+            .expect("Should receive samples in single-stream mode");
         assert_eq!(sample.data.len(), 4);
     }
 
@@ -1603,7 +1626,7 @@ mod tests {
         // Create full frame of samples (480 samples * 2 channels = 960)
         let frame_size = 480 * 2;
         let capture_samples: Vec<f32> = vec![0.4f32; frame_size]; // mic
-        let render_samples: Vec<f32> = vec![0.2f32; frame_size];  // system audio
+        let render_samples: Vec<f32> = vec![0.2f32; frame_size]; // system audio
 
         // Push system audio first (is_loopback=true), then mic (is_loopback=false)
         mixer.push_samples(&render_samples, true);
@@ -1611,10 +1634,14 @@ mod tests {
 
         // Should receive mixed samples
         let sample = rx.try_recv().expect("Should receive mixed samples");
-        
+
         // Mixed output should be 0.4 + 0.2 = 0.6 (with soft clipping, values < 1.0 pass through)
         assert_eq!(sample.data.len(), frame_size);
-        assert!((sample.data[0] - 0.6).abs() < 0.001, "Mixed sample should be 0.6, got {}", sample.data[0]);
+        assert!(
+            (sample.data[0] - 0.6).abs() < 0.001,
+            "Mixed sample should be 0.6, got {}",
+            sample.data[0]
+        );
     }
 
     #[test]
@@ -1635,7 +1662,7 @@ mod tests {
         mixer.push_samples(&capture_samples, false);
 
         let sample = rx.try_recv().expect("Should receive samples");
-        
+
         // With soft clipping: sum = 2.0, output = 1.0 - exp(-2.0) * 0.5 ≈ 0.932
         // Values should be in valid range and soft-clipped (not hard-clamped to 1.0)
         for &s in &sample.data {
@@ -1657,11 +1684,14 @@ mod tests {
         let small_capture = vec![0.1f32; 100];
         let small_render = vec![0.2f32; 100];
 
-        mixer.push_samples(&small_render, true);  // system audio first
+        mixer.push_samples(&small_render, true); // system audio first
         mixer.push_samples(&small_capture, false); // then mic
 
         // Should NOT receive anything yet (need 960 samples)
-        assert!(rx.try_recv().is_err(), "Should not receive samples before full frame");
+        assert!(
+            rx.try_recv().is_err(),
+            "Should not receive samples before full frame"
+        );
 
         // Push more to reach full frame
         let more_capture = vec![0.1f32; 860];
@@ -1671,7 +1701,10 @@ mod tests {
         mixer.push_samples(&more_capture, false);
 
         // NOW should receive
-        assert!(rx.try_recv().is_ok(), "Should receive samples after full frame");
+        assert!(
+            rx.try_recv().is_ok(),
+            "Should receive samples after full frame"
+        );
     }
 
     #[test]
@@ -1679,47 +1712,48 @@ mod tests {
         // Test that the dual capture API can be called
         // This is a basic API test - actual capture requires real devices
         let sources = list_audio_sources().expect("Failed to enumerate audio sources");
-        
+
         // Find an output and input device
-        let output = sources.iter().find(|s| s.source_type == AudioSourceType::Output);
-        let input = sources.iter().find(|s| s.source_type == AudioSourceType::Input);
-        
+        let output = sources
+            .iter()
+            .find(|s| s.source_type == AudioSourceType::Output);
+        let input = sources
+            .iter()
+            .find(|s| s.source_type == AudioSourceType::Input);
+
         if output.is_none() || input.is_none() {
             eprintln!("[Test] Need both output and input devices for dual capture test");
             return;
         }
-        
+
         let sys_id = &output.unwrap().id;
         let mic_id = &input.unwrap().id;
-        
+
         eprintln!("[Test] Testing dual capture with:");
         eprintln!("  System: {}", output.unwrap().name);
         eprintln!("  Mic: {}", input.unwrap().name);
-        
+
         // Start dual capture
         let result = start_audio_capture_dual(Some(sys_id), Some(mic_id), true);
         if let Err(ref e) = result {
             eprintln!("[Test] Dual capture start error (may be expected): {:?}", e);
             return;
         }
-        
+
         let (mut rx, stop_flag) = result.unwrap();
-        
+
         // Capture briefly
         let start = std::time::Instant::now();
         let mut samples_received = 0u64;
-        
+
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_time()
             .build()
             .unwrap();
-        
+
         rt.block_on(async {
             while start.elapsed().as_millis() < 500 {
-                match tokio::time::timeout(
-                    std::time::Duration::from_millis(100),
-                    rx.recv()
-                ).await {
+                match tokio::time::timeout(std::time::Duration::from_millis(100), rx.recv()).await {
                     Ok(Some(sample)) => {
                         samples_received += sample.data.len() as u64;
                     }
@@ -1728,12 +1762,12 @@ mod tests {
                 }
             }
         });
-        
+
         stop_flag.store(true, Ordering::Relaxed);
-        
+
         // Give threads time to stop
         std::thread::sleep(std::time::Duration::from_millis(200));
-        
+
         eprintln!("[Test] Dual capture received {} samples", samples_received);
         eprintln!("[Test] Dual capture test passed");
     }

@@ -327,15 +327,7 @@ impl ThumbnailCapture for WindowsThumbnailCapture {
 
         // Region coordinates are already in physical pixels (matching the frame buffer)
         // No conversion needed - crop directly
-        let cropped = crop_frame(
-            &frame.data,
-            frame.width,
-            frame.height,
-            x,
-            y,
-            width,
-            height,
-        );
+        let cropped = crop_frame(&frame.data, frame.width, frame.height, x, y, width, height);
 
         if cropped.is_empty() {
             return Err(CaptureError::PlatformError(
@@ -442,7 +434,10 @@ mod tests {
             }
             Err(e) => {
                 // May fail in CI/headless environments
-                println!("Display thumbnail capture failed (may be expected in CI): {}", e);
+                println!(
+                    "Display thumbnail capture failed (may be expected in CI): {}",
+                    e
+                );
             }
         }
     }
@@ -477,7 +472,10 @@ mod tests {
                 );
             }
             Err(e) => {
-                println!("Region preview capture failed (may be expected in CI): {}", e);
+                println!(
+                    "Region preview capture failed (may be expected in CI): {}",
+                    e
+                );
             }
         }
     }

@@ -58,7 +58,12 @@ pub async fn show_display_highlight(
 
     state
         .service_client
-        .show_display_highlight(monitor.x, monitor.y, monitor.width as i32, monitor.height as i32)
+        .show_display_highlight(
+            monitor.x,
+            monitor.y,
+            monitor.width as i32,
+            monitor.height as i32,
+        )
         .await
         .map_err(|e| e.to_string())
 }
@@ -84,8 +89,16 @@ pub async fn get_window_thumbnail(
     window_handle: isize,
     state: State<'_, AppState>,
 ) -> Result<Option<ThumbnailResponse>, String> {
-    match state.service_client.get_window_thumbnail(window_handle).await {
-        Ok((data, width, height)) => Ok(Some(ThumbnailResponse { data, width, height })),
+    match state
+        .service_client
+        .get_window_thumbnail(window_handle)
+        .await
+    {
+        Ok((data, width, height)) => Ok(Some(ThumbnailResponse {
+            data,
+            width,
+            height,
+        })),
         Err(e) => {
             tracing::warn!("Window thumbnail capture failed: {}", e);
             // Fail gracefully - show placeholder for any error
@@ -103,7 +116,11 @@ pub async fn get_display_thumbnail(
     state: State<'_, AppState>,
 ) -> Result<Option<ThumbnailResponse>, String> {
     match state.service_client.get_display_thumbnail(monitor_id).await {
-        Ok((data, width, height)) => Ok(Some(ThumbnailResponse { data, width, height })),
+        Ok((data, width, height)) => Ok(Some(ThumbnailResponse {
+            data,
+            width,
+            height,
+        })),
         Err(e) => {
             tracing::warn!("Display thumbnail capture failed: {}", e);
             // Fail gracefully - show placeholder for any error
@@ -129,7 +146,11 @@ pub async fn get_region_preview(
         .get_region_preview(monitor_id, x, y, width, height)
         .await
     {
-        Ok((data, width, height)) => Ok(Some(ThumbnailResponse { data, width, height })),
+        Ok((data, width, height)) => Ok(Some(ThumbnailResponse {
+            data,
+            width,
+            height,
+        })),
         Err(e) => {
             tracing::warn!("Region preview capture failed: {}", e);
             // Fail gracefully - show placeholder for any error

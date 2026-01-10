@@ -31,45 +31,47 @@ fn crop_frame(
     let y = crop_y.max(0) as u32;
     let w = crop_width.min(frame_width.saturating_sub(x));
     let h = crop_height.min(frame_height.saturating_sub(y));
-    
+
     if w == 0 || h == 0 {
         return Vec::new();
     }
-    
+
     let mut cropped = vec![0u8; (w * h * 4) as usize];
-    
+
     for row in 0..h {
         let src_offset = ((y + row) * frame_width + x) as usize * 4;
         let dst_offset = (row * w) as usize * 4;
         let row_bytes = (w * 4) as usize;
-        
+
         if src_offset + row_bytes <= data.len() {
             cropped[dst_offset..dst_offset + row_bytes]
                 .copy_from_slice(&data[src_offset..src_offset + row_bytes]);
         }
     }
-    
+
     cropped
 }
 
 /// Find which monitor contains a window based on its position.
 fn find_monitor_for_window(window_x: i32, window_y: i32) -> Option<String> {
     let monitors = Monitors::get().ok()?;
-    
+
     for monitor in monitors.iter() {
         let mon_x = monitor.x;
         let mon_y = monitor.y;
         // Use logical dimensions for comparison (window coords are logical)
         let mon_width = (monitor.width as f64 / monitor.scale as f64).round() as i32;
         let mon_height = (monitor.height as f64 / monitor.scale as f64).round() as i32;
-        
-        if window_x >= mon_x && window_x < mon_x + mon_width
-            && window_y >= mon_y && window_y < mon_y + mon_height
+
+        if window_x >= mon_x
+            && window_x < mon_x + mon_width
+            && window_y >= mon_y
+            && window_y < mon_y + mon_height
         {
             return Some(monitor.name.clone());
         }
     }
-    
+
     // Fallback to first monitor if window position doesn't match any
     monitors.iter().next().map(|m| m.name.clone())
 }
@@ -77,7 +79,8 @@ fn find_monitor_for_window(window_x: i32, window_y: i32) -> Option<String> {
 /// Get monitor info by name.
 fn get_monitor_info(monitor_name: &str) -> Option<(i32, i32, u32, u32, f64)> {
     let monitors = Monitors::get().ok()?;
-    monitors.iter()
+    monitors
+        .iter()
         .find(|m| m.name == monitor_name)
         .map(|m| (m.x, m.y, m.width as u32, m.height as u32, m.scale as f64))
 }
@@ -99,49 +102,61 @@ impl Default for LinuxThumbnailCapture {
 }
 
 impl ThumbnailCapture for LinuxThumbnailCapture {
-    fn capture_window_thumbnail(&self, window_handle: isize) -> Result<ThumbnailResult, CaptureError> {
+    fn capture_window_thumbnail(
+        &self,
+        window_handle: isize,
+    ) -> Result<ThumbnailResult, CaptureError> {
         // Get window info from Hyprland
         let clients = Clients::get().map_err(|e| {
             CaptureError::PlatformError(format!("Failed to get Hyprland clients: {}", e))
         })?;
-        
+
         // Convert handle to hex address for comparison
         let target_address = format!("0x{:x}", window_handle as usize);
-        
-        let client = clients.iter()
+
+        let client = clients
+            .iter()
             .find(|c| {
                 let addr = c.address.to_string();
-                addr == target_address || addr.trim_start_matches("0x") == target_address.trim_start_matches("0x")
+                addr == target_address
+                    || addr.trim_start_matches("0x") == target_address.trim_start_matches("0x")
             })
             .ok_or_else(|| {
-                CaptureError::TargetNotFound(format!("Window with handle {} not found", window_handle))
+                CaptureError::TargetNotFound(format!(
+                    "Window with handle {} not found",
+                    window_handle
+                ))
             })?;
-        
+
         // Find which monitor contains this window
         let monitor_name = find_monitor_for_window(client.at.0 as i32, client.at.1 as i32)
-            .ok_or_else(|| CaptureError::PlatformError("Could not find monitor for window".to_string()))?;
-        
+            .ok_or_else(|| {
+                CaptureError::PlatformError("Could not find monitor for window".to_string())
+            })?;
+
         // Get monitor info for coordinate conversion
         let (mon_x, mon_y, _mon_width, _mon_height, scale) = get_monitor_info(&monitor_name)
-            .ok_or_else(|| CaptureError::PlatformError(format!("Monitor '{}' not found", monitor_name)))?;
-        
+            .ok_or_else(|| {
+                CaptureError::PlatformError(format!("Monitor '{}' not found", monitor_name))
+            })?;
+
         // Capture the output
-        let frame = screencopy::capture_output(&monitor_name)
-            .map_err(CaptureError::PlatformError)?;
-        
+        let frame =
+            screencopy::capture_output(&monitor_name).map_err(CaptureError::PlatformError)?;
+
         // Calculate window position relative to monitor in physical pixels
         // Window coordinates from Hyprland are in logical space
         let window_x_logical = client.at.0 as i32 - mon_x;
         let window_y_logical = client.at.1 as i32 - mon_y;
         let window_width_logical = client.size.0 as u32;
         let window_height_logical = client.size.1 as u32;
-        
+
         // Convert to physical pixels for cropping the captured frame
         let crop_x = (window_x_logical as f64 * scale).round() as i32;
         let crop_y = (window_y_logical as f64 * scale).round() as i32;
         let crop_width = (window_width_logical as f64 * scale).round() as u32;
         let crop_height = (window_height_logical as f64 * scale).round() as u32;
-        
+
         // Crop the frame to window bounds
         let cropped = crop_frame(
             &frame.data,
@@ -152,11 +167,13 @@ impl ThumbnailCapture for LinuxThumbnailCapture {
             crop_width,
             crop_height,
         );
-        
+
         if cropped.is_empty() {
-            return Err(CaptureError::PlatformError("Crop resulted in empty frame".to_string()));
+            return Err(CaptureError::PlatformError(
+                "Crop resulted in empty frame".to_string(),
+            ));
         }
-        
+
         // Convert to thumbnail
         let (base64_data, thumb_width, thumb_height) = bgra_to_jpeg_thumbnail(
             &cropped,
@@ -166,7 +183,7 @@ impl ThumbnailCapture for LinuxThumbnailCapture {
             THUMBNAIL_MAX_HEIGHT,
         )
         .map_err(CaptureError::PlatformError)?;
-        
+
         Ok(ThumbnailResult {
             data: base64_data,
             width: thumb_width,
@@ -176,8 +193,7 @@ impl ThumbnailCapture for LinuxThumbnailCapture {
 
     fn capture_display_thumbnail(&self, monitor_id: &str) -> Result<ThumbnailResult, CaptureError> {
         // Capture the output directly via screencopy
-        let frame = screencopy::capture_output(monitor_id)
-            .map_err(CaptureError::PlatformError)?;
+        let frame = screencopy::capture_output(monitor_id).map_err(CaptureError::PlatformError)?;
 
         // Convert to thumbnail
         let (base64_data, thumb_width, thumb_height) = bgra_to_jpeg_thumbnail(
@@ -204,7 +220,6 @@ impl ThumbnailCapture for LinuxThumbnailCapture {
         width: u32,
         height: u32,
     ) -> Result<ThumbnailResult, CaptureError> {
-
         // Validate region
         if width < 100 || height < 100 {
             return Err(CaptureError::InvalidRegion(format!(
@@ -214,12 +229,12 @@ impl ThumbnailCapture for LinuxThumbnailCapture {
         }
 
         // Get monitor info including scale factor
-        let (_, _, _, _, scale) = get_monitor_info(monitor_id)
-            .ok_or_else(|| CaptureError::TargetNotFound(format!("Monitor '{}' not found", monitor_id)))?;
+        let (_, _, _, _, scale) = get_monitor_info(monitor_id).ok_or_else(|| {
+            CaptureError::TargetNotFound(format!("Monitor '{}' not found", monitor_id))
+        })?;
 
         // Capture the output via screencopy (returns physical pixels)
-        let frame = screencopy::capture_output(monitor_id)
-            .map_err(CaptureError::PlatformError)?;
+        let frame = screencopy::capture_output(monitor_id).map_err(CaptureError::PlatformError)?;
 
         // Region coordinates from frontend are in LOGICAL pixels (from Hyprland)
         // Screencopy capture is in PHYSICAL pixels
@@ -241,7 +256,9 @@ impl ThumbnailCapture for LinuxThumbnailCapture {
         );
 
         if cropped.is_empty() {
-            return Err(CaptureError::PlatformError("Crop resulted in empty frame".to_string()));
+            return Err(CaptureError::PlatformError(
+                "Crop resulted in empty frame".to_string(),
+            ));
         }
 
         // Convert to preview (larger than thumbnail)

@@ -58,9 +58,7 @@ pub fn get_socket_path() -> PathBuf {
     #[cfg(target_os = "macos")]
     {
         let tmpdir = std::env::var("TMPDIR").unwrap_or_else(|_| "/tmp".to_string());
-        PathBuf::from(tmpdir)
-            .join("omnirec")
-            .join("service.sock")
+        PathBuf::from(tmpdir).join("omnirec").join("service.sock")
     }
 
     #[cfg(target_os = "windows")]

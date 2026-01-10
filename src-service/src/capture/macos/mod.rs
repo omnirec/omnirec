@@ -66,8 +66,7 @@ impl MacOSBackend {
 
     /// Check and request permission, returning an error if not granted.
     fn ensure_permission() -> Result<(), CaptureError> {
-        if !Self::has_screen_recording_permission()
-            && !Self::request_screen_recording_permission()
+        if !Self::has_screen_recording_permission() && !Self::request_screen_recording_permission()
         {
             return Err(CaptureError::PermissionDenied(
                 "Screen recording permission required. Please grant permission in System Settings > Privacy & Security > Screen Recording, then restart the app.".to_string()
@@ -139,29 +138,39 @@ impl CaptureBackend for MacOSBackend {
 
         // Get scale factor for coordinate conversion
         let scale = monitor.scale_factor;
-        
+
         // Calculate physical dimensions for capture
         // monitor.width/height are logical, need physical for ScreenCaptureKit
         let physical_monitor_width = ((monitor.width as f64) * scale).round() as u32;
         let physical_monitor_height = ((monitor.height as f64) * scale).round() as u32;
 
         // Start capturing the full display at physical resolution
-        let (mut display_rx, stop_handle) =
-            recorder::start_display_capture(display_id, physical_monitor_width, physical_monitor_height)
-                .map_err(CaptureError::PlatformError)?;
+        let (mut display_rx, stop_handle) = recorder::start_display_capture(
+            display_id,
+            physical_monitor_width,
+            physical_monitor_height,
+        )
+        .map_err(CaptureError::PlatformError)?;
 
         // Create a new channel for cropped frames
         let (tx, rx) = mpsc::channel(3);
 
         eprintln!("[macOS] === REGION CAPTURE DEBUG ===");
         eprintln!("[macOS] Input region from frontend (logical coords):");
-        eprintln!("[macOS]   x={}, y={}, width={}, height={}", 
-            region.x, region.y, region.width, region.height);
+        eprintln!(
+            "[macOS]   x={}, y={}, width={}, height={}",
+            region.x, region.y, region.width, region.height
+        );
         eprintln!("[macOS] Monitor info:");
-        eprintln!("[macOS]   id={}, logical_origin=({}, {}), logical_size={}x{}, scale={}", 
-            monitor.id, monitor.x, monitor.y, monitor.width, monitor.height, scale);
-        eprintln!("[macOS]   physical_size={}x{}", physical_monitor_width, physical_monitor_height);
-        
+        eprintln!(
+            "[macOS]   id={}, logical_origin=({}, {}), logical_size={}x{}, scale={}",
+            monitor.id, monitor.x, monitor.y, monitor.width, monitor.height, scale
+        );
+        eprintln!(
+            "[macOS]   physical_size={}x{}",
+            physical_monitor_width, physical_monitor_height
+        );
+
         // Region from frontend is in logical coordinates (matching monitor coordinate system)
         // Need to convert to physical pixels for cropping captured frames
         let region_x_physical = ((region.x.max(0) as f64) * scale).round() as u32;
@@ -187,8 +196,10 @@ impl CaptureBackend for MacOSBackend {
         }
 
         eprintln!("[macOS] Final crop region (physical pixels):");
-        eprintln!("[macOS]   x={}, y={}, width={}, height={}", 
-            region_x, region_y, region_width, region_height);
+        eprintln!(
+            "[macOS]   x={}, y={}, width={}, height={}",
+            region_x, region_y, region_width, region_height
+        );
         eprintln!("[macOS] =============================");
 
         let stop_flag = stop_handle.clone();
@@ -205,27 +216,27 @@ impl CaptureBackend for MacOSBackend {
                 }
 
                 // Use timeout to periodically check stop flag
-                match tokio::time::timeout(
-                    std::time::Duration::from_millis(100),
-                    display_rx.recv()
-                ).await {
+                match tokio::time::timeout(std::time::Duration::from_millis(100), display_rx.recv())
+                    .await
+                {
                     Ok(Some(frame)) => {
                         // Log first frame info
                         if frame_count == 0 {
-                            eprintln!("[macOS] First frame received: {}x{}", frame.width, frame.height);
-                            eprintln!("[macOS] Cropping to: {}x{} at ({},{})", 
-                                region_width, region_height, region_x, region_y);
+                            eprintln!(
+                                "[macOS] First frame received: {}x{}",
+                                frame.width, frame.height
+                            );
+                            eprintln!(
+                                "[macOS] Cropping to: {}x{} at ({},{})",
+                                region_width, region_height, region_x, region_y
+                            );
                         }
                         frame_count += 1;
-                        
+
                         // Crop the frame to the region
-                        if let Some(cropped) = crop_frame(
-                            &frame,
-                            region_x,
-                            region_y,
-                            region_width,
-                            region_height,
-                        ) {
+                        if let Some(cropped) =
+                            crop_frame(&frame, region_x, region_y, region_width, region_height)
+                        {
                             if tx.send(cropped).await.is_err() {
                                 eprintln!("[macOS] Cropping task: send failed, exiting");
                                 break;
@@ -274,7 +285,10 @@ impl HighlightProvider for MacOSBackend {
 }
 
 impl ThumbnailCapture for MacOSBackend {
-    fn capture_window_thumbnail(&self, window_handle: isize) -> Result<ThumbnailResult, CaptureError> {
+    fn capture_window_thumbnail(
+        &self,
+        window_handle: isize,
+    ) -> Result<ThumbnailResult, CaptureError> {
         thumbnail::MacOSThumbnailCapture::new().capture_window_thumbnail(window_handle)
     }
 
@@ -290,7 +304,8 @@ impl ThumbnailCapture for MacOSBackend {
         width: u32,
         height: u32,
     ) -> Result<ThumbnailResult, CaptureError> {
-        thumbnail::MacOSThumbnailCapture::new().capture_region_preview(monitor_id, x, y, width, height)
+        thumbnail::MacOSThumbnailCapture::new()
+            .capture_region_preview(monitor_id, x, y, width, height)
     }
 }
 

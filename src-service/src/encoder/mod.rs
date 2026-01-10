@@ -8,7 +8,7 @@ use directories::UserDirs;
 use ffmpeg_sidecar::command::FfmpegCommand;
 use std::io::Write;
 use std::path::PathBuf;
-use std::process::{Command, ChildStdin, Stdio};
+use std::process::{ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -20,7 +20,7 @@ fn detect_h264_encoder() -> &'static str {
     let output = Command::new("ffmpeg")
         .args(["-encoders", "-hide_banner"])
         .output();
-    
+
     let encoders_output = match output {
         Ok(o) => String::from_utf8_lossy(&o.stdout).to_string(),
         Err(e) => {
@@ -28,40 +28,43 @@ fn detect_h264_encoder() -> &'static str {
             String::new()
         }
     };
-    
+
     eprintln!("[Encoder] Checking available H.264 encoders...");
-    
+
     // Preference order: libx264 (best quality/compat), then hardware encoders, then fallback
     // Note: Fedora's ffmpeg-free doesn't include libx264, so we check hardware encoders too
     let encoder_preferences = [
-        ("libx264", "libx264"),           // Software, best compatibility (not on Fedora ffmpeg-free)
-        ("libopenh264", "libopenh264"),   // OpenH264 (Cisco, available on Fedora)
-        ("h264_vaapi", "h264_vaapi"),     // VAAPI (AMD/Intel) - common on Linux
-        ("h264_nvenc", "h264_nvenc"),     // NVIDIA
-        ("h264_amf", "h264_amf"),         // AMD AMF
-        ("h264_qsv", "h264_qsv"),         // Intel QuickSync
+        ("libx264", "libx264"), // Software, best compatibility (not on Fedora ffmpeg-free)
+        ("libopenh264", "libopenh264"), // OpenH264 (Cisco, available on Fedora)
+        ("h264_vaapi", "h264_vaapi"), // VAAPI (AMD/Intel) - common on Linux
+        ("h264_nvenc", "h264_nvenc"), // NVIDIA
+        ("h264_amf", "h264_amf"), // AMD AMF
+        ("h264_qsv", "h264_qsv"), // Intel QuickSync
         ("h264_v4l2m2m", "h264_v4l2m2m"), // V4L2 (RPi, etc.)
-        ("h264_vulkan", "h264_vulkan"),   // Vulkan
+        ("h264_vulkan", "h264_vulkan"), // Vulkan
     ];
-    
+
     for (search_name, encoder_name) in encoder_preferences {
         // Check if the encoder is listed (search for the encoder name followed by space or end)
-        if encoders_output.contains(&format!(" {} ", search_name)) 
+        if encoders_output.contains(&format!(" {} ", search_name))
             || encoders_output.contains(&format!(" {}\n", search_name))
-            || encoders_output.lines().any(|l| l.contains(search_name)) 
+            || encoders_output.lines().any(|l| l.contains(search_name))
         {
             eprintln!("[Encoder] Found H.264 encoder: {}", encoder_name);
             return encoder_name;
         }
     }
-    
+
     // Last resort fallback - try libx264 anyway
     eprintln!("[Encoder] Warning: No H.264 encoder detected in ffmpeg output!");
-    eprintln!("[Encoder] Available encoders: {}", 
-        encoders_output.lines()
+    eprintln!(
+        "[Encoder] Available encoders: {}",
+        encoders_output
+            .lines()
             .filter(|l| l.contains("264") || l.contains("h264"))
             .collect::<Vec<_>>()
-            .join(", "));
+            .join(", ")
+    );
     eprintln!("[Encoder] Trying libx264 as fallback (may fail on Fedora without RPM Fusion)");
     "libx264"
 }
@@ -148,7 +151,7 @@ impl VideoEncoder {
     pub fn start(&mut self) -> Result<(), String> {
         // Detect available H.264 encoder
         let encoder = detect_h264_encoder();
-        
+
         // Build the FFmpeg command using std::process for better stdin control
         let mut command = FfmpegCommand::new();
         command
@@ -158,11 +161,11 @@ impl VideoEncoder {
             .args(["-s", &format!("{}x{}", self.width, self.height)])
             .args(["-r", "30"]) // 30 FPS
             .args(["-i", "-"]); // Read from stdin
-        
+
         // Output: H.264 in MP4 container
         // Configure encoder-specific options
         command.args(["-c:v", encoder]);
-        
+
         // Add encoder-specific options
         match encoder {
             "libx264" => {
@@ -172,13 +175,11 @@ impl VideoEncoder {
             }
             "libopenh264" => {
                 // OpenH264 has limited options
-                command
-                    .args(["-b:v", "2M"]); // Target bitrate
+                command.args(["-b:v", "2M"]); // Target bitrate
             }
             "h264_vaapi" => {
                 // VAAPI needs different options
-                command
-                    .args(["-qp", "23"]); // Quality parameter
+                command.args(["-qp", "23"]); // Quality parameter
             }
             "h264_nvenc" | "h264_amf" => {
                 command
@@ -191,7 +192,7 @@ impl VideoEncoder {
                 eprintln!("[Encoder] Using generic options for encoder: {}", encoder);
             }
         }
-        
+
         command
             .args(["-pix_fmt", "yuv420p"]) // Compatible pixel format
             .args(["-movflags", "+faststart"]) // Web-optimized MP4
@@ -208,10 +209,7 @@ impl VideoEncoder {
             .spawn()
             .map_err(|e| format!("Failed to start FFmpeg: {}", e))?;
 
-        let stdin = child
-            .stdin
-            .take()
-            .ok_or("Failed to get FFmpeg stdin")?;
+        let stdin = child.stdin.take().ok_or("Failed to get FFmpeg stdin")?;
 
         // Spawn a thread to read stderr and log FFmpeg errors
         if let Some(stderr) = child.stderr.take() {
@@ -254,7 +252,7 @@ impl VideoEncoder {
                 // Need to crop - extract only the rows/columns we need
                 let src_row_bytes = (frame.width * 4) as usize;
                 let dst_row_bytes = (self.width * 4) as usize;
-                
+
                 for y in 0..self.height as usize {
                     let src_start = y * src_row_bytes;
                     let src_end = src_start + dst_row_bytes;
@@ -300,7 +298,10 @@ impl VideoEncoder {
                 let error_msg = if stderr_output.is_empty() {
                     format!("FFmpeg encoding failed with exit code: {:?}", status.code())
                 } else {
-                    format!("FFmpeg failed: {}", stderr_output.lines().last().unwrap_or(&stderr_output))
+                    format!(
+                        "FFmpeg failed: {}",
+                        stderr_output.lines().last().unwrap_or(&stderr_output)
+                    )
                 };
                 return Err(error_msg);
             }
@@ -322,10 +323,8 @@ pub struct AudioEncoder {
 impl AudioEncoder {
     /// Create a new audio encoder.
     pub fn new(sample_rate: u32, channels: u32) -> Result<Self, String> {
-        let output_path = std::env::temp_dir().join(format!(
-            "omnirec_audio_{}.wav",
-            std::process::id()
-        ));
+        let output_path =
+            std::env::temp_dir().join(format!("omnirec_audio_{}.wav", std::process::id()));
 
         eprintln!("[AudioEncoder] Output path: {:?}", output_path);
 
@@ -371,7 +370,7 @@ impl AudioEncoder {
 
             file.write_all(&pcm_data)
                 .map_err(|e| format!("Failed to write audio samples: {}", e))?;
-            
+
             self.bytes_written += pcm_data.len() as u64;
         }
         Ok(())
@@ -385,11 +384,8 @@ impl AudioEncoder {
             file.seek(std::io::SeekFrom::Start(0))
                 .map_err(|e| format!("Failed to seek audio file: {}", e))?;
 
-            let header = create_wav_header(
-                self.sample_rate,
-                self.channels,
-                self.bytes_written as u32,
-            );
+            let header =
+                create_wav_header(self.sample_rate, self.channels, self.bytes_written as u32);
             file.write_all(&header)
                 .map_err(|e| format!("Failed to update WAV header: {}", e))?;
         }
@@ -415,12 +411,12 @@ fn create_wav_header(sample_rate: u32, channels: u32, data_size: u32) -> Vec<u8>
     let file_size = 36 + data_size;
 
     let mut header = Vec::with_capacity(44);
-    
+
     // RIFF header
     header.extend_from_slice(b"RIFF");
     header.extend_from_slice(&file_size.to_le_bytes());
     header.extend_from_slice(b"WAVE");
-    
+
     // fmt chunk
     header.extend_from_slice(b"fmt ");
     header.extend_from_slice(&16u32.to_le_bytes()); // Chunk size
@@ -430,11 +426,11 @@ fn create_wav_header(sample_rate: u32, channels: u32, data_size: u32) -> Vec<u8>
     header.extend_from_slice(&byte_rate.to_le_bytes());
     header.extend_from_slice(&(block_align as u16).to_le_bytes());
     header.extend_from_slice(&16u16.to_le_bytes()); // Bits per sample
-    
+
     // data chunk
     header.extend_from_slice(b"data");
     header.extend_from_slice(&data_size.to_le_bytes());
-    
+
     header
 }
 
@@ -587,40 +583,37 @@ pub async fn encode_frames(
     stop_flag: Arc<AtomicBool>,
 ) -> Result<PathBuf, String> {
     eprintln!("[Encoder] encode_frames task started, waiting for first frame...");
-    
+
     // Wait for first frame to get dimensions
-    let first_frame = frame_rx
-        .recv()
-        .await
-        .ok_or_else(|| {
-            eprintln!("[Encoder] recv() returned None - channel closed without frames");
-            "No frames received".to_string()
-        })?;
-    
-    eprintln!("[Encoder] Got first frame: {}x{}", first_frame.width, first_frame.height);
+    let first_frame = frame_rx.recv().await.ok_or_else(|| {
+        eprintln!("[Encoder] recv() returned None - channel closed without frames");
+        "No frames received".to_string()
+    })?;
+
+    eprintln!(
+        "[Encoder] Got first frame: {}x{}",
+        first_frame.width, first_frame.height
+    );
 
     eprintln!("[Encoder] Creating VideoEncoder...");
-    let mut encoder = VideoEncoder::new(first_frame.width, first_frame.height)
-        .map_err(|e| {
-            eprintln!("[Encoder] Failed to create encoder: {}", e);
-            e
-        })?;
-    
+    let mut encoder = VideoEncoder::new(first_frame.width, first_frame.height).map_err(|e| {
+        eprintln!("[Encoder] Failed to create encoder: {}", e);
+        e
+    })?;
+
     eprintln!("[Encoder] Starting FFmpeg...");
-    encoder.start()
-        .map_err(|e| {
-            eprintln!("[Encoder] Failed to start FFmpeg: {}", e);
-            e
-        })?;
+    encoder.start().map_err(|e| {
+        eprintln!("[Encoder] Failed to start FFmpeg: {}", e);
+        e
+    })?;
 
     eprintln!("[Encoder] Writing first frame...");
     // Write first frame
-    encoder.write_frame(&first_frame)
-        .map_err(|e| {
-            eprintln!("[Encoder] Failed to write first frame: {}", e);
-            e
-        })?;
-    
+    encoder.write_frame(&first_frame).map_err(|e| {
+        eprintln!("[Encoder] Failed to write first frame: {}", e);
+        e
+    })?;
+
     eprintln!("[Encoder] Encoder initialized, entering main loop...");
 
     let mut frames_written = 1u64;
@@ -635,7 +628,7 @@ pub async fn encode_frames(
 
     loop {
         let now = std::time::Instant::now();
-        
+
         // Check stop flag
         if stop_flag.load(Ordering::Relaxed) {
             eprintln!("[Encoder] Stop flag set, exiting loop");
@@ -651,17 +644,20 @@ pub async fn encode_frames(
             Err(mpsc::error::TryRecvError::Empty) => {
                 // No new frame available
                 consecutive_empty_polls += 1;
-                
+
                 // If stop flag is set and we've had many empty polls, exit
                 // This handles the case where the channel isn't properly closed
                 if stop_flag.load(Ordering::Relaxed) && consecutive_empty_polls > 10 {
                     eprintln!("[Encoder] Stop flag set and no frames, exiting");
                     break;
                 }
-                
+
                 // Safety exit if we've polled too many times with no frames
                 if consecutive_empty_polls > MAX_EMPTY_POLLS {
-                    eprintln!("[Encoder] No frames for {}ms, checking stop flag", MAX_EMPTY_POLLS * 10);
+                    eprintln!(
+                        "[Encoder] No frames for {}ms, checking stop flag",
+                        MAX_EMPTY_POLLS * 10
+                    );
                     if stop_flag.load(Ordering::Relaxed) {
                         break;
                     }
@@ -689,7 +685,10 @@ pub async fn encode_frames(
     }
 
     let elapsed = start_time.elapsed().as_secs_f64();
-    println!("Recording complete: {:.1}s, {} frames", elapsed, frames_written);
+    println!(
+        "Recording complete: {:.1}s, {} frames",
+        elapsed, frames_written
+    );
 
     // Finalize
     encoder.finish()
@@ -736,7 +735,8 @@ pub async fn encode_frames_with_audio(
     let mut video_frames_written = 1u64;
     let mut audio_samples_written = 0u64;
     let mut last_frame = first_frame;
-    let mut next_frame_time = video_start_time + std::time::Duration::from_millis(FRAME_INTERVAL_MS);
+    let mut next_frame_time =
+        video_start_time + std::time::Duration::from_millis(FRAME_INTERVAL_MS);
 
     // Track when first audio sample arrives (for A/V sync)
     let mut first_audio_time: Option<std::time::Instant> = None;
@@ -783,8 +783,14 @@ pub async fn encode_frames_with_audio(
             // Record when first audio sample arrives
             if first_audio_time.is_none() {
                 first_audio_time = Some(std::time::Instant::now());
-                let delay_ms = first_audio_time.unwrap().duration_since(video_start_time).as_millis();
-                eprintln!("[Encoder] First audio sample received, delay from video start: {}ms", delay_ms);
+                let delay_ms = first_audio_time
+                    .unwrap()
+                    .duration_since(video_start_time)
+                    .as_millis();
+                eprintln!(
+                    "[Encoder] First audio sample received, delay from video start: {}ms",
+                    delay_ms
+                );
             }
             audio_encoder.write_samples(&audio_sample.data)?;
             audio_samples_written += audio_sample.data.len() as u64;
@@ -830,7 +836,10 @@ pub async fn encode_frames_with_audio(
             .map(|t| t.duration_since(video_start_time).as_millis() as i64)
             .unwrap_or(0);
 
-        eprintln!("[Encoder] Muxing audio and video (audio delay: {}ms)...", audio_delay_ms);
+        eprintln!(
+            "[Encoder] Muxing audio and video (audio delay: {}ms)...",
+            audio_delay_ms
+        );
         mux_audio_video(&video_path, &audio_path, audio_delay_ms)?;
     } else {
         eprintln!("[Encoder] No audio recorded, keeping video-only");
@@ -861,8 +870,10 @@ pub async fn encode_frames_with_audio_and_transcription(
     transcription_tx: Option<mpsc::Sender<Vec<f32>>>,
     output_path: Option<PathBuf>,
 ) -> Result<PathBuf, String> {
-    eprintln!("[Encoder] encode_frames_with_audio_and_transcription task started (transcription: {})", 
-        transcription_tx.is_some());
+    eprintln!(
+        "[Encoder] encode_frames_with_audio_and_transcription task started (transcription: {})",
+        transcription_tx.is_some()
+    );
 
     // Wait for first video frame to get dimensions
     let first_frame = frame_rx
@@ -887,7 +898,10 @@ pub async fn encode_frames_with_audio_and_transcription(
         output_path,
     )?;
     video_encoder.start()?;
-    eprintln!("[Encoder] Video output path: {:?}", video_encoder.output_path());
+    eprintln!(
+        "[Encoder] Video output path: {:?}",
+        video_encoder.output_path()
+    );
 
     // Create audio encoder
     let mut audio_encoder = AudioEncoder::new(audio_config.sample_rate, audio_config.channels)?;
@@ -901,7 +915,8 @@ pub async fn encode_frames_with_audio_and_transcription(
     let mut video_frames_written = 1u64;
     let mut audio_samples_written = 0u64;
     let mut last_frame = first_frame;
-    let mut next_frame_time = video_start_time + std::time::Duration::from_millis(FRAME_INTERVAL_MS);
+    let mut next_frame_time =
+        video_start_time + std::time::Duration::from_millis(FRAME_INTERVAL_MS);
 
     // Track when first audio sample arrives (for A/V sync)
     let mut first_audio_time: Option<std::time::Instant> = None;
@@ -948,8 +963,14 @@ pub async fn encode_frames_with_audio_and_transcription(
             // Record when first audio sample arrives
             if first_audio_time.is_none() {
                 first_audio_time = Some(std::time::Instant::now());
-                let delay_ms = first_audio_time.unwrap().duration_since(video_start_time).as_millis();
-                eprintln!("[Encoder] First audio sample received, delay from video start: {}ms", delay_ms);
+                let delay_ms = first_audio_time
+                    .unwrap()
+                    .duration_since(video_start_time)
+                    .as_millis();
+                eprintln!(
+                    "[Encoder] First audio sample received, delay from video start: {}ms",
+                    delay_ms
+                );
             }
 
             // Write to audio encoder
@@ -1019,7 +1040,10 @@ pub async fn encode_frames_with_audio_and_transcription(
             .map(|t| t.duration_since(video_start_time).as_millis() as i64)
             .unwrap_or(0);
 
-        eprintln!("[Encoder] Muxing audio and video (audio delay: {}ms)...", audio_delay_ms);
+        eprintln!(
+            "[Encoder] Muxing audio and video (audio delay: {}ms)...",
+            audio_delay_ms
+        );
         mux_audio_video(&video_path, &audio_path, audio_delay_ms)?;
     } else {
         eprintln!("[Encoder] No audio recorded, keeping video-only");
@@ -1044,15 +1068,19 @@ use std::path::Path;
 pub fn transcode_video(source_path: &Path, format: OutputFormat) -> Result<PathBuf, String> {
     // Generate output path with new extension
     let output_path = source_path.with_extension(format.extension());
-    
-    eprintln!("[Transcode] Converting {} to {:?}", source_path.display(), format);
+
+    eprintln!(
+        "[Transcode] Converting {} to {:?}",
+        source_path.display(),
+        format
+    );
     eprintln!("[Transcode] Output: {}", output_path.display());
 
     let mut command = FfmpegCommand::new();
-    
+
     // Input file
     command.args(["-i", source_path.to_string_lossy().as_ref()]);
-    
+
     // Format-specific encoding settings
     match format {
         OutputFormat::Mp4 => {
@@ -1095,7 +1123,7 @@ pub fn transcode_video(source_path: &Path, format: OutputFormat) -> Result<PathB
             command.args(["-loop", "0"]); // Loop forever
         }
     }
-    
+
     // Overwrite output and set output path
     command.args(["-y"]);
     command.arg(output_path.to_string_lossy().to_string());
@@ -1125,7 +1153,10 @@ pub fn transcode_video(source_path: &Path, format: OutputFormat) -> Result<PathB
 
     if !status.success() {
         let error_msg = if stderr_output.is_empty() {
-            format!("FFmpeg transcoding failed with exit code: {:?}", status.code())
+            format!(
+                "FFmpeg transcoding failed with exit code: {:?}",
+                status.code()
+            )
         } else {
             format!(
                 "FFmpeg transcoding failed: {}",

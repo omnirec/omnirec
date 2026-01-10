@@ -5,8 +5,8 @@ use std::ffi::OsString;
 use std::os::windows::ffi::OsStringExt;
 use windows::Win32::Foundation::{BOOL, LPARAM, RECT};
 use windows::Win32::Graphics::Gdi::{
-    EnumDisplayDevicesW, EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITORINFOEXW,
-    DISPLAY_DEVICEW, DISPLAY_DEVICE_ACTIVE,
+    EnumDisplayDevicesW, EnumDisplayMonitors, GetMonitorInfoW, DISPLAY_DEVICEW,
+    DISPLAY_DEVICE_ACTIVE, HDC, HMONITOR, MONITORINFOEXW,
 };
 use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 
@@ -118,7 +118,8 @@ fn get_display_friendly_name(device_name: &str) -> Option<String> {
 
         let mut index = 0u32;
         while EnumDisplayDevicesW(None, index, &mut device, 0).as_bool() {
-            let current_name_len = device.DeviceName
+            let current_name_len = device
+                .DeviceName
                 .iter()
                 .position(|&c| c == 0)
                 .unwrap_or(device.DeviceName.len());
@@ -128,7 +129,8 @@ fn get_display_friendly_name(device_name: &str) -> Option<String> {
 
             if current_name == device_name && (device.StateFlags & DISPLAY_DEVICE_ACTIVE) != 0 {
                 // Get adapter info
-                let adapter_name_len = device.DeviceString
+                let adapter_name_len = device
+                    .DeviceString
                     .iter()
                     .position(|&c| c == 0)
                     .unwrap_or(device.DeviceString.len());
@@ -136,7 +138,7 @@ fn get_display_friendly_name(device_name: &str) -> Option<String> {
                     return Some(
                         OsString::from_wide(&device.DeviceString[..adapter_name_len])
                             .to_string_lossy()
-                            .to_string()
+                            .to_string(),
                     );
                 }
             }
@@ -150,7 +152,12 @@ fn get_display_friendly_name(device_name: &str) -> Option<String> {
 fn format_monitor_name(device_name: &str, is_primary: bool) -> String {
     let suffix = if is_primary { " (Primary)" } else { "" };
     // Extract display number from device name like "\\\\.\\DISPLAY1"
-    if let Ok(num) = device_name.chars().filter(|c| c.is_ascii_digit()).collect::<String>().parse::<u32>() {
+    if let Ok(num) = device_name
+        .chars()
+        .filter(|c| c.is_ascii_digit())
+        .collect::<String>()
+        .parse::<u32>()
+    {
         format!("Display {}{}", num, suffix)
     } else {
         format!("{}{}", device_name, suffix)

@@ -10,9 +10,7 @@ use core_foundation::base::TCFType;
 use core_foundation::dictionary::CFDictionaryRef;
 use core_foundation::number::CFNumber;
 use core_foundation::string::CFString;
-use core_graphics::display::{
-    kCGWindowListOptionIncludingWindow, CGDisplay, CGWindowID,
-};
+use core_graphics::display::{kCGWindowListOptionIncludingWindow, CGDisplay, CGWindowID};
 use screencapturekit::sc_shareable_content::SCShareableContent;
 use std::collections::HashMap;
 
@@ -39,10 +37,8 @@ struct WindowBounds {
 /// which contains X, Y, Width, Height of the window frame.
 fn get_window_bounds(window_id: CGWindowID) -> Option<WindowBounds> {
     // Get window info for this specific window
-    let info_array = CGDisplay::window_list_info(
-        kCGWindowListOptionIncludingWindow,
-        Some(window_id),
-    )?;
+    let info_array =
+        CGDisplay::window_list_info(kCGWindowListOptionIncludingWindow, Some(window_id))?;
 
     if info_array.is_empty() {
         return None;
@@ -80,7 +76,12 @@ fn get_window_bounds(window_id: CGWindowID) -> Option<WindowBounds> {
     let width = get_number_from_dict(bounds_value, "Width").unwrap_or(0.0) as u32;
     let height = get_number_from_dict(bounds_value, "Height").unwrap_or(0.0) as u32;
 
-    Some(WindowBounds { x, y, width, height })
+    Some(WindowBounds {
+        x,
+        y,
+        width,
+        height,
+    })
 }
 
 /// Helper to extract a number from a CFDictionary
@@ -135,11 +136,7 @@ pub fn list_windows() -> Vec<WindowInfo> {
     };
 
     // Collect window IDs first to batch-fetch bounds
-    let window_ids: Vec<CGWindowID> = content
-        .windows
-        .iter()
-        .map(|w| w.window_id)
-        .collect();
+    let window_ids: Vec<CGWindowID> = content.windows.iter().map(|w| w.window_id).collect();
 
     // Get window bounds from Core Graphics
     let bounds_map = build_window_bounds_map(&window_ids);
@@ -172,7 +169,9 @@ pub fn list_windows() -> Vec<WindowInfo> {
         // Get application info
         let (process_name, bundle_id) = match &window.owning_application {
             Some(app) => (
-                app.application_name.clone().unwrap_or_else(|| "Unknown".to_string()),
+                app.application_name
+                    .clone()
+                    .unwrap_or_else(|| "Unknown".to_string()),
                 app.bundle_identifier.clone().unwrap_or_default(),
             ),
             None => continue, // Skip windows without an owning application
@@ -232,7 +231,7 @@ mod tests {
         // This test requires screen recording permission to return meaningful results
         // In CI or without permission, it may return empty which is acceptable
         let windows = list_windows();
-        
+
         // Just verify it doesn't crash and returns valid data if any
         for window in &windows {
             assert!(window.handle > 0, "Window handle should be > 0");

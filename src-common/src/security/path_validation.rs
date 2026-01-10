@@ -72,8 +72,8 @@ pub fn validate_output_directory(path: &Path) -> Result<PathBuf, PathError> {
     }
 
     // Canonicalize to resolve symlinks
-    let canonical = std::fs::canonicalize(path)
-        .map_err(|e| PathError::CannotCanonicalize(e.to_string()))?;
+    let canonical =
+        std::fs::canonicalize(path).map_err(|e| PathError::CannotCanonicalize(e.to_string()))?;
 
     // Verify within allowed directories
     let allowed = get_allowed_output_dirs();
@@ -108,7 +108,9 @@ fn get_allowed_output_dirs() -> Vec<PathBuf> {
     }
 
     // Platform video directory
-    if let Some(video) = directories::UserDirs::new().and_then(|u| u.video_dir().map(|p| p.to_path_buf())) {
+    if let Some(video) =
+        directories::UserDirs::new().and_then(|u| u.video_dir().map(|p| p.to_path_buf()))
+    {
         dirs.push(video);
     }
 

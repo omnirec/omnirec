@@ -90,9 +90,7 @@ fn verify_executable(exe_path: &Path) -> Result<(), PeerVerifyError> {
         .ok()
         .and_then(|p| p.parent().map(|d| d.to_path_buf()));
 
-    let in_trusted_dir = TRUSTED_DIRECTORIES
-        .iter()
-        .any(|d| exe_dir == Path::new(d));
+    let in_trusted_dir = TRUSTED_DIRECTORIES.iter().any(|d| exe_dir == Path::new(d));
     let same_as_self = self_dir.as_ref().map(|d| exe_dir == d).unwrap_or(false);
 
     // During development, also allow cargo target directories and CMake build directories
@@ -192,11 +190,15 @@ pub fn verify_peer(stream: &std::os::unix::net::UnixStream) -> Result<PeerInfo, 
     let exe_path = {
         const PROC_PIDPATHINFO_MAXSIZE: usize = 4096;
         let mut buf = vec![0u8; PROC_PIDPATHINFO_MAXSIZE];
-        
+
         extern "C" {
-            fn proc_pidpath(pid: libc::c_int, buffer: *mut libc::c_void, buffersize: u32) -> libc::c_int;
+            fn proc_pidpath(
+                pid: libc::c_int,
+                buffer: *mut libc::c_void,
+                buffersize: u32,
+            ) -> libc::c_int;
         }
-        
+
         let len = unsafe { proc_pidpath(pid, buf.as_mut_ptr() as *mut _, buf.len() as u32) };
         if len <= 0 {
             return Err(PeerVerifyError::ProcessNotFound(pid));
@@ -218,9 +220,7 @@ pub fn verify_peer(stream: &std::os::unix::net::UnixStream) -> Result<PeerInfo, 
 
 /// Verify connecting peer on Windows using GetNamedPipeClientProcessId.
 #[cfg(target_os = "windows")]
-pub fn verify_peer(
-    pipe: windows::Win32::Foundation::HANDLE,
-) -> Result<PeerInfo, PeerVerifyError> {
+pub fn verify_peer(pipe: windows::Win32::Foundation::HANDLE) -> Result<PeerInfo, PeerVerifyError> {
     use windows::Win32::Foundation::CloseHandle;
     use windows::Win32::System::Pipes::GetNamedPipeClientProcessId;
     use windows::Win32::System::Threading::{

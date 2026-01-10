@@ -156,6 +156,28 @@
               </label>
               <p class="config-item__hint">Generate a text transcript of voice audio</p>
             </div>
+            <div class="config-item hidden" id="model-config-item">
+              <label for="model-select" class="config-item__label">Transcription Model</label>
+              <div class="config-item__input-row">
+                <select id="model-select" class="config-item__select">
+                  <option value="">Loading...</option>
+                </select>
+              </div>
+              <div id="model-status-row" class="config-item__status-row">
+                <span id="model-info" class="model-info"></span>
+                <span class="model-status-right">
+                  <span id="model-status" class="model-status"></span>
+                  <button id="model-download-btn" type="button" class="config-item__action-btn hidden">Download</button>
+                  <button id="model-cancel-btn" type="button" class="config-item__action-btn config-item__action-btn--cancel hidden">Cancel</button>
+                </span>
+              </div>
+              <div id="model-progress-container" class="model-progress hidden">
+                <div class="model-progress__bar">
+                  <div id="model-progress-fill" class="model-progress__fill"></div>
+                </div>
+                <span id="model-progress-text" class="model-progress__text">0%</span>
+              </div>
+            </div>
           </div>
         </div>
 

@@ -56,6 +56,39 @@ interface AudioConfig {
 // TranscriptionConfig used in loadTranscriptionConfig
 interface TranscriptionConfig {
   enabled: boolean;
+  model: string;
+}
+
+// Model info for dropdown
+interface ModelInfo {
+  id: string;
+  display_name: string;
+  size_bytes: number;
+  size_display: string;
+  description: string;
+  english_only: boolean;
+  downloaded: boolean;
+}
+
+// Model status response
+interface ModelStatus {
+  model: string;
+  display_name: string;
+  path: string;
+  exists: boolean;
+  file_size: number | null;
+  expected_size: number;
+  size_display: string;
+}
+
+// Download progress event
+interface DownloadProgress {
+  model: string;
+  bytes_downloaded: number;
+  total_bytes: number;
+  percentage: number;
+  status: "downloading" | "completed" | "cancelled" | "error";
+  error: string | null;
 }
 
 type ThemeMode = "auto" | "light" | "dark";
@@ -218,6 +251,18 @@ let transcriptionCheckbox: HTMLInputElement | null;
 let transcriptionConfigItem: HTMLElement | null;
 let transcriptionQuickToggle: HTMLElement | null;
 let transcriptionQuickCheckbox: HTMLInputElement | null;
+let modelConfigItem: HTMLElement | null;
+let modelSelect: HTMLSelectElement | null;
+let modelInfo: HTMLElement | null;
+let modelStatus: HTMLElement | null;
+let modelDownloadBtn: HTMLButtonElement | null;
+let modelCancelBtn: HTMLButtonElement | null;
+let modelProgressContainer: HTMLElement | null;
+let modelProgressFill: HTMLElement | null;
+let modelProgressText: HTMLElement | null;
+
+// Model download state
+let isModelDownloading = false;
 
 // Platform state
 let currentPlatform: "macos" | "linux" | "windows" = "linux";
@@ -345,6 +390,15 @@ window.addEventListener("DOMContentLoaded", () => {
   transcriptionConfigItem = document.querySelector("#transcription-config-item");
   transcriptionQuickToggle = document.querySelector("#transcription-quick-toggle");
   transcriptionQuickCheckbox = document.querySelector("#transcription-quick-checkbox");
+  modelConfigItem = document.querySelector("#model-config-item");
+  modelSelect = document.querySelector("#model-select");
+  modelInfo = document.querySelector("#model-info");
+  modelStatus = document.querySelector("#model-status");
+  modelDownloadBtn = document.querySelector("#model-download-btn");
+  modelCancelBtn = document.querySelector("#model-cancel-btn");
+  modelProgressContainer = document.querySelector("#model-progress-container");
+  modelProgressFill = document.querySelector("#model-progress-fill");
+  modelProgressText = document.querySelector("#model-progress-text");
 
   // Set up event listeners
   closeBtn?.addEventListener("click", async () => {
@@ -433,6 +487,14 @@ window.addEventListener("DOMContentLoaded", () => {
   macosSystemAudioCheckbox?.addEventListener("change", handleMacosSystemAudioChange);
   transcriptionCheckbox?.addEventListener("change", handleTranscriptionChange);
   transcriptionQuickCheckbox?.addEventListener("change", handleTranscriptionQuickToggleChange);
+  modelSelect?.addEventListener("change", handleModelChange);
+  modelDownloadBtn?.addEventListener("click", handleModelDownload);
+  modelCancelBtn?.addEventListener("click", handleModelCancel);
+
+  // Listen for model download progress events
+  listen<DownloadProgress>("model-download-progress", (event) => {
+    handleDownloadProgress(event.payload);
+  });
 
   // Listen for region updates from selector window (continuous updates as user moves/resizes)
   listen<CaptureRegion>("region-updated", (event) => {
@@ -1373,6 +1435,21 @@ async function startRecording(): Promise<void> {
     setStatus("Please select a display first", true);
     return;
   }
+  
+  // Check if transcription is enabled but model is not downloaded
+  const transcriptionEnabled = transcriptionCheckbox?.checked ?? false;
+  if (transcriptionEnabled && modelSelect?.value) {
+    try {
+      const status = await invoke<ModelStatus>("get_model_status", { model: modelSelect.value });
+      if (!status.exists) {
+        setStatus(`Transcription model "${status.display_name}" not downloaded. Please download it first or disable transcription.`, true);
+        return;
+      }
+    } catch (error) {
+      console.error("[Recording] Failed to check model status:", error);
+      // Allow recording to proceed if we can't check status
+    }
+  }
 
   setStatus("Starting recording...");
   disableSelection(true);
@@ -2029,6 +2106,13 @@ function updateTranscriptionVisibility(): void {
   if (transcriptionQuickToggle) {
     transcriptionQuickToggle.classList.toggle("hidden", !hasSystemAudio);
   }
+  
+  // Model config item is visible when system audio is enabled AND transcription is enabled
+  const transcriptionEnabled = transcriptionCheckbox?.checked ?? false;
+  const showModelConfig = hasSystemAudio && transcriptionEnabled;
+  if (modelConfigItem) {
+    modelConfigItem.classList.toggle("hidden", !showModelConfig);
+  }
 }
 
 // Handle transcription checkbox change (settings view)
@@ -2040,6 +2124,15 @@ async function handleTranscriptionChange(): Promise<void> {
   // Sync with quick toggle
   if (transcriptionQuickCheckbox) {
     transcriptionQuickCheckbox.checked = enabled;
+  }
+  
+  // Update model config visibility
+  updateTranscriptionVisibility();
+  
+  // If enabling transcription, load models and update status
+  if (enabled) {
+    await loadAvailableModels();
+    await updateModelStatus();
   }
   
   try {
@@ -2061,7 +2154,20 @@ async function loadTranscriptionConfig(): Promise<void> {
     if (transcriptionQuickCheckbox) {
       transcriptionQuickCheckbox.checked = config.enabled;
     }
-    console.log("[Transcription] Loaded config: enabled=", config.enabled);
+    
+    // Load available models and select the configured one
+    await loadAvailableModels();
+    if (modelSelect && config.model) {
+      modelSelect.value = config.model;
+    }
+    
+    // Update model status display
+    await updateModelStatus();
+    
+    // Update visibility (model config depends on transcription being enabled)
+    updateTranscriptionVisibility();
+    
+    console.log("[Transcription] Loaded config: enabled=", config.enabled, "model=", config.model);
   } catch (error) {
     console.error("[Transcription] Failed to load config:", error);
   }
@@ -2083,6 +2189,223 @@ async function handleTranscriptionQuickToggleChange(): Promise<void> {
     console.log("[Transcription] Quick toggle: enabled=", enabled);
   } catch (error) {
     console.error("[Transcription] Failed to save config:", error);
+  }
+}
+
+// =============================================================================
+// Model Management Functions
+// =============================================================================
+
+// Load available models and populate the dropdown
+async function loadAvailableModels(): Promise<void> {
+  if (!modelSelect) return;
+  
+  try {
+    const models = await invoke<ModelInfo[]>("list_available_models");
+    
+    // Clear existing options
+    modelSelect.innerHTML = "";
+    
+    // Add options for each model - show only description
+    for (const model of models) {
+      const option = document.createElement("option");
+      option.value = model.id;
+      option.textContent = model.description;
+      modelSelect.appendChild(option);
+    }
+    
+    console.log("[Model] Loaded", models.length, "available models");
+  } catch (error) {
+    console.error("[Model] Failed to load models:", error);
+    modelSelect.innerHTML = '<option value="">Failed to load models</option>';
+  }
+}
+
+// Update model status display based on selected model
+async function updateModelStatus(): Promise<void> {
+  if (!modelSelect || !modelStatus || !modelDownloadBtn || !modelCancelBtn) return;
+  
+  const selectedModel = modelSelect.value;
+  if (!selectedModel) {
+    if (modelInfo) modelInfo.textContent = "";
+    modelStatus.textContent = "";
+    modelDownloadBtn.classList.add("hidden");
+    modelCancelBtn.classList.add("hidden");
+    return;
+  }
+  
+  try {
+    const status = await invoke<ModelStatus>("get_model_status", { model: selectedModel });
+    
+    // Show model name and size on the left
+    if (modelInfo) {
+      modelInfo.textContent = `${status.model} (${status.size_display})`;
+    }
+    
+    if (isModelDownloading) {
+      // During download, show download in progress
+      modelStatus.textContent = "Downloading...";
+      modelStatus.className = "model-status model-status--downloading";
+      modelDownloadBtn.classList.add("hidden");
+      modelCancelBtn.classList.remove("hidden");
+      modelSelect.disabled = true;
+    } else if (status.exists) {
+      // Model is downloaded
+      modelStatus.textContent = "Downloaded";
+      modelStatus.className = "model-status model-status--downloaded";
+      modelDownloadBtn.classList.add("hidden");
+      modelCancelBtn.classList.add("hidden");
+      modelSelect.disabled = false;
+    } else {
+      // Model not downloaded
+      modelStatus.textContent = "Not downloaded";
+      modelStatus.className = "model-status model-status--not-downloaded";
+      modelDownloadBtn.classList.remove("hidden");
+      modelCancelBtn.classList.add("hidden");
+      modelSelect.disabled = false;
+    }
+  } catch (error) {
+    console.error("[Model] Failed to get status:", error);
+    if (modelInfo) modelInfo.textContent = "";
+    modelStatus.textContent = "Error checking status";
+    modelStatus.className = "model-status model-status--error";
+    modelDownloadBtn.classList.add("hidden");
+    modelCancelBtn.classList.add("hidden");
+  }
+}
+
+// Handle model selection change
+async function handleModelChange(): Promise<void> {
+  if (!modelSelect) return;
+  
+  const selectedModel = modelSelect.value;
+  console.log("[Model] Selection changed to:", selectedModel);
+  
+  // Update status display for the new selection
+  await updateModelStatus();
+  
+  // Save the selection to config
+  try {
+    await invoke("save_transcription_config", {
+      enabled: transcriptionCheckbox?.checked ?? false,
+      model: selectedModel,
+    });
+    console.log("[Model] Saved model selection:", selectedModel);
+  } catch (error) {
+    console.error("[Model] Failed to save selection:", error);
+  }
+}
+
+// Handle model download button click
+async function handleModelDownload(): Promise<void> {
+  if (!modelSelect) return;
+  
+  const selectedModel = modelSelect.value;
+  if (!selectedModel) return;
+  
+  console.log("[Model] Starting download:", selectedModel);
+  isModelDownloading = true;
+  
+  // Show progress UI
+  if (modelProgressContainer) {
+    modelProgressContainer.classList.remove("hidden");
+  }
+  if (modelProgressFill) {
+    modelProgressFill.style.width = "0%";
+  }
+  if (modelProgressText) {
+    modelProgressText.textContent = "0%";
+  }
+  
+  // Update status display
+  await updateModelStatus();
+  
+  try {
+    await invoke("download_model", { model: selectedModel });
+    // Success is handled via the progress event with status "completed"
+  } catch (error) {
+    console.error("[Model] Download failed:", error);
+    isModelDownloading = false;
+    
+    // Hide progress, show error
+    if (modelProgressContainer) {
+      modelProgressContainer.classList.add("hidden");
+    }
+    await updateModelStatus();
+    
+    // Show error notification
+    setStatus(`Download failed: ${error}`, true);
+  }
+}
+
+// Handle cancel download button click
+async function handleModelCancel(): Promise<void> {
+  console.log("[Model] Cancelling download");
+  
+  try {
+    await invoke("cancel_download");
+    // Cancellation is handled via the progress event with status "cancelled"
+  } catch (error) {
+    console.error("[Model] Failed to cancel download:", error);
+  }
+}
+
+// Handle download progress events
+function handleDownloadProgress(progress: DownloadProgress): void {
+  console.log("[Model] Progress:", progress.percentage.toFixed(1) + "%", progress.status);
+  
+  // Update progress bar
+  if (modelProgressFill) {
+    modelProgressFill.style.width = `${progress.percentage}%`;
+  }
+  if (modelProgressText) {
+    const downloadedMB = (progress.bytes_downloaded / (1024 * 1024)).toFixed(1);
+    const totalMB = (progress.total_bytes / (1024 * 1024)).toFixed(1);
+    modelProgressText.textContent = `${progress.percentage.toFixed(0)}% (${downloadedMB}/${totalMB} MB)`;
+  }
+  
+  // Handle terminal states
+  if (progress.status === "completed") {
+    console.log("[Model] Download completed");
+    isModelDownloading = false;
+    
+    // Hide progress bar
+    if (modelProgressContainer) {
+      modelProgressContainer.classList.add("hidden");
+    }
+    
+    // Refresh model list to show checkmark
+    loadAvailableModels().then(() => {
+      // Restore selection
+      if (modelSelect) {
+        modelSelect.value = progress.model;
+      }
+      updateModelStatus();
+    });
+    
+    setStatus("Model downloaded successfully");
+  } else if (progress.status === "cancelled") {
+    console.log("[Model] Download cancelled");
+    isModelDownloading = false;
+    
+    // Hide progress bar
+    if (modelProgressContainer) {
+      modelProgressContainer.classList.add("hidden");
+    }
+    
+    updateModelStatus();
+    setStatus("Download cancelled");
+  } else if (progress.status === "error") {
+    console.error("[Model] Download error:", progress.error);
+    isModelDownloading = false;
+    
+    // Hide progress bar
+    if (modelProgressContainer) {
+      modelProgressContainer.classList.add("hidden");
+    }
+    
+    updateModelStatus();
+    setStatus(`Download failed: ${progress.error}`, true);
   }
 }
 

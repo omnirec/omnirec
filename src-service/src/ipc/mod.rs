@@ -1,6 +1,6 @@
 //! IPC server implementation.
 
-mod server;
 mod handlers;
+mod server;
 
 pub use server::run_server;

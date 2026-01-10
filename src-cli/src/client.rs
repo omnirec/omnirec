@@ -46,9 +46,9 @@ impl ServiceError {
     /// Convert to an appropriate exit code.
     pub fn to_exit_code(&self) -> ExitCode {
         match self {
-            ServiceError::NotConnected | ServiceError::ConnectionFailed(_) | ServiceError::Timeout => {
-                ExitCode::ServiceConnectionFailed
-            }
+            ServiceError::NotConnected
+            | ServiceError::ConnectionFailed(_)
+            | ServiceError::Timeout => ExitCode::ServiceConnectionFailed,
             ServiceError::SendFailed(_) | ServiceError::ReceiveFailed(_) => {
                 ExitCode::ServiceConnectionFailed
             }
@@ -120,12 +120,8 @@ impl ServiceClient {
             })?;
 
             // Set read/write timeouts
-            stream
-                .set_read_timeout(Some(Duration::from_secs(30)))
-                .ok();
-            stream
-                .set_write_timeout(Some(Duration::from_secs(10)))
-                .ok();
+            stream.set_read_timeout(Some(Duration::from_secs(30))).ok();
+            stream.set_write_timeout(Some(Duration::from_secs(10))).ok();
 
             *conn = ConnectionState::Connected(stream);
             Ok(())
@@ -202,15 +198,15 @@ impl ServiceClient {
 
             // Send length-prefixed message
             let len = request_json.len() as u32;
-            stream.write_all(&len.to_le_bytes()).map_err(|e| {
-                ServiceError::SendFailed(format!("Failed to write length: {}", e))
-            })?;
-            stream.write_all(&request_json).map_err(|e| {
-                ServiceError::SendFailed(format!("Failed to write request: {}", e))
-            })?;
-            stream.flush().map_err(|e| {
-                ServiceError::SendFailed(format!("Failed to flush: {}", e))
-            })?;
+            stream
+                .write_all(&len.to_le_bytes())
+                .map_err(|e| ServiceError::SendFailed(format!("Failed to write length: {}", e)))?;
+            stream
+                .write_all(&request_json)
+                .map_err(|e| ServiceError::SendFailed(format!("Failed to write request: {}", e)))?;
+            stream
+                .flush()
+                .map_err(|e| ServiceError::SendFailed(format!("Failed to flush: {}", e)))?;
 
             // Read response length
             let mut len_buf = [0u8; 4];
@@ -262,15 +258,12 @@ impl ServiceClient {
 
             // Send length-prefixed message
             let len = request_json.len() as u32;
-            file.write_all(&len.to_le_bytes()).map_err(|e| {
-                ServiceError::SendFailed(format!("Failed to write length: {}", e))
-            })?;
-            file.write_all(&request_json).map_err(|e| {
-                ServiceError::SendFailed(format!("Failed to write request: {}", e))
-            })?;
-            file.flush().map_err(|e| {
-                ServiceError::SendFailed(format!("Failed to flush: {}", e))
-            })?;
+            file.write_all(&len.to_le_bytes())
+                .map_err(|e| ServiceError::SendFailed(format!("Failed to write length: {}", e)))?;
+            file.write_all(&request_json)
+                .map_err(|e| ServiceError::SendFailed(format!("Failed to write request: {}", e)))?;
+            file.flush()
+                .map_err(|e| ServiceError::SendFailed(format!("Failed to flush: {}", e)))?;
 
             // Read response length
             let mut len_buf = [0u8; 4];
@@ -306,7 +299,6 @@ impl ServiceClient {
             Ok(response)
         }
     }
-
 
     /// Wait for the service to become available.
     pub async fn wait_for_service(&self, timeout: Duration) -> Result<(), ServiceError> {
@@ -362,7 +354,9 @@ impl ServiceClient {
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .spawn()
-            .map_err(|e| ServiceError::ConnectionFailed(format!("Failed to spawn service: {}", e)))?;
+            .map_err(|e| {
+                ServiceError::ConnectionFailed(format!("Failed to spawn service: {}", e))
+            })?;
 
         // Wait for service to be ready
         self.wait_for_service(Duration::from_secs(10)).await

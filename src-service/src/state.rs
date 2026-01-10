@@ -164,7 +164,10 @@ impl RecordingManager {
     }
 
     /// Set the transcription configuration.
-    pub async fn set_transcription_config(&self, config: TranscriptionConfig) -> Result<(), String> {
+    pub async fn set_transcription_config(
+        &self,
+        config: TranscriptionConfig,
+    ) -> Result<(), String> {
         let state = self.state.read().await;
         if *state != RecordingState::Idle {
             return Err("Cannot change transcription config while recording".to_string());
@@ -244,9 +247,7 @@ impl RecordingManager {
         self.check_idle().await?;
 
         let backend = crate::capture::get_backend();
-        let (frame_rx, stop_flag) = backend
-            .start_portal_capture()
-            .map_err(|e| e.to_string())?;
+        let (frame_rx, stop_flag) = backend.start_portal_capture().map_err(|e| e.to_string())?;
 
         self.start_encoding(frame_rx, stop_flag).await
     }
@@ -323,7 +324,7 @@ impl RecordingManager {
 
                     if transcription_enabled {
                         eprintln!("[Transcription] Transcription is ENABLED - creating channel and starting task");
-                        
+
                         // Generate output path upfront so transcription can use the same base name
                         let video_output_path = match crate::encoder::generate_output_path() {
                             Ok(path) => path,
@@ -333,15 +334,23 @@ impl RecordingManager {
                             }
                         };
                         eprintln!("[Transcription] Video output path: {:?}", video_output_path);
-                        
+
+                        // Get model path from config
+                        let model_path = transcription_cfg.model_path.as_ref().map(PathBuf::from);
+                        eprintln!("[Transcription] Model path from config: {:?}", model_path);
+
                         // Create transcription channel
                         let (transcription_tx, transcription_rx) = mpsc::channel::<Vec<f32>>(256);
 
                         // Start transcription processing task with video output path
                         // Note: Transcription uses channel disconnection to detect stop, not the stop_flag,
                         // because the video capture stop_flag can be set during PipeWire format renegotiation.
-                        self.start_transcription_task(transcription_rx, video_output_path.clone())
-                            .await;
+                        self.start_transcription_task(
+                            transcription_rx,
+                            video_output_path.clone(),
+                            model_path,
+                        )
+                        .await;
 
                         // Use encoder with transcription support, passing the pre-generated output path
                         tokio::spawn(encode_frames_with_audio_and_transcription(
@@ -403,15 +412,19 @@ impl RecordingManager {
     /// # Arguments
     /// * `transcription_rx` - Channel to receive audio samples from the encoder
     /// * `video_output_path` - Path to the video output file (transcript will be derived from this)
+    /// * `model_path` - Optional custom model path (uses default if None)
     async fn start_transcription_task(
         &self,
         transcription_rx: mpsc::Receiver<Vec<f32>>,
         video_output_path: PathBuf,
+        model_path: Option<PathBuf>,
     ) {
         // Initialize transcription state with the video output path
         {
             let mut state = self.transcription_state.lock().await;
-            if let Err(e) = state.start(video_output_path.clone(), 48000, 2) {
+            if let Err(e) =
+                state.start_with_model(video_output_path.clone(), 48000, 2, model_path.clone())
+            {
                 error!("Failed to start transcription: {}", e);
                 return;
             }
@@ -429,13 +442,22 @@ impl RecordingManager {
         // TranscribeState.process_samples() is synchronous
         let queue_clone = queue.clone();
         let video_path_for_thread = video_output_path.clone();
+        let model_path_for_thread = model_path.clone();
         let transcription_thread = std::thread::spawn(move || {
             eprintln!("[Transcription] Worker thread started");
             let mut transcribe_state = TranscribeState::new();
 
-            // Start the transcription state with the video output path
-            if let Err(e) = transcribe_state.start(video_path_for_thread, 48000, 2) {
-                eprintln!("[Transcription] Failed to start transcription in thread: {}", e);
+            // Start the transcription state with the video output path and model path
+            if let Err(e) = transcribe_state.start_with_model(
+                video_path_for_thread,
+                48000,
+                2,
+                model_path_for_thread,
+            ) {
+                eprintln!(
+                    "[Transcription] Failed to start transcription in thread: {}",
+                    e
+                );
                 return;
             }
             eprintln!("[Transcription] TranscribeState initialized in worker thread");
@@ -452,7 +474,7 @@ impl RecordingManager {
                     Ok(samples) => {
                         total_samples_received += samples.len() as u64;
                         transcribe_state.process_samples(&samples);
-                        
+
                         // Log stats every 5 seconds
                         if last_stats_time.elapsed().as_secs() >= 5 {
                             let duration_secs = total_samples_received as f64 / 48000.0 / 2.0; // stereo
@@ -491,7 +513,7 @@ impl RecordingManager {
         let mut transcription_rx = transcription_rx;
         let handle = tokio::spawn(async move {
             let mut forwarded_count: u64 = 0;
-            
+
             loop {
                 match transcription_rx.recv().await {
                     Some(samples) => {
@@ -505,7 +527,10 @@ impl RecordingManager {
                     }
                     None => {
                         // Channel closed - encoder has finished
-                        eprintln!("[Transcription] Forwarder: channel closed after {} batches", forwarded_count);
+                        eprintln!(
+                            "[Transcription] Forwarder: channel closed after {} batches",
+                            forwarded_count
+                        );
                         break;
                     }
                 }

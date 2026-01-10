@@ -135,10 +135,16 @@ pub fn validate_dimensions(width: u32, height: u32) -> Result<(), ValidationErro
 /// within reasonable bounds (±MAX_COORDINATE).
 pub fn validate_coordinates(x: i32, y: i32) -> Result<(), ValidationError> {
     if !(-MAX_COORDINATE..=MAX_COORDINATE).contains(&x) {
-        return Err(ValidationError::CoordinateOutOfRange { field: "x", value: x });
+        return Err(ValidationError::CoordinateOutOfRange {
+            field: "x",
+            value: x,
+        });
     }
     if !(-MAX_COORDINATE..=MAX_COORDINATE).contains(&y) {
-        return Err(ValidationError::CoordinateOutOfRange { field: "y", value: y });
+        return Err(ValidationError::CoordinateOutOfRange {
+            field: "y",
+            value: y,
+        });
     }
     Ok(())
 }
@@ -177,8 +183,12 @@ mod tests {
         assert!(validate_source_id("alsa_output.pci-0000_00_1f.3.analog-stereo.monitor").is_ok());
         assert!(validate_source_id("pulse:sink:0").is_ok());
         // Windows WASAPI style endpoint IDs
-        assert!(validate_source_id("{0.0.0.00000000}.{b3f8fa53-0004-438e-9003-51a46e139bfc}").is_ok());
-        assert!(validate_source_id("{0.0.1.00000000}.{d11a3f67-7b3e-4c7e-b123-456789abcdef}").is_ok());
+        assert!(
+            validate_source_id("{0.0.0.00000000}.{b3f8fa53-0004-438e-9003-51a46e139bfc}").is_ok()
+        );
+        assert!(
+            validate_source_id("{0.0.1.00000000}.{d11a3f67-7b3e-4c7e-b123-456789abcdef}").is_ok()
+        );
     }
 
     #[test]

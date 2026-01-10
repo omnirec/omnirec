@@ -23,6 +23,8 @@ use crate::capture::error::{CaptureError, EnumerationError};
 use crate::capture::types::{AudioReceiver, AudioSample, StopHandle};
 use crate::capture::{AudioSource, AudioSourceType};
 
+use core_foundation::base::TCFType;
+use core_foundation::string::CFString;
 use coreaudio_sys::{
     kAudioDevicePropertyDeviceNameCFString, kAudioDevicePropertyScopeInput,
     kAudioDevicePropertyScopeOutput, kAudioDevicePropertyStreams, kAudioHardwarePropertyDevices,
@@ -30,8 +32,6 @@ use coreaudio_sys::{
     AudioDeviceID, AudioObjectGetPropertyData, AudioObjectGetPropertyDataSize,
     AudioObjectPropertyAddress, OSStatus,
 };
-use core_foundation::base::TCFType;
-use core_foundation::string::CFString;
 use screencapturekit_sys::{
     cm_sample_buffer_ref::CMSampleBufferRef,
     content_filter::{UnsafeContentFilter, UnsafeInitParams},
@@ -64,18 +64,18 @@ fn resample_linear(samples: &[f32], from_rate: u32, to_rate: u32, channels: u32)
     let channels = channels as usize;
     let input_frames = samples.len() / channels;
     let output_frames = ((input_frames as f64) / ratio).ceil() as usize;
-    
+
     let mut output = Vec::with_capacity(output_frames * channels);
-    
+
     for out_frame in 0..output_frames {
         let in_pos = out_frame as f64 * ratio;
         let in_frame = in_pos.floor() as usize;
         let frac = (in_pos - in_frame as f64) as f32;
-        
+
         for ch in 0..channels {
             let idx0 = in_frame * channels + ch;
             let idx1 = ((in_frame + 1).min(input_frames - 1)) * channels + ch;
-            
+
             if idx0 < samples.len() && idx1 < samples.len() {
                 // Linear interpolation between adjacent samples
                 let s0 = samples[idx0];
@@ -86,7 +86,7 @@ fn resample_linear(samples: &[f32], from_rate: u32, to_rate: u32, channels: u32)
             }
         }
     }
-    
+
     output
 }
 
@@ -96,12 +96,9 @@ fn resample_linear(samples: &[f32], from_rate: u32, to_rate: u32, channels: u32)
 fn is_macos_13_or_later() -> bool {
     // Use sysctl to get macOS version
     use std::process::Command;
-    
-    let output = Command::new("sw_vers")
-        .arg("-productVersion")
-        .output()
-        .ok();
-    
+
+    let output = Command::new("sw_vers").arg("-productVersion").output().ok();
+
     if let Some(output) = output {
         if let Ok(version_str) = String::from_utf8(output.stdout) {
             let version_str = version_str.trim();
@@ -114,7 +111,7 @@ fn is_macos_13_or_later() -> bool {
             }
         }
     }
-    
+
     // Default to false if we can't determine version
     false
 }
@@ -160,7 +157,10 @@ pub fn list_audio_sources() -> Result<Vec<AudioSource>, EnumerationError> {
         }
     }
 
-    eprintln!("[Audio] Enumerated {} audio sources on macOS", sources.len());
+    eprintln!(
+        "[Audio] Enumerated {} audio sources on macOS",
+        sources.len()
+    );
     Ok(sources)
 }
 
@@ -275,7 +275,13 @@ fn has_streams(device_id: AudioDeviceID, scope: u32) -> bool {
 
     let mut data_size: u32 = 0;
     let status: OSStatus = unsafe {
-        AudioObjectGetPropertyDataSize(device_id, &property_address, 0, std::ptr::null(), &mut data_size)
+        AudioObjectGetPropertyDataSize(
+            device_id,
+            &property_address,
+            0,
+            std::ptr::null(),
+            &mut data_size,
+        )
     };
 
     status == 0 && data_size > 0
@@ -295,7 +301,7 @@ impl UnsafeSCStreamError for AudioCaptureErrorHandler {
 }
 
 /// Audio output handler that converts CMSampleBuffer to AudioSample.
-/// 
+///
 /// We use the unsafe UnsafeSCStreamOutput trait directly instead of the high-level
 /// StreamOutput trait because the latter wraps sample buffers in CMSampleBuffer::new()
 /// which calls get_frame_info() - this panics on audio samples since they don't have
@@ -352,7 +358,8 @@ impl UnsafeSCStreamOutput for AudioOutputHandler {
         let channel_count = asbd.channels_per_frame as usize;
 
         // Log first sample's format info for debugging
-        static LOGGED_FORMAT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        static LOGGED_FORMAT: std::sync::atomic::AtomicBool =
+            std::sync::atomic::AtomicBool::new(false);
         if !LOGGED_FORMAT.swap(true, Ordering::Relaxed) {
             eprintln!("[Audio] Capture format: sample_rate={}, channels={}, format_id={}, format_flags={}, bytes_per_packet={}, frames_per_packet={}, bytes_per_frame={}, bits_per_channel={}, non_interleaved={}",
                 asbd.sample_rate,
@@ -382,20 +389,20 @@ impl UnsafeSCStreamOutput for AudioOutputHandler {
             // Non-interleaved stereo: interleave the two channel buffers
             let left_bytes = &audio_buffers[0].data;
             let right_bytes = &audio_buffers[1].data;
-            
+
             let left_samples: &[f32] = unsafe {
                 std::slice::from_raw_parts(
                     left_bytes.as_ptr() as *const f32,
-                    left_bytes.len() / std::mem::size_of::<f32>()
+                    left_bytes.len() / std::mem::size_of::<f32>(),
                 )
             };
             let right_samples: &[f32] = unsafe {
                 std::slice::from_raw_parts(
                     right_bytes.as_ptr() as *const f32,
-                    right_bytes.len() / std::mem::size_of::<f32>()
+                    right_bytes.len() / std::mem::size_of::<f32>(),
                 )
             };
-            
+
             // Interleave: L0, R0, L1, R1, L2, R2, ...
             let frame_count = left_samples.len().min(right_samples.len());
             let mut interleaved = Vec::with_capacity(frame_count * 2);
@@ -410,7 +417,7 @@ impl UnsafeSCStreamOutput for AudioOutputHandler {
             let mono_samples: &[f32] = unsafe {
                 std::slice::from_raw_parts(
                     mono_bytes.as_ptr() as *const f32,
-                    mono_bytes.len() / std::mem::size_of::<f32>()
+                    mono_bytes.len() / std::mem::size_of::<f32>(),
                 )
             };
             mono_samples.iter().flat_map(|&s| [s, s]).collect()
@@ -427,7 +434,7 @@ impl UnsafeSCStreamOutput for AudioOutputHandler {
                     all_samples.extend_from_slice(samples);
                 }
             }
-            
+
             // Handle mono to stereo if needed
             if channel_count == 1 {
                 all_samples.iter().flat_map(|&s| [s, s]).collect()
@@ -444,7 +451,12 @@ impl UnsafeSCStreamOutput for AudioOutputHandler {
 
         // Resample to target rate if needed
         let final_samples = if sample_rate != TARGET_SAMPLE_RATE {
-            resample_linear(&interleaved_samples, sample_rate, TARGET_SAMPLE_RATE, converted_channels)
+            resample_linear(
+                &interleaved_samples,
+                sample_rate,
+                TARGET_SAMPLE_RATE,
+                converted_channels,
+            )
         } else {
             interleaved_samples
         };
@@ -479,7 +491,7 @@ pub fn start_audio_capture(_source_id: &str) -> Result<(AudioReceiver, StopHandl
     if !super::MacOSBackend::has_screen_recording_permission() {
         // Try to trigger the permission prompt
         super::MacOSBackend::trigger_permission_prompt();
-        
+
         return Err(CaptureError::PermissionDenied(
             "Screen recording permission required for audio capture. Please grant permission in System Settings > Privacy & Security > Screen Recording, then try again.".to_string(),
         ));
@@ -581,8 +593,14 @@ pub fn init_audio_backend() -> Result<(), String> {
     // Enumerate devices for logging
     match list_audio_sources() {
         Ok(sources) => {
-            let output_count = sources.iter().filter(|s| s.source_type == AudioSourceType::Output).count();
-            let input_count = sources.iter().filter(|s| s.source_type == AudioSourceType::Input).count();
+            let output_count = sources
+                .iter()
+                .filter(|s| s.source_type == AudioSourceType::Output)
+                .count();
+            let input_count = sources
+                .iter()
+                .filter(|s| s.source_type == AudioSourceType::Input)
+                .count();
             eprintln!(
                 "[Audio] Found {} audio devices ({} outputs, {} inputs)",
                 sources.len(),

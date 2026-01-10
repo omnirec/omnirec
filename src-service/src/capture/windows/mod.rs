@@ -84,7 +84,10 @@ impl HighlightProvider for WindowsBackend {
 }
 
 impl ThumbnailCapture for WindowsBackend {
-    fn capture_window_thumbnail(&self, window_handle: isize) -> Result<ThumbnailResult, CaptureError> {
+    fn capture_window_thumbnail(
+        &self,
+        window_handle: isize,
+    ) -> Result<ThumbnailResult, CaptureError> {
         thumbnail::WindowsThumbnailCapture::new().capture_window_thumbnail(window_handle)
     }
 
@@ -100,7 +103,8 @@ impl ThumbnailCapture for WindowsBackend {
         width: u32,
         height: u32,
     ) -> Result<ThumbnailResult, CaptureError> {
-        thumbnail::WindowsThumbnailCapture::new().capture_region_preview(monitor_id, x, y, width, height)
+        thumbnail::WindowsThumbnailCapture::new()
+            .capture_region_preview(monitor_id, x, y, width, height)
     }
 }
 

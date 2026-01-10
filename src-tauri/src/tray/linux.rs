@@ -180,8 +180,13 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let is_recording = Arc::new(AtomicBool::new(false));
 
     // Create menu items
-    let record_item =
-        MenuItem::with_id(app, menu_ids::RECORD, menu_labels::RECORD, true, None::<&str>)?;
+    let record_item = MenuItem::with_id(
+        app,
+        menu_ids::RECORD,
+        menu_labels::RECORD,
+        true,
+        None::<&str>,
+    )?;
     let configuration = MenuItem::with_id(
         app,
         menu_ids::CONFIGURATION,

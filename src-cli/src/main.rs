@@ -192,21 +192,36 @@ mod tests {
         assert!(!cli.json);
         assert!(!cli.quiet);
         assert!(!cli.verbose);
-        assert!(matches!(cli.command, Commands::List { source: ListSource::Windows }));
+        assert!(matches!(
+            cli.command,
+            Commands::List {
+                source: ListSource::Windows
+            }
+        ));
     }
 
     /// Test parsing 'list displays' command
     #[test]
     fn parse_list_displays() {
         let cli = Cli::try_parse_from(["omnirec", "list", "displays"]).unwrap();
-        assert!(matches!(cli.command, Commands::List { source: ListSource::Displays }));
+        assert!(matches!(
+            cli.command,
+            Commands::List {
+                source: ListSource::Displays
+            }
+        ));
     }
 
     /// Test parsing 'list audio' command
     #[test]
     fn parse_list_audio() {
         let cli = Cli::try_parse_from(["omnirec", "list", "audio"]).unwrap();
-        assert!(matches!(cli.command, Commands::List { source: ListSource::Audio }));
+        assert!(matches!(
+            cli.command,
+            Commands::List {
+                source: ListSource::Audio
+            }
+        ));
     }
 
     /// Test parsing list command with --json flag
@@ -230,7 +245,9 @@ mod tests {
     fn parse_record_window() {
         let cli = Cli::try_parse_from(["omnirec", "record", "window", "12345"]).unwrap();
         match cli.command {
-            Commands::Record { target: RecordTarget::Window { handle, options } } => {
+            Commands::Record {
+                target: RecordTarget::Window { handle, options },
+            } => {
                 assert_eq!(handle, 12345);
                 assert_eq!(options.format, "mp4");
                 assert!(options.output.is_none());
@@ -246,7 +263,9 @@ mod tests {
     fn parse_record_display() {
         let cli = Cli::try_parse_from(["omnirec", "record", "display", "HDMI-1"]).unwrap();
         match cli.command {
-            Commands::Record { target: RecordTarget::Display { id, .. } } => {
+            Commands::Record {
+                target: RecordTarget::Display { id, .. },
+            } => {
                 assert_eq!(id, "HDMI-1");
             }
             _ => panic!("Expected Record Display command"),
@@ -257,15 +276,33 @@ mod tests {
     #[test]
     fn parse_record_region() {
         let cli = Cli::try_parse_from([
-            "omnirec", "record", "region",
-            "--display", "DP-1",
-            "--x", "100",
-            "--y", "200",
-            "--width", "800",
-            "--height", "600",
-        ]).unwrap();
+            "omnirec",
+            "record",
+            "region",
+            "--display",
+            "DP-1",
+            "--x",
+            "100",
+            "--y",
+            "200",
+            "--width",
+            "800",
+            "--height",
+            "600",
+        ])
+        .unwrap();
         match cli.command {
-            Commands::Record { target: RecordTarget::Region { display, x, y, width, height, .. } } => {
+            Commands::Record {
+                target:
+                    RecordTarget::Region {
+                        display,
+                        x,
+                        y,
+                        width,
+                        height,
+                        ..
+                    },
+            } => {
                 assert_eq!(display, "DP-1");
                 assert_eq!(x, 100);
                 assert_eq!(y, 200);
@@ -280,20 +317,34 @@ mod tests {
     #[test]
     fn parse_record_portal() {
         let cli = Cli::try_parse_from(["omnirec", "record", "portal"]).unwrap();
-        assert!(matches!(cli.command, Commands::Record { target: RecordTarget::Portal { .. } }));
+        assert!(matches!(
+            cli.command,
+            Commands::Record {
+                target: RecordTarget::Portal { .. }
+            }
+        ));
     }
 
     /// Test parsing record command with output options
     #[test]
     fn parse_record_with_options() {
         let cli = Cli::try_parse_from([
-            "omnirec", "record", "display", "0",
-            "-o", "/tmp/recording.webm",
-            "-f", "webm",
-            "-d", "60",
-        ]).unwrap();
+            "omnirec",
+            "record",
+            "display",
+            "0",
+            "-o",
+            "/tmp/recording.webm",
+            "-f",
+            "webm",
+            "-d",
+            "60",
+        ])
+        .unwrap();
         match cli.command {
-            Commands::Record { target: RecordTarget::Display { options, .. } } => {
+            Commands::Record {
+                target: RecordTarget::Display { options, .. },
+            } => {
                 assert_eq!(options.output, Some("/tmp/recording.webm".to_string()));
                 assert_eq!(options.format, "webm");
                 assert_eq!(options.duration, Some(60));
@@ -306,12 +357,20 @@ mod tests {
     #[test]
     fn parse_record_with_audio() {
         let cli = Cli::try_parse_from([
-            "omnirec", "record", "display", "0",
-            "--audio", "default",
-            "--microphone", "none",
-        ]).unwrap();
+            "omnirec",
+            "record",
+            "display",
+            "0",
+            "--audio",
+            "default",
+            "--microphone",
+            "none",
+        ])
+        .unwrap();
         match cli.command {
-            Commands::Record { target: RecordTarget::Display { options, .. } } => {
+            Commands::Record {
+                target: RecordTarget::Display { options, .. },
+            } => {
                 assert_eq!(options.audio, Some("default".to_string()));
                 assert_eq!(options.microphone, Some("none".to_string()));
             }
@@ -322,11 +381,11 @@ mod tests {
     /// Test parsing record command with --strict flag
     #[test]
     fn parse_record_with_strict() {
-        let cli = Cli::try_parse_from([
-            "omnirec", "record", "window", "123", "--strict",
-        ]).unwrap();
+        let cli = Cli::try_parse_from(["omnirec", "record", "window", "123", "--strict"]).unwrap();
         match cli.command {
-            Commands::Record { target: RecordTarget::Window { options, .. } } => {
+            Commands::Record {
+                target: RecordTarget::Window { options, .. },
+            } => {
                 assert!(options.strict);
             }
             _ => panic!("Expected Record Window command"),
@@ -388,7 +447,9 @@ mod tests {
     fn parse_negative_window_handle() {
         let cli = Cli::try_parse_from(["omnirec", "record", "window", "-1"]).unwrap();
         match cli.command {
-            Commands::Record { target: RecordTarget::Window { handle, .. } } => {
+            Commands::Record {
+                target: RecordTarget::Window { handle, .. },
+            } => {
                 assert_eq!(handle, -1);
             }
             _ => panic!("Expected Record Window command"),

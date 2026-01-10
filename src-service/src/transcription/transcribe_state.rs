@@ -134,11 +134,13 @@ impl TranscribeState {
     /// * `output_path` - Path to the video output file (transcript will be derived from this)
     /// * `input_sample_rate` - Sample rate of input audio (typically 48000)
     /// * `input_channels` - Number of channels in input audio (typically 2)
-    pub fn start(
+    /// * `model_path` - Optional custom model path (uses default if None)
+    pub fn start_with_model(
         &mut self,
         output_path: PathBuf,
         input_sample_rate: u32,
         input_channels: u16,
+        model_path: Option<PathBuf>,
     ) -> Result<(), String> {
         if self.is_active {
             return Err("Transcription already active".to_string());
@@ -163,15 +165,13 @@ impl TranscribeState {
         self.output_path = Some(output_path);
 
         eprintln!(
-            "[TranscribeState] Started - transcript: {:?}, sample_rate: {}, channels: {}",
-            transcript_path,
-            input_sample_rate,
-            input_channels
+            "[TranscribeState] Started - transcript: {:?}, sample_rate: {}, channels: {}, model: {:?}",
+            transcript_path, input_sample_rate, input_channels, model_path
         );
 
         // Start the transcription worker
         self.transcription_queue
-            .start_worker(transcript_path, None);
+            .start_worker(transcript_path, model_path);
 
         self.is_active = true;
 
@@ -220,7 +220,7 @@ impl TranscribeState {
         }
 
         // Log first sample processing
-        static FIRST_SAMPLE_LOGGED: std::sync::atomic::AtomicBool = 
+        static FIRST_SAMPLE_LOGGED: std::sync::atomic::AtomicBool =
             std::sync::atomic::AtomicBool::new(false);
         if !FIRST_SAMPLE_LOGGED.swap(true, std::sync::atomic::Ordering::Relaxed) {
             eprintln!(
@@ -334,8 +334,7 @@ impl TranscribeState {
 
         eprintln!(
             "[TranscribeState] Speech STARTED (lookback: {} samples, idx: {})",
-            lookback_samples,
-            self.segment_start_idx
+            lookback_samples, self.segment_start_idx
         );
     }
 
@@ -346,10 +345,7 @@ impl TranscribeState {
         }
 
         let duration_secs = self.segment_sample_count as f64 / WHISPER_SAMPLE_RATE as f64;
-        eprintln!(
-            "[TranscribeState] Speech ENDED after {:.2}s",
-            duration_secs
-        );
+        eprintln!("[TranscribeState] Speech ENDED after {:.2}s", duration_secs);
 
         self.finalize_current_segment();
     }
@@ -365,15 +361,18 @@ impl TranscribeState {
         let extraction_length = self.lookback_sample_count + offset_samples;
 
         // Extract segment up to word break
-        let end_idx =
-            (self.segment_start_idx + extraction_length) % self.ring_buffer.capacity();
-        let segment = self.ring_buffer.extract_segment_to(self.segment_start_idx, end_idx);
+        let end_idx = (self.segment_start_idx + extraction_length) % self.ring_buffer.capacity();
+        let segment = self
+            .ring_buffer
+            .extract_segment_to(self.segment_start_idx, end_idx);
 
         if self.validate_and_queue_segment(segment) {
             // Update state for continuation
             self.segment_start_idx = end_idx;
             self.lookback_sample_count = 0;
-            self.segment_sample_count = self.segment_sample_count.saturating_sub(offset_samples as u64);
+            self.segment_sample_count = self
+                .segment_sample_count
+                .saturating_sub(offset_samples as u64);
             self.seeking_word_break = false;
         }
     }
@@ -452,7 +451,11 @@ impl TranscribeState {
         let sum_squares: f32 = segment.iter().map(|s| s * s).sum();
         let rms = (sum_squares / segment.len() as f32).sqrt();
         if rms < MIN_AUDIO_RMS {
-            tracing::debug!("Segment too quiet (RMS {:.4} < {:.4}), skipping", rms, MIN_AUDIO_RMS);
+            tracing::debug!(
+                "Segment too quiet (RMS {:.4} < {:.4}), skipping",
+                rms,
+                MIN_AUDIO_RMS
+            );
             return false;
         }
 

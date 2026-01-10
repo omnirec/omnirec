@@ -309,7 +309,12 @@ pub async fn move_region_selector(x: i32, y: i32, width: i32, height: i32) -> Re
 /// Stub for non-Linux platforms.
 #[cfg(not(target_os = "linux"))]
 #[tauri::command]
-pub async fn move_region_selector(_x: i32, _y: i32, _width: i32, _height: i32) -> Result<(), String> {
+pub async fn move_region_selector(
+    _x: i32,
+    _y: i32,
+    _width: i32,
+    _height: i32,
+) -> Result<(), String> {
     Ok(())
 }
 

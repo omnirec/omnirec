@@ -1,8 +1,8 @@
 //! Region recording using Windows.Graphics.Capture API for monitor capture with cropping.
 
 use crate::capture::types::CapturedFrame;
-use crate::capture::CaptureRegion;
 use crate::capture::windows::monitor_list;
+use crate::capture::CaptureRegion;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -79,10 +79,15 @@ impl GraphicsCaptureApiHandler for RegionCaptureHandler {
         // Debug: log frame dimensions on first frame
         if self.frame_count == 0 {
             eprintln!("[Windows] First frame received:");
-            eprintln!("[Windows]   Frame dimensions: {}x{}", full_width, full_height);
+            eprintln!(
+                "[Windows]   Frame dimensions: {}x{}",
+                full_width, full_height
+            );
             eprintln!("[Windows]   Buffer stride: {} bytes/row", buffer_stride);
-            eprintln!("[Windows]   Region (physical): x={}, y={}, {}x{}", 
-                region_x, region_y, region_width, region_height);
+            eprintln!(
+                "[Windows]   Region (physical): x={}, y={}, {}x{}",
+                region_x, region_y, region_width, region_height
+            );
         }
 
         // Clamp to frame bounds
@@ -179,13 +184,16 @@ fn crop_frame(
 
 /// Find a monitor by its device ID.
 fn find_monitor_by_id(monitor_id: &str) -> Result<Monitor, String> {
-    let monitors = Monitor::enumerate().map_err(|e| format!("Failed to enumerate monitors: {}", e))?;
+    let monitors =
+        Monitor::enumerate().map_err(|e| format!("Failed to enumerate monitors: {}", e))?;
 
     eprintln!("[Windows] Looking for monitor with id: {}", monitor_id);
     eprintln!("[Windows] Available monitors from windows-capture:");
-    
+
     for (i, monitor) in monitors.iter().enumerate() {
-        let name = monitor.device_name().unwrap_or_else(|_| "unknown".to_string());
+        let name = monitor
+            .device_name()
+            .unwrap_or_else(|_| "unknown".to_string());
         eprintln!("[Windows]   [{}] device_name={}", i, name);
     }
 
@@ -231,11 +239,18 @@ pub fn start_region_capture(
     );
     eprintln!(
         "[Windows] Target monitor: pos=({}, {}), size={}x{}, scale={}",
-        monitor_info.x, monitor_info.y, monitor_info.width, monitor_info.height, monitor_info.scale_factor
+        monitor_info.x,
+        monitor_info.y,
+        monitor_info.width,
+        monitor_info.height,
+        monitor_info.scale_factor
     );
     eprintln!("[Windows] All monitors (physical coords):");
     for m in &monitors {
-        eprintln!("[Windows]   {} at ({}, {}) {}x{} scale={}", m.id, m.x, m.y, m.width, m.height, m.scale_factor);
+        eprintln!(
+            "[Windows]   {} at ({}, {}) {}x{} scale={}",
+            m.id, m.x, m.y, m.width, m.height, m.scale_factor
+        );
     }
     eprintln!("[Windows] =============================");
 
@@ -287,27 +302,33 @@ mod tests {
         // Compare our monitor enumeration with windows-capture's
         let our_monitors = monitor_list::list_monitors();
         let wc_monitors = Monitor::enumerate().expect("Failed to enumerate monitors");
-        
+
         println!("\n=== MONITOR ID COMPARISON ===");
         println!("Our monitors (monitor_list):");
         for m in &our_monitors {
-            println!("  id='{}', name='{}', pos=({}, {}), size={}x{}", 
-                m.id, m.name, m.x, m.y, m.width, m.height);
+            println!(
+                "  id='{}', name='{}', pos=({}, {}), size={}x{}",
+                m.id, m.name, m.x, m.y, m.width, m.height
+            );
         }
-        
+
         println!("\nwindows-capture monitors:");
         for (i, m) in wc_monitors.iter().enumerate() {
             let name = m.device_name().unwrap_or_else(|_| "unknown".to_string());
             println!("  [{}] device_name='{}'", i, name);
         }
-        
+
         // Verify each of our monitors can be found in windows-capture
         println!("\nMatching test:");
         for m in &our_monitors {
-            let found = wc_monitors.iter().any(|wc| {
-                wc.device_name().map(|n| n == m.id).unwrap_or(false)
-            });
-            println!("  {} -> {}", m.id, if found { "FOUND" } else { "NOT FOUND" });
+            let found = wc_monitors
+                .iter()
+                .any(|wc| wc.device_name().map(|n| n == m.id).unwrap_or(false));
+            println!(
+                "  {} -> {}",
+                m.id,
+                if found { "FOUND" } else { "NOT FOUND" }
+            );
             assert!(found, "Monitor {} not found in windows-capture", m.id);
         }
         println!("==============================\n");

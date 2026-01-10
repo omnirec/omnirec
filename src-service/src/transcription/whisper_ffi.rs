@@ -227,9 +227,12 @@ impl WhisperLibrary {
                 .map_err(|e| format!("Failed to load whisper_full_default_params: {}", e))?;
 
             let full = *lib
-                .get::<unsafe extern "C" fn(WhisperContext, WhisperFullParams, *const c_float, c_int) -> c_int>(
-                    b"whisper_full\0",
-                )
+                .get::<unsafe extern "C" fn(
+                    WhisperContext,
+                    WhisperFullParams,
+                    *const c_float,
+                    c_int,
+                ) -> c_int>(b"whisper_full\0")
                 .map_err(|e| format!("Failed to load whisper_full: {}", e))?;
 
             let full_n_segments = *lib
@@ -343,10 +346,7 @@ impl Context {
     pub fn new<P: AsRef<Path>>(model_path: P) -> Result<Self, String> {
         let lib = get_lib()?;
 
-        let path_str = model_path
-            .as_ref()
-            .to_str()
-            .ok_or("Invalid model path")?;
+        let path_str = model_path.as_ref().to_str().ok_or("Invalid model path")?;
         let c_path = CString::new(path_str).map_err(|e| format!("Invalid path: {}", e))?;
 
         let ptr = unsafe { (lib.init_from_file)(c_path.as_ptr()) };

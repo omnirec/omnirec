@@ -33,7 +33,8 @@ use tokio::sync::RwLock;
 use ipc_server::IpcServerState;
 
 /// Global IPC server state (initialized once at startup)
-static IPC_STATE: once_cell::sync::OnceCell<Arc<RwLock<IpcServerState>>> = once_cell::sync::OnceCell::new();
+static IPC_STATE: once_cell::sync::OnceCell<Arc<RwLock<IpcServerState>>> =
+    once_cell::sync::OnceCell::new();
 
 /// Initialize the global IPC server (call once at app startup).
 pub async fn init_ipc_server() -> Result<(), String> {
@@ -48,7 +49,10 @@ pub async fn init_ipc_server() -> Result<(), String> {
         .map_err(|e| format!("Failed to start IPC server: {}", e))?;
 
     IPC_STATE.set(state).map_err(|_| "IPC state already set")?;
-    eprintln!("[Linux] IPC server started at {:?}", ipc_server::get_socket_path());
+    eprintln!(
+        "[Linux] IPC server started at {:?}",
+        ipc_server::get_socket_path()
+    );
     Ok(())
 }
 
@@ -71,8 +75,6 @@ pub fn init_screencopy() {
 pub fn init_audio() -> Result<(), String> {
     audio::init_audio_backend()
 }
-
-
 
 /// Linux platform capture backend using Hyprland/PipeWire.
 ///
@@ -142,8 +144,8 @@ impl WindowEnumerator for LinuxBackend {
             )));
         }
 
-        let clients: Vec<RawHyprlandClient> = serde_json::from_slice(&output.stdout)
-            .map_err(|e| {
+        let clients: Vec<RawHyprlandClient> =
+            serde_json::from_slice(&output.stdout).map_err(|e| {
                 EnumerationError::PlatformError(format!("Failed to parse hyprctl output: {}", e))
             })?;
 
@@ -187,11 +189,12 @@ impl WindowEnumerator for LinuxBackend {
 
             // Find the scale factor for this window's monitor
             // client.monitor is Option<MonitorId> (i128), mon.id is also the numeric ID
-            let scale = monitors.as_ref()
+            let scale = monitors
+                .as_ref()
                 .and_then(|m| {
-                    client.monitor.and_then(|client_mon_id| {
-                        m.iter().find(|mon| mon.id == client_mon_id)
-                    })
+                    client
+                        .monitor
+                        .and_then(|client_mon_id| m.iter().find(|mon| mon.id == client_mon_id))
                 })
                 .map(|mon| mon.scale as f64)
                 .unwrap_or(1.0);
@@ -227,9 +230,16 @@ impl MonitorEnumerator for LinuxBackend {
 
             let mut result = Vec::new();
             for monitor in monitors {
-                eprintln!("[Linux] Monitor {}: {}x{} at ({},{}) scale={}", 
-                    monitor.name, monitor.width, monitor.height, monitor.x, monitor.y, monitor.scale);
-                
+                eprintln!(
+                    "[Linux] Monitor {}: {}x{} at ({},{}) scale={}",
+                    monitor.name,
+                    monitor.width,
+                    monitor.height,
+                    monitor.x,
+                    monitor.y,
+                    monitor.scale
+                );
+
                 result.push(MonitorInfo {
                     // Use monitor name as ID (e.g., "DP-1", "HDMI-A-1")
                     id: monitor.name.clone(),
@@ -250,12 +260,12 @@ impl MonitorEnumerator for LinuxBackend {
 
             return Ok(result);
         }
-        
+
         // Fallback for GNOME and other desktops: use xrandr or provide a default
         // For now, return a single "default" monitor that covers the primary display
         // The portal will handle the actual display selection
         eprintln!("[Linux] Non-Hyprland: using fallback monitor enumeration");
-        
+
         // Try to get display info from environment or use sensible defaults
         // On Wayland/GNOME, we can't easily enumerate monitors without compositor-specific APIs
         // But we can provide a fallback that allows region selection to work
@@ -279,37 +289,51 @@ impl CaptureBackend for LinuxBackend {
         window_handle: isize,
     ) -> Result<(FrameReceiver, StopHandle), CaptureError> {
         // Get window info to find the address
-        let windows = self.list_windows().map_err(|e| {
-            CaptureError::PlatformError(format!("Failed to list windows: {}", e))
-        })?;
-        
-        let window = windows.iter().find(|w| w.handle == window_handle).ok_or_else(|| {
-            CaptureError::TargetNotFound(format!("Window with handle {} not found", window_handle))
-        })?;
-        
+        let windows = self
+            .list_windows()
+            .map_err(|e| CaptureError::PlatformError(format!("Failed to list windows: {}", e)))?;
+
+        let window = windows
+            .iter()
+            .find(|w| w.handle == window_handle)
+            .ok_or_else(|| {
+                CaptureError::TargetNotFound(format!(
+                    "Window with handle {} not found",
+                    window_handle
+                ))
+            })?;
+
         // The window handle is the address converted to isize, convert back to hex string
         let window_address = format!("0x{:x}", window_handle as usize);
-        
-        eprintln!("[Linux] Starting window capture for {} ({})", window.title, window_address);
-        
+
+        eprintln!(
+            "[Linux] Starting window capture for {} ({})",
+            window.title, window_address
+        );
+
         // Get IPC state
-        let ipc_state = get_ipc_state().ok_or_else(|| {
-            CaptureError::PlatformError("IPC server not initialized".to_string())
-        })?;
-        
+        let ipc_state = get_ipc_state()
+            .ok_or_else(|| CaptureError::PlatformError("IPC server not initialized".to_string()))?;
+
         // Use block_in_place to run async code from sync context within tokio runtime
         let stream = tokio::task::block_in_place(|| {
             let rt = tokio::runtime::Handle::current();
             let portal_client = portal_client::PortalClient::new(ipc_state);
             rt.block_on(portal_client.request_window_capture(&window_address))
-        }).map_err(CaptureError::PlatformError)?;
-        
-        eprintln!("[Linux] Portal returned node ID {} for window capture", stream.node_id);
-        
+        })
+        .map_err(CaptureError::PlatformError)?;
+
+        eprintln!(
+            "[Linux] Portal returned node ID {} for window capture",
+            stream.node_id
+        );
+
         // Get window dimensions from Hyprland
-        let (width, height) = stream.size.map(|(w, h)| (w as u32, h as u32))
+        let (width, height) = stream
+            .size
+            .map(|(w, h)| (w as u32, h as u32))
             .unwrap_or((1920, 1080)); // Fallback dimensions
-        
+
         // Start PipeWire capture
         pipewire_capture::start_pipewire_capture(stream.node_id, width, height)
             .map_err(CaptureError::PlatformError)
@@ -319,61 +343,67 @@ impl CaptureBackend for LinuxBackend {
         &self,
         region: CaptureRegion,
     ) -> Result<(FrameReceiver, StopHandle), CaptureError> {
-        eprintln!("[Linux] Starting region capture for {} ({}x{} at {},{})", 
-            region.monitor_id, region.width, region.height, region.x, region.y);
-        
+        eprintln!(
+            "[Linux] Starting region capture for {} ({}x{} at {},{})",
+            region.monitor_id, region.width, region.height, region.x, region.y
+        );
+
         // Validate region bounds
         if region.width == 0 || region.height == 0 {
             return Err(CaptureError::InvalidRegion(
-                "Region width and height must be greater than 0".to_string()
+                "Region width and height must be greater than 0".to_string(),
             ));
         }
-        
+
         // Check minimum size (100x100 per spec)
         if region.width < 100 || region.height < 100 {
-            return Err(CaptureError::InvalidRegion(
-                format!("Region must be at least 100x100 pixels (got {}x{})", region.width, region.height)
-            ));
+            return Err(CaptureError::InvalidRegion(format!(
+                "Region must be at least 100x100 pixels (got {}x{})",
+                region.width, region.height
+            )));
         }
-        
+
         // Get monitor info to validate region and get full dimensions
-        let monitors = self.list_monitors().map_err(|e| {
-            CaptureError::PlatformError(format!("Failed to list monitors: {}", e))
-        })?;
-        
-        let monitor = monitors.iter().find(|m| m.id == region.monitor_id).ok_or_else(|| {
-            CaptureError::TargetNotFound(format!("Monitor '{}' not found", region.monitor_id))
-        })?;
-        
+        let monitors = self
+            .list_monitors()
+            .map_err(|e| CaptureError::PlatformError(format!("Failed to list monitors: {}", e)))?;
+
+        let monitor = monitors
+            .iter()
+            .find(|m| m.id == region.monitor_id)
+            .ok_or_else(|| {
+                CaptureError::TargetNotFound(format!("Monitor '{}' not found", region.monitor_id))
+            })?;
+
         // Validate region is within monitor bounds
         if region.x < 0 || region.y < 0 {
-            return Err(CaptureError::InvalidRegion(
-                format!("Region coordinates cannot be negative ({}, {})", region.x, region.y)
-            ));
+            return Err(CaptureError::InvalidRegion(format!(
+                "Region coordinates cannot be negative ({}, {})",
+                region.x, region.y
+            )));
         }
-        
+
         let region_x_end = region.x as u32 + region.width;
         let region_y_end = region.y as u32 + region.height;
-        
+
         if region_x_end > monitor.width || region_y_end > monitor.height {
-            return Err(CaptureError::InvalidRegion(
-                format!("Region extends beyond monitor bounds (region: {}x{} at {},{}, monitor: {}x{})",
-                    region.width, region.height, region.x, region.y, monitor.width, monitor.height)
-            ));
+            return Err(CaptureError::InvalidRegion(format!(
+                "Region extends beyond monitor bounds (region: {}x{} at {},{}, monitor: {}x{})",
+                region.width, region.height, region.x, region.y, monitor.width, monitor.height
+            )));
         }
-        
+
         // Get IPC state
-        let ipc_state = get_ipc_state().ok_or_else(|| {
-            CaptureError::PlatformError("IPC server not initialized".to_string())
-        })?;
-        
+        let ipc_state = get_ipc_state()
+            .ok_or_else(|| CaptureError::PlatformError("IPC server not initialized".to_string()))?;
+
         // Use block_in_place to run async code from sync context within tokio runtime
         let monitor_id_clone = region.monitor_id.clone();
         let region_x = region.x;
         let region_y = region.y;
         let region_width = region.width;
         let region_height = region.height;
-        
+
         let stream = tokio::task::block_in_place(|| {
             let rt = tokio::runtime::Handle::current();
             let portal_client = portal_client::PortalClient::new(ipc_state);
@@ -384,57 +414,70 @@ impl CaptureBackend for LinuxBackend {
                 region_width,
                 region_height,
             ))
-        }).map_err(CaptureError::PlatformError)?;
-        
-        eprintln!("[Linux] Portal returned node ID {} for region capture", stream.node_id);
-        
+        })
+        .map_err(CaptureError::PlatformError)?;
+
+        eprintln!(
+            "[Linux] Portal returned node ID {} for region capture",
+            stream.node_id
+        );
+
         // Use portal-reported dimensions if available, otherwise use monitor dimensions
-        let (capture_width, capture_height) = stream.size
+        let (capture_width, capture_height) = stream
+            .size
             .map(|(w, h)| (w as u32, h as u32))
             .unwrap_or((monitor.width, monitor.height));
-        
-        eprintln!("[Linux] Capture stream size: {}x{}", capture_width, capture_height);
-        eprintln!("[Linux] Monitor reported size: {}x{}", monitor.width, monitor.height);
-        eprintln!("[Linux] Region from UI: {}x{} at {},{}", 
-            region.width, region.height, region.x, region.y);
-        
+
+        eprintln!(
+            "[Linux] Capture stream size: {}x{}",
+            capture_width, capture_height
+        );
+        eprintln!(
+            "[Linux] Monitor reported size: {}x{}",
+            monitor.width, monitor.height
+        );
+        eprintln!(
+            "[Linux] Region from UI: {}x{} at {},{}",
+            region.width, region.height, region.x, region.y
+        );
+
         // Check if the portal already cropped the stream to the region
         // XDPH does portal-level cropping for region selections
         let is_precropped = capture_width < monitor.width || capture_height < monitor.height;
-        
+
         if is_precropped {
-            eprintln!("[Linux] Portal provided pre-cropped stream - using as-is (no app-level cropping)");
-            
+            eprintln!(
+                "[Linux] Portal provided pre-cropped stream - using as-is (no app-level cropping)"
+            );
+
             // The stream is already the region - just capture it directly
-            pipewire_capture::start_pipewire_capture(
-                stream.node_id,
-                capture_width,
-                capture_height,
-            )
-            .map_err(CaptureError::PlatformError)
+            pipewire_capture::start_pipewire_capture(stream.node_id, capture_width, capture_height)
+                .map_err(CaptureError::PlatformError)
         } else {
             eprintln!("[Linux] Portal provided full monitor stream - will crop in app");
-            
+
             // We got the full monitor, need to crop ourselves
             // This shouldn't happen with XDPH region format, but handle it just in case
             let scale_x = capture_width as f64 / monitor.width as f64;
             let scale_y = capture_height as f64 / monitor.height as f64;
-            
+
             let scaled_x = (region.x as f64 * scale_x).round() as i32;
             let scaled_y = (region.y as f64 * scale_y).round() as i32;
             let scaled_width = (region.width as f64 * scale_x).round() as u32;
             let scaled_height = (region.height as f64 * scale_y).round() as u32;
-            
-            eprintln!("[Linux] App-level crop region: {}x{} at {},{}", 
-                scaled_width, scaled_height, scaled_x, scaled_y);
-            
+
+            eprintln!(
+                "[Linux] App-level crop region: {}x{} at {},{}",
+                scaled_width, scaled_height, scaled_x, scaled_y
+            );
+
             let crop_region = pipewire_capture::CropRegion {
                 x: scaled_x,
                 y: scaled_y,
                 width: scaled_width,
                 height: scaled_height,
             };
-            
+
             pipewire_capture::start_pipewire_capture_with_crop(
                 stream.node_id,
                 capture_width,
@@ -451,28 +494,35 @@ impl CaptureBackend for LinuxBackend {
         width: u32,
         height: u32,
     ) -> Result<(FrameReceiver, StopHandle), CaptureError> {
-        eprintln!("[Linux] Starting display capture for {} ({}x{})", monitor_id, width, height);
-        
+        eprintln!(
+            "[Linux] Starting display capture for {} ({}x{})",
+            monitor_id, width, height
+        );
+
         // Get IPC state
-        let ipc_state = get_ipc_state().ok_or_else(|| {
-            CaptureError::PlatformError("IPC server not initialized".to_string())
-        })?;
-        
+        let ipc_state = get_ipc_state()
+            .ok_or_else(|| CaptureError::PlatformError("IPC server not initialized".to_string()))?;
+
         // Use block_in_place to run async code from sync context within tokio runtime
         let monitor_id_clone = monitor_id.clone();
         let stream = tokio::task::block_in_place(|| {
             let rt = tokio::runtime::Handle::current();
             let portal_client = portal_client::PortalClient::new(ipc_state);
             rt.block_on(portal_client.request_monitor_capture(&monitor_id_clone))
-        }).map_err(CaptureError::PlatformError)?;
-        
-        eprintln!("[Linux] Portal returned node ID {} for display capture", stream.node_id);
-        
+        })
+        .map_err(CaptureError::PlatformError)?;
+
+        eprintln!(
+            "[Linux] Portal returned node ID {} for display capture",
+            stream.node_id
+        );
+
         // Use portal-reported dimensions if available, otherwise use provided ones
-        let (capture_width, capture_height) = stream.size
+        let (capture_width, capture_height) = stream
+            .size
             .map(|(w, h)| (w as u32, h as u32))
             .unwrap_or((width, height));
-        
+
         // Start PipeWire capture
         pipewire_capture::start_pipewire_capture(stream.node_id, capture_width, capture_height)
             .map_err(CaptureError::PlatformError)
@@ -486,7 +536,10 @@ impl HighlightProvider for LinuxBackend {
 }
 
 impl ThumbnailCapture for LinuxBackend {
-    fn capture_window_thumbnail(&self, window_handle: isize) -> Result<ThumbnailResult, CaptureError> {
+    fn capture_window_thumbnail(
+        &self,
+        window_handle: isize,
+    ) -> Result<ThumbnailResult, CaptureError> {
         let thumb_capture = thumbnail::LinuxThumbnailCapture::new();
         thumb_capture.capture_window_thumbnail(window_handle)
     }
@@ -551,33 +604,43 @@ impl LinuxBackend {
     /// Returns a frame receiver and stop handle.
     pub fn start_portal_capture(&self) -> Result<(FrameReceiver, StopHandle), CaptureError> {
         eprintln!("[Linux] Starting portal capture with native picker...");
-        
+
         // Get IPC state
-        let ipc_state = get_ipc_state().ok_or_else(|| {
-            CaptureError::PlatformError("IPC server not initialized".to_string())
-        })?;
-        
+        let ipc_state = get_ipc_state()
+            .ok_or_else(|| CaptureError::PlatformError("IPC server not initialized".to_string()))?;
+
         // Use block_in_place to run async code from sync context within tokio runtime
         let stream = tokio::task::block_in_place(|| {
             let rt = tokio::runtime::Handle::current();
             let portal_client = portal_client::PortalClient::new(ipc_state);
             // Request generic screencast - portal will show picker
             rt.block_on(portal_client.request_screencast_with_picker())
-        }).map_err(CaptureError::PlatformError)?;
-        
-        eprintln!("[Linux] Portal returned node ID {} from native picker", stream.node_id);
-        
+        })
+        .map_err(CaptureError::PlatformError)?;
+
+        eprintln!(
+            "[Linux] Portal returned node ID {} from native picker",
+            stream.node_id
+        );
+
         // Use portal-reported dimensions or default
-        let (content_width, content_height) = stream.size
+        let (content_width, content_height) = stream
+            .size
             .map(|(w, h)| (w as u32, h as u32))
             .unwrap_or((1920, 1080));
-        
-        eprintln!("[Linux] Content dimensions: {}x{}", content_width, content_height);
-        
+
+        eprintln!(
+            "[Linux] Content dimensions: {}x{}",
+            content_width, content_height
+        );
+
         // Check if we need to crop (window capture provides position)
         if let Some((x, y)) = stream.position {
-            eprintln!("[Linux] Window position: ({}, {}), will crop to content", x, y);
-            
+            eprintln!(
+                "[Linux] Window position: ({}, {}), will crop to content",
+                x, y
+            );
+
             // For window captures, the stream is the full display but we need to crop
             // to just the window content. The position tells us where the window is,
             // and size tells us the window dimensions.
@@ -587,24 +650,32 @@ impl LinuxBackend {
                 width: content_width,
                 height: content_height,
             };
-            
+
             // We don't know the full stream size, but PipeWire will tell us via format negotiation.
             // Use a large default that will be corrected by the actual stream dimensions.
             let stream_width = 3840u32; // Will be updated by PipeWire
             let stream_height = 2160u32;
-            
+
             pipewire_capture::start_pipewire_capture_with_crop(
-                stream.node_id, 
-                stream_width, 
-                stream_height, 
-                Some(crop)
-            ).map_err(CaptureError::PlatformError)
+                stream.node_id,
+                stream_width,
+                stream_height,
+                Some(crop),
+            )
+            .map_err(CaptureError::PlatformError)
         } else {
             // No position info - use auto-crop detection for window captures
             // This handles GNOME's portal which doesn't provide window position
-            eprintln!("[Linux] No position info, using auto-crop detection, dimensions: {}x{}", content_width, content_height);
-            pipewire_capture::start_pipewire_capture_with_auto_crop(stream.node_id, content_width, content_height)
-                .map_err(CaptureError::PlatformError)
+            eprintln!(
+                "[Linux] No position info, using auto-crop detection, dimensions: {}x{}",
+                content_width, content_height
+            );
+            pipewire_capture::start_pipewire_capture_with_auto_crop(
+                stream.node_id,
+                content_width,
+                content_height,
+            )
+            .map_err(CaptureError::PlatformError)
         }
     }
 }

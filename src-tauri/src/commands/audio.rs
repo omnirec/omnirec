@@ -67,7 +67,12 @@ pub async fn save_audio_config(
     // Sync to service
     state
         .service_client
-        .set_audio_config(enabled, source_id.clone(), microphone_id.clone(), echo_cancellation)
+        .set_audio_config(
+            enabled,
+            source_id.clone(),
+            microphone_id.clone(),
+            echo_cancellation,
+        )
         .await
         .map_err(|e| e.to_string())?;
 

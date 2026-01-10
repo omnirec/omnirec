@@ -20,8 +20,6 @@ use ipc::ServiceClient;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-
-
 // Re-export tray types for use in commands
 #[cfg(any(target_os = "linux", target_os = "windows"))]
 pub use tray::TrayState;
@@ -77,10 +75,10 @@ impl AppState {
             Ok(()) => {
                 self.service_ready.store(true, Ordering::SeqCst);
                 eprintln!("[AppState] Service is ready");
-                
+
                 // Sync local config to service
                 self.sync_config_to_service().await;
-                
+
                 Ok(())
             }
             Err(e) => {
@@ -89,12 +87,12 @@ impl AppState {
             }
         }
     }
-    
+
     /// Sync local configuration to the service.
     /// Called after connecting to ensure service has latest settings.
     async fn sync_config_to_service(&self) {
         let config = self.app_config.lock().await;
-        
+
         // Sync audio config
         eprintln!("[AppState] Syncing audio config to service: enabled={}, source_id={:?}, mic_id={:?}, aec={}",
             config.audio.enabled,
@@ -102,22 +100,33 @@ impl AppState {
             config.audio.microphone_id,
             config.audio.echo_cancellation
         );
-        if let Err(e) = self.service_client.set_audio_config(
-            config.audio.enabled,
-            config.audio.source_id.clone(),
-            config.audio.microphone_id.clone(),
-            config.audio.echo_cancellation,
-        ).await {
+        if let Err(e) = self
+            .service_client
+            .set_audio_config(
+                config.audio.enabled,
+                config.audio.source_id.clone(),
+                config.audio.microphone_id.clone(),
+                config.audio.echo_cancellation,
+            )
+            .await
+        {
             eprintln!("[AppState] Failed to sync audio config: {}", e);
         }
-        
+
         // Sync transcription config
-        eprintln!("[AppState] Syncing transcription config to service: enabled={}",
-            config.transcription.enabled
+        let model_path = config.transcription.model.model_path();
+        eprintln!(
+            "[AppState] Syncing transcription config to service: enabled={}, model={:?}",
+            config.transcription.enabled, model_path
         );
-        if let Err(e) = self.service_client.set_transcription_config(
-            config.transcription.enabled,
-        ).await {
+        if let Err(e) = self
+            .service_client
+            .set_transcription_config(
+                config.transcription.enabled,
+                Some(model_path.to_string_lossy().to_string()),
+            )
+            .await
+        {
             eprintln!("[AppState] Failed to sync transcription config: {}", e);
         }
     }
@@ -224,11 +233,14 @@ pub fn run() {
                             eprintln!("[Setup] Failed to sync audio config: {}", e);
                         }
                         
-                        eprintln!("[Setup] Syncing transcription config: enabled={}",
-                            config.transcription.enabled
+                        let model_path = config.transcription.model.model_path();
+                        eprintln!("[Setup] Syncing transcription config: enabled={}, model={:?}",
+                            config.transcription.enabled,
+                            model_path
                         );
                         if let Err(e) = service_client.set_transcription_config(
                             config.transcription.enabled,
+                            Some(model_path.to_string_lossy().to_string()),
                         ).await {
                             eprintln!("[Setup] Failed to sync transcription config: {}", e);
                         }
@@ -306,6 +318,12 @@ pub fn run() {
             commands::get_transcription_config,
             commands::save_transcription_config,
             commands::get_transcription_status,
+            // Model management commands
+            commands::get_model_status,
+            commands::list_available_models,
+            commands::download_model,
+            commands::cancel_download,
+            commands::is_download_in_progress,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

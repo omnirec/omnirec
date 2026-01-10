@@ -32,9 +32,10 @@ pub fn is_portal_supported() -> bool {
     {
         // Portal is supported on Linux Wayland desktops
         // Check if we're on Wayland
-        std::env::var("WAYLAND_DISPLAY").is_ok() || std::env::var("XDG_SESSION_TYPE")
-            .map(|t| t == "wayland")
-            .unwrap_or(false)
+        std::env::var("WAYLAND_DISPLAY").is_ok()
+            || std::env::var("XDG_SESSION_TYPE")
+                .map(|t| t == "wayland")
+                .unwrap_or(false)
     }
 
     #[cfg(not(target_os = "linux"))]

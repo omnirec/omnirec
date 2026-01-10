@@ -93,14 +93,28 @@ fn start_pipewire_capture_internal(
         eprintln!("[PipeWire] Starting capture thread for node {} ({}x{}) with crop region ({}x{} at {},{}", 
             node_id, width, height, crop.width, crop.height, crop.x, crop.y);
     } else if enable_auto_crop {
-        eprintln!("[PipeWire] Starting capture thread for node {} ({}x{}) with auto-crop enabled", node_id, width, height);
+        eprintln!(
+            "[PipeWire] Starting capture thread for node {} ({}x{}) with auto-crop enabled",
+            node_id, width, height
+        );
     } else {
-        eprintln!("[PipeWire] Starting capture thread for node {} ({}x{})", node_id, width, height);
+        eprintln!(
+            "[PipeWire] Starting capture thread for node {} ({}x{})",
+            node_id, width, height
+        );
     }
 
     // Spawn the PipeWire capture thread
     std::thread::spawn(move || {
-        if let Err(e) = run_pipewire_capture(node_id, width, height, crop_region, enable_auto_crop, frame_tx, stop_flag_clone) {
+        if let Err(e) = run_pipewire_capture(
+            node_id,
+            width,
+            height,
+            crop_region,
+            enable_auto_crop,
+            frame_tx,
+            stop_flag_clone,
+        ) {
             eprintln!("[PipeWire] Capture error: {}", e);
         }
         eprintln!("[PipeWire] Capture thread exited");
@@ -139,15 +153,15 @@ fn run_pipewire_capture(
     stop_flag: Arc<AtomicBool>,
 ) -> Result<(), String> {
     eprintln!("[PipeWire] Initializing PipeWire...");
-    
+
     pw::init();
 
     let mainloop = pw::main_loop::MainLoop::new(None)
         .map_err(|e| format!("Failed to create main loop: {}", e))?;
-    
+
     let context = pw::context::Context::new(&mainloop)
         .map_err(|e| format!("Failed to create context: {}", e))?;
-    
+
     let core = context
         .connect(None)
         .map_err(|e| format!("Failed to connect to PipeWire daemon: {}", e))?;
@@ -189,7 +203,7 @@ fn run_pipewire_capture(
         .add_local_listener_with_user_data(stream_data)
         .state_changed(move |_, _, old, new| {
             eprintln!("[PipeWire] Stream state: {:?} -> {:?}", old, new);
-            
+
             match new {
                 pw::stream::StreamState::Error(msg) => {
                     // Stream error - likely window closed or capture target unavailable
@@ -221,7 +235,9 @@ fn run_pipewire_capture(
                             mainloop.quit();
                         }
                     } else {
-                        eprintln!("[PipeWire] Stream paused (startup phase, waiting for streaming)");
+                        eprintln!(
+                            "[PipeWire] Stream paused (startup phase, waiting for streaming)"
+                        );
                     }
                 }
                 _ => {}
@@ -232,34 +248,35 @@ fn run_pipewire_capture(
             if id != pw::spa::param::ParamType::Format.as_raw() {
                 return;
             }
-            
+
             // Parse the format
-            let (media_type, media_subtype) = match pw::spa::param::format_utils::parse_format(param) {
-                Ok(v) => v,
-                Err(_) => return,
-            };
-            
+            let (media_type, media_subtype) =
+                match pw::spa::param::format_utils::parse_format(param) {
+                    Ok(v) => v,
+                    Err(_) => return,
+                };
+
             if media_type != pw::spa::param::format::MediaType::Video
                 || media_subtype != pw::spa::param::format::MediaSubtype::Raw
             {
                 return;
             }
-            
+
             // Store old dimensions for comparison
             let old_width = user_data.width;
             let old_height = user_data.height;
-            
+
             // Parse video format info
             if let Err(e) = user_data.format.parse(param) {
                 eprintln!("[PipeWire] Failed to parse video format: {:?}", e);
                 return;
             }
-            
+
             // Update dimensions from negotiated format
             user_data.width = user_data.format.size().width;
             user_data.height = user_data.format.size().height;
             user_data.format_changes += 1;
-            
+
             // Log format info
             if user_data.format_changes == 1 {
                 eprintln!("[PipeWire] Initial video format:");
@@ -269,7 +286,11 @@ fn run_pipewire_capture(
             }
             eprintln!("  format: {:?}", user_data.format.format());
             eprintln!("  size: {}x{}", user_data.width, user_data.height);
-            eprintln!("  framerate: {}/{}", user_data.format.framerate().num, user_data.format.framerate().denom);
+            eprintln!(
+                "  framerate: {}/{}",
+                user_data.format.framerate().num,
+                user_data.format.framerate().denom
+            );
         })
         .process(|stream, user_data| {
             if user_data.stop_flag.load(Ordering::Relaxed) {
@@ -334,8 +355,14 @@ fn run_pipewire_capture(
             Range,
             Rectangle,
             pw::spa::utils::Rectangle { width, height },
-            pw::spa::utils::Rectangle { width: 1, height: 1 },
-            pw::spa::utils::Rectangle { width: 8192, height: 8192 }
+            pw::spa::utils::Rectangle {
+                width: 1,
+                height: 1
+            },
+            pw::spa::utils::Rectangle {
+                width: 8192,
+                height: 8192
+            }
         ),
         pw::spa::pod::property!(
             pw::spa::param::format::FormatProperties::VideoFramerate,
@@ -347,7 +374,7 @@ fn run_pipewire_capture(
             pw::spa::utils::Fraction { num: 120, denom: 1 }
         ),
     );
-    
+
     let values: Vec<u8> = pw::spa::pod::serialize::PodSerializer::serialize(
         std::io::Cursor::new(Vec::new()),
         &pw::spa::pod::Value::Object(obj),
@@ -355,7 +382,7 @@ fn run_pipewire_capture(
     .map_err(|e| format!("Failed to serialize format params: {:?}", e))?
     .0
     .into_inner();
-    
+
     let mut params = [Pod::from_bytes(&values).ok_or("Failed to create Pod from bytes")?];
 
     // Connect stream to the specified node
@@ -369,18 +396,18 @@ fn run_pipewire_capture(
         .map_err(|e| format!("Failed to connect stream to node {}: {}", node_id, e))?;
 
     eprintln!("[PipeWire] Stream connected to node {}", node_id);
-    
+
     // Activate the stream to start receiving buffers
     stream
         .set_active(true)
         .map_err(|e| format!("Failed to activate stream: {}", e))?;
-    
+
     eprintln!("[PipeWire] Stream activated");
 
     // Set up a timer to check stop flag
     let mainloop_clone = mainloop.clone();
     let stop_flag_check = stop_flag.clone();
-    
+
     let timer = mainloop.loop_().add_timer(move |_timer_expired_count| {
         if stop_flag_check.load(Ordering::Relaxed) {
             eprintln!("[PipeWire] Stop flag detected, quitting main loop");
@@ -393,14 +420,20 @@ fn run_pipewire_capture(
         Some(std::time::Duration::from_millis(100)),
     );
 
-    eprintln!("[PipeWire] Entering main loop (stop_flag={})", stop_flag.load(Ordering::Relaxed));
-    
+    eprintln!(
+        "[PipeWire] Entering main loop (stop_flag={})",
+        stop_flag.load(Ordering::Relaxed)
+    );
+
     // Keep listener and timer alive by moving them into a scope that lasts until mainloop exits
     // The mainloop.run() is blocking, so these won't be dropped until we return
     let _keep_alive = (_listener, timer);
-    
+
     mainloop.run();
-    eprintln!("[PipeWire] Main loop exited (stop_flag={})", stop_flag.load(Ordering::Relaxed));
+    eprintln!(
+        "[PipeWire] Main loop exited (stop_flag={})",
+        stop_flag.load(Ordering::Relaxed)
+    );
 
     Ok(())
 }
@@ -413,7 +446,7 @@ fn process_buffer(buffer: &mut pw::buffer::Buffer, user_data: &mut StreamData) {
     }
 
     let data = &mut datas[0];
-    
+
     // Get chunk info first
     let chunk = data.chunk();
     let stride = chunk.stride() as usize;
@@ -426,15 +459,22 @@ fn process_buffer(buffer: &mut pw::buffer::Buffer, user_data: &mut StreamData) {
         let chunk_size = chunk.size() as usize;
         eprintln!("[PipeWire] First buffer info:");
         eprintln!("  type: {:?}", data_type);
-        eprintln!("  stride={}, size={}, offset={}", stride, chunk_size, offset);
-        eprintln!("  fd={:?}, maxsize={}", data.as_raw().fd, data.as_raw().maxsize);
+        eprintln!(
+            "  stride={}, size={}, offset={}",
+            stride, chunk_size, offset
+        );
+        eprintln!(
+            "  fd={:?}, maxsize={}",
+            data.as_raw().fd,
+            data.as_raw().maxsize
+        );
     }
 
     if stride == 0 {
         eprintln!("[PipeWire] process_buffer: invalid stride");
         return;
     }
-    
+
     let width = user_data.width;
     let height = user_data.height;
     let bytes_per_pixel = 4; // BGRx/BGRA
@@ -450,13 +490,17 @@ fn process_buffer(buffer: &mut pw::buffer::Buffer, user_data: &mut StreamData) {
             if !LOGGED_DMABUF.swap(true, Ordering::Relaxed) {
                 eprintln!("[PipeWire] Using DMA-BUF path (mmap)");
             }
-            
+
             // Try to access via fd for DmaBuf
             let raw = data.as_raw();
             if raw.fd != -1 {
                 // Try to mmap the buffer
                 unsafe {
-                    let map_size = if raw.maxsize > 0 { raw.maxsize as usize } else { expected_size };
+                    let map_size = if raw.maxsize > 0 {
+                        raw.maxsize as usize
+                    } else {
+                        expected_size
+                    };
                     let ptr = libc::mmap(
                         std::ptr::null_mut(),
                         map_size,
@@ -465,28 +509,34 @@ fn process_buffer(buffer: &mut pw::buffer::Buffer, user_data: &mut StreamData) {
                         raw.fd as i32,
                         raw.mapoffset as i64,
                     );
-                    
+
                     if ptr == libc::MAP_FAILED {
-                        eprintln!("[PipeWire] mmap failed: {}", std::io::Error::last_os_error());
+                        eprintln!(
+                            "[PipeWire] mmap failed: {}",
+                            std::io::Error::last_os_error()
+                        );
                         return;
                     }
-                    
+
                     // Create a slice from the mapped memory
                     let mapped_slice = std::slice::from_raw_parts(
                         (ptr as *const u8).add(offset),
                         expected_size.min(map_size.saturating_sub(offset)),
                     );
-                    
+
                     // Process the frame
-                    let frame_data = extract_frame_data(mapped_slice, width, height, stride, bytes_per_pixel);
-                    
+                    let frame_data =
+                        extract_frame_data(mapped_slice, width, height, stride, bytes_per_pixel);
+
                     // Unmap
                     libc::munmap(ptr, map_size);
-                    
+
                     if let Some(frame_data) = frame_data {
                         // Apply cropping if specified
                         if let Some(crop) = user_data.crop_region {
-                            if let Some(cropped_data) = crop_frame_data(&frame_data, width, height, crop) {
+                            if let Some(cropped_data) =
+                                crop_frame_data(&frame_data, width, height, crop)
+                            {
                                 send_frame(user_data, crop.width, crop.height, cropped_data);
                             }
                         } else {
@@ -496,7 +546,7 @@ fn process_buffer(buffer: &mut pw::buffer::Buffer, user_data: &mut StreamData) {
                     return;
                 }
             }
-            
+
             eprintln!("[PipeWire] Cannot access buffer data (no fd available)");
             return;
         }
@@ -515,21 +565,33 @@ fn process_buffer(buffer: &mut pw::buffer::Buffer, user_data: &mut StreamData) {
 }
 
 /// Extract frame data from a buffer slice, handling stride.
-fn extract_frame_data(slice: &[u8], width: u32, height: u32, stride: usize, bytes_per_pixel: usize) -> Option<Vec<u8>> {
+fn extract_frame_data(
+    slice: &[u8],
+    width: u32,
+    height: u32,
+    stride: usize,
+    bytes_per_pixel: usize,
+) -> Option<Vec<u8>> {
     let row_bytes = width as usize * bytes_per_pixel;
-    
+
     // Log stride info once
     static LOGGED_EXTRACTION: AtomicBool = AtomicBool::new(false);
     if !LOGGED_EXTRACTION.swap(true, Ordering::Relaxed) {
         eprintln!("[PipeWire] Frame extraction setup:");
-        eprintln!("  dimensions: {}x{}, stride={}, row_bytes={}", width, height, stride, row_bytes);
+        eprintln!(
+            "  dimensions: {}x{}, stride={}, row_bytes={}",
+            width, height, stride, row_bytes
+        );
         if stride == row_bytes {
             eprintln!("  using direct copy (stride matches)");
         } else {
-            eprintln!("  using row-by-row copy (stride padding: {} bytes)", stride - row_bytes);
+            eprintln!(
+                "  using row-by-row copy (stride padding: {} bytes)",
+                stride - row_bytes
+            );
         }
     }
-    
+
     // If stride matches row_bytes exactly, we can do a direct copy
     if stride == row_bytes {
         let total_bytes = (height as usize) * row_bytes;
@@ -537,7 +599,7 @@ fn extract_frame_data(slice: &[u8], width: u32, height: u32, stride: usize, byte
             return Some(slice[..total_bytes].to_vec());
         }
     }
-    
+
     // Otherwise, copy row by row to handle stride padding
     let mut frame_data = Vec::with_capacity((width * height * 4) as usize);
 
@@ -550,7 +612,12 @@ fn extract_frame_data(slice: &[u8], width: u32, height: u32, stride: usize, byte
             // Log only once per session
             static LOGGED_TOO_SMALL: AtomicBool = AtomicBool::new(false);
             if !LOGGED_TOO_SMALL.swap(true, Ordering::Relaxed) {
-                eprintln!("[PipeWire] Warning: buffer too small at row {}: need {} but have {}", y, row_end, slice.len());
+                eprintln!(
+                    "[PipeWire] Warning: buffer too small at row {}: need {} but have {}",
+                    y,
+                    row_end,
+                    slice.len()
+                );
             }
             return None;
         }
@@ -560,65 +627,81 @@ fn extract_frame_data(slice: &[u8], width: u32, height: u32, stride: usize, byte
 }
 
 /// Crop frame data to a specific region.
-fn crop_frame_data(frame_data: &[u8], full_width: u32, full_height: u32, crop: CropRegion) -> Option<Vec<u8>> {
+fn crop_frame_data(
+    frame_data: &[u8],
+    full_width: u32,
+    full_height: u32,
+    crop: CropRegion,
+) -> Option<Vec<u8>> {
     let bytes_per_pixel = 4; // BGRA
-    
+
     // Validate crop region
     if crop.x < 0 || crop.y < 0 {
-        eprintln!("[PipeWire] Invalid crop region: negative coordinates ({}, {})", crop.x, crop.y);
+        eprintln!(
+            "[PipeWire] Invalid crop region: negative coordinates ({}, {})",
+            crop.x, crop.y
+        );
         return None;
     }
-    
+
     let crop_x = crop.x as u32;
     let crop_y = crop.y as u32;
-    
+
     // Clamp crop region to frame boundaries
     let crop_x_end = (crop_x + crop.width).min(full_width);
     let crop_y_end = (crop_y + crop.height).min(full_height);
-    
+
     if crop_x >= full_width || crop_y >= full_height {
         eprintln!("[PipeWire] Crop region outside frame bounds");
         return None;
     }
-    
+
     let actual_crop_width = crop_x_end - crop_x;
     let actual_crop_height = crop_y_end - crop_y;
-    
+
     // Log if we had to clamp the region
     static LOGGED_CLAMPING: AtomicBool = AtomicBool::new(false);
     if !LOGGED_CLAMPING.swap(true, Ordering::Relaxed)
         && (actual_crop_width != crop.width || actual_crop_height != crop.height)
     {
-        eprintln!("[PipeWire] Warning: crop region clamped from {}x{} to {}x{}", 
-            crop.width, crop.height, actual_crop_width, actual_crop_height);
+        eprintln!(
+            "[PipeWire] Warning: crop region clamped from {}x{} to {}x{}",
+            crop.width, crop.height, actual_crop_width, actual_crop_height
+        );
     }
-    
-    let mut cropped = Vec::with_capacity((actual_crop_width * actual_crop_height * bytes_per_pixel) as usize);
-    
+
+    let mut cropped =
+        Vec::with_capacity((actual_crop_width * actual_crop_height * bytes_per_pixel) as usize);
+
     // Copy row by row
     for y in crop_y..crop_y_end {
         let row_start = ((y * full_width + crop_x) as usize) * (bytes_per_pixel as usize);
         let row_end = row_start + ((actual_crop_width as usize) * (bytes_per_pixel as usize));
-        
+
         if row_end <= frame_data.len() {
             cropped.extend_from_slice(&frame_data[row_start..row_end]);
         } else {
-            eprintln!("[PipeWire] Crop overflow at row {}: need {} but have {}", y, row_end, frame_data.len());
+            eprintln!(
+                "[PipeWire] Crop overflow at row {}: need {} but have {}",
+                y,
+                row_end,
+                frame_data.len()
+            );
             return None;
         }
     }
-    
+
     Some(cropped)
 }
 
 /// Convert frame data to BGRA format based on the source format.
 fn convert_to_bgra(frame_data: Vec<u8>, format: spa::param::video::VideoFormat) -> Vec<u8> {
     use spa::param::video::VideoFormat;
-    
+
     match format {
         // Already BGRA or BGRx - no conversion needed
         VideoFormat::BGRA | VideoFormat::BGRx => frame_data,
-        
+
         // RGBA/RGBx -> BGRA: swap R and B
         VideoFormat::RGBA | VideoFormat::RGBx => {
             let mut converted = frame_data;
@@ -627,7 +710,7 @@ fn convert_to_bgra(frame_data: Vec<u8>, format: spa::param::video::VideoFormat) 
             }
             converted
         }
-        
+
         // ARGB -> BGRA: shift ARGB to BGRA (A,R,G,B -> B,G,R,A)
         VideoFormat::ARGB => {
             let mut converted = Vec::with_capacity(frame_data.len());
@@ -639,7 +722,7 @@ fn convert_to_bgra(frame_data: Vec<u8>, format: spa::param::video::VideoFormat) 
             }
             converted
         }
-        
+
         // xRGB -> BGRA: shift xRGB to BGRA (x,R,G,B -> B,G,R,255)
         VideoFormat::xRGB => {
             let mut converted = Vec::with_capacity(frame_data.len());
@@ -647,11 +730,11 @@ fn convert_to_bgra(frame_data: Vec<u8>, format: spa::param::video::VideoFormat) 
                 converted.push(chunk[3]); // B
                 converted.push(chunk[2]); // G
                 converted.push(chunk[1]); // R
-                converted.push(255);      // A (fully opaque)
+                converted.push(255); // A (fully opaque)
             }
             converted
         }
-        
+
         // ABGR -> BGRA: A,B,G,R -> B,G,R,A
         VideoFormat::ABGR => {
             let mut converted = Vec::with_capacity(frame_data.len());
@@ -663,7 +746,7 @@ fn convert_to_bgra(frame_data: Vec<u8>, format: spa::param::video::VideoFormat) 
             }
             converted
         }
-        
+
         // xBGR -> BGRA: x,B,G,R -> B,G,R,255
         VideoFormat::xBGR => {
             let mut converted = Vec::with_capacity(frame_data.len());
@@ -671,16 +754,19 @@ fn convert_to_bgra(frame_data: Vec<u8>, format: spa::param::video::VideoFormat) 
                 converted.push(chunk[1]); // B
                 converted.push(chunk[2]); // G
                 converted.push(chunk[3]); // R
-                converted.push(255);      // A (fully opaque)
+                converted.push(255); // A (fully opaque)
             }
             converted
         }
-        
+
         // Unknown format - log warning and return as-is
         _ => {
             static LOGGED_UNKNOWN: AtomicBool = AtomicBool::new(false);
             if !LOGGED_UNKNOWN.swap(true, Ordering::Relaxed) {
-                eprintln!("[PipeWire] Warning: unknown video format {:?}, colors may be incorrect", format);
+                eprintln!(
+                    "[PipeWire] Warning: unknown video format {:?}, colors may be incorrect",
+                    format
+                );
             }
             frame_data
         }
@@ -692,16 +778,16 @@ fn convert_to_bgra(frame_data: Vec<u8>, format: spa::param::video::VideoFormat) 
 fn detect_content_bounds(frame_data: &[u8], width: u32, height: u32) -> Option<CropRegion> {
     let bytes_per_pixel = 4;
     let row_bytes = width as usize * bytes_per_pixel;
-    
+
     // Threshold for considering a pixel as "content" (not black)
     // Using a small threshold to account for compression artifacts
     const THRESHOLD: u8 = 8;
-    
+
     let mut min_x = width as i32;
     let mut min_y = height as i32;
     let mut max_x = 0i32;
     let mut max_y = 0i32;
-    
+
     for y in 0..height as usize {
         for x in 0..width as usize {
             let idx = y * row_bytes + x * bytes_per_pixel;
@@ -709,7 +795,7 @@ fn detect_content_bounds(frame_data: &[u8], width: u32, height: u32) -> Option<C
                 let b = frame_data[idx];
                 let g = frame_data[idx + 1];
                 let r = frame_data[idx + 2];
-                
+
                 // Check if pixel is non-black
                 if r > THRESHOLD || g > THRESHOLD || b > THRESHOLD {
                     min_x = min_x.min(x as i32);
@@ -720,20 +806,22 @@ fn detect_content_bounds(frame_data: &[u8], width: u32, height: u32) -> Option<C
             }
         }
     }
-    
+
     // Check if we found any content
     if max_x >= min_x && max_y >= min_y {
         let content_width = (max_x - min_x + 1) as u32;
         let content_height = (max_y - min_y + 1) as u32;
-        
+
         // Only use auto-crop if content is meaningfully smaller than frame
         // (at least 10% smaller in either dimension)
         let width_ratio = content_width as f32 / width as f32;
         let height_ratio = content_height as f32 / height as f32;
-        
+
         if width_ratio < 0.95 || height_ratio < 0.95 {
-            eprintln!("[PipeWire] Auto-crop detected content bounds: {}x{} at ({}, {})",
-                content_width, content_height, min_x, min_y);
+            eprintln!(
+                "[PipeWire] Auto-crop detected content bounds: {}x{} at ({}, {})",
+                content_width, content_height, min_x, min_y
+            );
             return Some(CropRegion {
                 x: min_x,
                 y: min_y,
@@ -742,7 +830,7 @@ fn detect_content_bounds(frame_data: &[u8], width: u32, height: u32) -> Option<C
             });
         }
     }
-    
+
     None
 }
 
@@ -751,18 +839,21 @@ fn send_frame(user_data: &mut StreamData, width: u32, height: u32, frame_data: V
     // Convert to BGRA format for consistent downstream processing
     let format = user_data.format.format();
     let bgra_data = convert_to_bgra(frame_data, format);
-    
+
     // Auto-crop detection on first frame
-    if user_data.enable_auto_crop && user_data.auto_crop.is_none() && user_data.frames_received == 1 {
+    if user_data.enable_auto_crop && user_data.auto_crop.is_none() && user_data.frames_received == 1
+    {
         if let Some(bounds) = detect_content_bounds(&bgra_data, width, height) {
             user_data.auto_crop = Some(bounds);
         } else {
             // Disable auto-crop if we couldn't detect bounds
-            eprintln!("[PipeWire] Auto-crop: no distinct content bounds detected, using full frame");
+            eprintln!(
+                "[PipeWire] Auto-crop: no distinct content bounds detected, using full frame"
+            );
             user_data.enable_auto_crop = false;
         }
     }
-    
+
     // Apply auto-crop if detected
     let (final_data, final_width, final_height) = if let Some(crop) = user_data.auto_crop {
         if let Some(cropped) = crop_frame_data(&bgra_data, width, height, crop) {
@@ -773,13 +864,13 @@ fn send_frame(user_data: &mut StreamData, width: u32, height: u32, frame_data: V
     } else {
         (bgra_data, width, height)
     };
-    
+
     let frame = CapturedFrame {
         width: final_width,
         height: final_height,
         data: final_data,
     };
-    
+
     // Non-blocking send - drop frame if channel is full
     match user_data.frame_tx.try_send(frame) {
         Ok(()) => {

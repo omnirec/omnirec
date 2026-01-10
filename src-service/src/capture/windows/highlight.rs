@@ -10,7 +10,7 @@ use windows::core::PCWSTR;
 use windows::Win32::Foundation::{COLORREF, HINSTANCE, HWND, LPARAM, LRESULT, POINT, SIZE, WPARAM};
 use windows::Win32::Graphics::Gdi::{
     CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, GetDC, ReleaseDC, SelectObject,
-    BLENDFUNCTION, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, HBITMAP, HDC, HGDIOBJ,
+    BITMAPINFO, BITMAPINFOHEADER, BI_RGB, BLENDFUNCTION, DIB_RGB_COLORS, HBITMAP, HDC, HGDIOBJ,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -25,15 +25,11 @@ const ANIMATION_DURATION_MS: u64 = 800;
 const TIMER_ID: usize = 1;
 const TIMER_INTERVAL_MS: u32 = 16; // ~60fps
 
-
-
 /// Show a highlight border around the specified monitor area.
 /// This function spawns a thread and returns immediately.
 pub fn show_highlight(x: i32, y: i32, width: i32, height: i32) {
-    thread::spawn(move || {
-        unsafe {
-            run_highlight_window(x, y, width, height);
-        }
+    thread::spawn(move || unsafe {
+        run_highlight_window(x, y, width, height);
     });
 }
 
@@ -113,14 +109,8 @@ unsafe fn run_highlight_window(x: i32, y: i32, width: i32, height: i32) {
     };
 
     let mut bits: *mut std::ffi::c_void = std::ptr::null_mut();
-    let bitmap = CreateDIBSection(
-        screen_dc,
-        &bmi,
-        DIB_RGB_COLORS,
-        &mut bits,
-        None,
-        0,
-    ).unwrap_or_default();
+    let bitmap =
+        CreateDIBSection(screen_dc, &bmi, DIB_RGB_COLORS, &mut bits, None, 0).unwrap_or_default();
 
     if bitmap.is_invalid() || bits.is_null() {
         let _ = DeleteDC(mem_dc);
@@ -133,7 +123,7 @@ unsafe fn run_highlight_window(x: i32, y: i32, width: i32, height: i32) {
     // Draw directly to the pixel buffer
     // Windows DIB is BGRA in memory, and for AC_SRC_ALPHA we need premultiplied alpha
     // On little-endian, u32 0xAARRGGBB becomes bytes [BB, GG, RR, AA] in memory
-    // But Windows DIB expects [BB, GG, RR, AA] which is u32 as 0xAARRGGBB... 
+    // But Windows DIB expects [BB, GG, RR, AA] which is u32 as 0xAARRGGBB...
     // Actually, let's write bytes directly to be safe
     let pixels = bits as *mut u8;
     let stride = (width * 4) as usize; // 4 bytes per pixel
@@ -154,7 +144,7 @@ unsafe fn run_highlight_window(x: i32, y: i32, width: i32, height: i32) {
 
             if is_border {
                 // BGRA order, premultiplied (since alpha=255, RGB values stay the same)
-                *pixels.add(idx) = b;     // Blue
+                *pixels.add(idx) = b; // Blue
                 *pixels.add(idx + 1) = g; // Green
                 *pixels.add(idx + 2) = r; // Red
                 *pixels.add(idx + 3) = a; // Alpha
@@ -170,7 +160,10 @@ unsafe fn run_highlight_window(x: i32, y: i32, width: i32, height: i32) {
 
     // Store render state
     let pt_dst = POINT { x, y };
-    let size = SIZE { cx: width, cy: height };
+    let size = SIZE {
+        cx: width,
+        cy: height,
+    };
     let pt_src = POINT { x: 0, y: 0 };
 
     RENDER_STATE.with(|state| {
@@ -217,10 +210,10 @@ unsafe fn update_window_alpha(hwnd: HWND, alpha: u8) {
     RENDER_STATE.with(|state| {
         if let Some(ref rs) = *state.borrow() {
             let blend = BLENDFUNCTION {
-                BlendOp: 0,      // AC_SRC_OVER
+                BlendOp: 0, // AC_SRC_OVER
                 BlendFlags: 0,
                 SourceConstantAlpha: alpha,
-                AlphaFormat: 1,  // AC_SRC_ALPHA - use per-pixel alpha
+                AlphaFormat: 1, // AC_SRC_ALPHA - use per-pixel alpha
             };
 
             let _ = UpdateLayeredWindow(
@@ -246,9 +239,8 @@ unsafe extern "system" fn highlight_wnd_proc(
 ) -> LRESULT {
     match msg {
         WM_TIMER => {
-            let elapsed = RENDER_STATE.with(|state| {
-                state.borrow().as_ref().map(|s| s.start_time.elapsed())
-            });
+            let elapsed =
+                RENDER_STATE.with(|state| state.borrow().as_ref().map(|s| s.start_time.elapsed()));
 
             if let Some(elapsed) = elapsed {
                 let elapsed_ms = elapsed.as_millis() as u64;

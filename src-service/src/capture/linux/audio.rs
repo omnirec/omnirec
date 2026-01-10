@@ -363,7 +363,9 @@ impl PipeWireAudioBackend {
                 system_source_id: sys_id,
                 mic_source_id: mic_id,
             })
-            .map_err(|e| CaptureError::AudioError(format!("Failed to start audio capture: {}", e)))?;
+            .map_err(|e| {
+                CaptureError::AudioError(format!("Failed to start audio capture: {}", e))
+            })?;
 
         // Clone sender for cleanup
         let cmd_tx = self.cmd_tx.clone();
@@ -390,7 +392,10 @@ impl PipeWireAudioBackend {
     ///
     /// Returns an audio sample receiver and stop handle.
     #[allow(dead_code)]
-    pub fn start_capture(&self, source_id: &str) -> Result<(AudioReceiver, StopHandle), CaptureError> {
+    pub fn start_capture(
+        &self,
+        source_id: &str,
+    ) -> Result<(AudioReceiver, StopHandle), CaptureError> {
         // Determine if this is a system audio source or microphone
         let is_output = {
             let outputs = self.output_devices.lock().unwrap();
@@ -433,7 +438,8 @@ fn run_pipewire_audio_thread(
     pipewire::init();
 
     let mainloop = MainLoop::new(None).map_err(|e| format!("Failed to create main loop: {}", e))?;
-    let context = Context::new(&mainloop).map_err(|e| format!("Failed to create context: {}", e))?;
+    let context =
+        Context::new(&mainloop).map_err(|e| format!("Failed to create context: {}", e))?;
     let core = context
         .connect(None)
         .map_err(|e| format!("Failed to connect to PipeWire: {}", e))?;
@@ -467,7 +473,10 @@ fn run_pipewire_audio_thread(
                             name: node_desc.to_string(),
                             source_type: AudioSourceType::Input,
                         };
-                        eprintln!("[Audio] Found input device: {} (ID: {})", source.name, source.id);
+                        eprintln!(
+                            "[Audio] Found input device: {} (ID: {})",
+                            source.name, source.id
+                        );
                         input_map_clone.borrow_mut().insert(global.id, source);
                         // Update shared list
                         let devices: Vec<_> = input_map_clone.borrow().values().cloned().collect();
@@ -479,7 +488,10 @@ fn run_pipewire_audio_thread(
                             name: format!("{} (Monitor)", node_desc),
                             source_type: AudioSourceType::Output,
                         };
-                        eprintln!("[Audio] Found output device: {} (ID: {})", source.name, source.id);
+                        eprintln!(
+                            "[Audio] Found output device: {} (ID: {})",
+                            source.name, source.id
+                        );
                         output_map_clone.borrow_mut().insert(global.id, source);
                         // Update shared list
                         let devices: Vec<_> = output_map_clone.borrow().values().cloned().collect();
@@ -520,7 +532,10 @@ fn run_pipewire_audio_thread(
     let (mixer_tx, mixer_rx) = std_mpsc::channel::<MixedAudioSamples>();
 
     // Create mixer with AEC enabled flag
-    let mixer = Rc::new(RefCell::new(AudioMixer::new(mixer_tx, Arc::clone(&aec_enabled))));
+    let mixer = Rc::new(RefCell::new(AudioMixer::new(
+        mixer_tx,
+        Arc::clone(&aec_enabled),
+    )));
 
     // Thread state
     let state = Rc::new(RefCell::new(PwThreadState {
@@ -749,7 +764,10 @@ fn create_capture_stream(
             }
         })
         .state_changed(move |_stream, _user_data, old, new| {
-            eprintln!("[Audio] {:?} stream state: {:?} -> {:?}", stream_type, old, new);
+            eprintln!(
+                "[Audio] {:?} stream state: {:?} -> {:?}",
+                stream_type, old, new
+            );
         })
         .process(move |stream, _user_data| {
             if let Some(mut buffer) = stream.dequeue_buffer() {
@@ -851,9 +869,8 @@ pub fn list_audio_sources() -> Result<Vec<AudioSource>, EnumerationError> {
 /// Start audio capture from the specified source (backward compatible).
 #[allow(dead_code)]
 pub fn start_audio_capture(source_id: &str) -> Result<(AudioReceiver, StopHandle), CaptureError> {
-    let backend = get_audio_backend().ok_or_else(|| {
-        CaptureError::AudioError("Audio backend not initialized".to_string())
-    })?;
+    let backend = get_audio_backend()
+        .ok_or_else(|| CaptureError::AudioError("Audio backend not initialized".to_string()))?;
     backend.start_capture(source_id)
 }
 
@@ -863,9 +880,8 @@ pub fn start_audio_capture_dual(
     mic_source_id: Option<&str>,
     aec_enabled: bool,
 ) -> Result<(AudioReceiver, StopHandle), CaptureError> {
-    let backend = get_audio_backend().ok_or_else(|| {
-        CaptureError::AudioError("Audio backend not initialized".to_string())
-    })?;
+    let backend = get_audio_backend()
+        .ok_or_else(|| CaptureError::AudioError("Audio backend not initialized".to_string()))?;
 
     // Set AEC enabled state
     backend.set_aec_enabled(aec_enabled);

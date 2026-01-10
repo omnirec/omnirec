@@ -34,7 +34,9 @@ fn main() {
     let (zip_name, lib_names): (&str, Vec<&str>) = match (target_os.as_str(), target_arch.as_str())
     {
         ("windows", "x86_64") if cuda_enabled => {
-            println!("cargo:warning=CUDA feature enabled - using CUDA-accelerated whisper.cpp binaries");
+            println!(
+                "cargo:warning=CUDA feature enabled - using CUDA-accelerated whisper.cpp binaries"
+            );
             (
                 "whisper-cublas-12.4.0-bin-x64.zip",
                 vec![
@@ -115,8 +117,14 @@ fn main() {
 
         // Extract all required libraries
         println!("cargo:warning=Extracting whisper.cpp libraries...");
-        extract_libraries(&zip_path, &lib_output_dir, &lib_names, &target_os, &target_arch)
-            .expect("Failed to extract whisper.cpp libraries");
+        extract_libraries(
+            &zip_path,
+            &lib_output_dir,
+            &lib_names,
+            &target_os,
+            &target_arch,
+        )
+        .expect("Failed to extract whisper.cpp libraries");
     }
 
     // Set linker flags
@@ -130,8 +138,11 @@ fn main() {
 
     // Also write the primary library path to a file for runtime discovery
     let lib_path_file = out_dir.join("whisper_lib_path.txt");
-    fs::write(&lib_path_file, primary_lib_path.to_string_lossy().as_bytes())
-        .expect("Failed to write library path file");
+    fs::write(
+        &lib_path_file,
+        primary_lib_path.to_string_lossy().as_bytes(),
+    )
+    .expect("Failed to write library path file");
 
     // Rerun if build.rs changes
     println!("cargo:rerun-if-changed=build.rs");
@@ -426,7 +437,9 @@ fn copy_library_to_runtime(lib_path: &Path, lib_name: &str, out_dir: &Path) {
         if lib_path.exists()
             && (!runtime_lib_path.exists()
                 || fs::metadata(lib_path).map(|m| m.len()).unwrap_or(0)
-                    != fs::metadata(&runtime_lib_path).map(|m| m.len()).unwrap_or(0))
+                    != fs::metadata(&runtime_lib_path)
+                        .map(|m| m.len())
+                        .unwrap_or(0))
         {
             if let Err(e) = fs::copy(lib_path, &runtime_lib_path) {
                 println!("cargo:warning=Failed to copy {}: {}", lib_name, e);

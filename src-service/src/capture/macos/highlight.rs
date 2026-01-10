@@ -4,11 +4,11 @@
 
 use core_foundation::base::TCFType;
 use core_graphics::base::CGFloat;
+use objc2::msg_send;
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
 use objc2::MainThreadMarker;
 use objc2::MainThreadOnly;
-use objc2::msg_send;
 use objc2_app_kit::{NSBackingStoreType, NSColor, NSScreen, NSView, NSWindow, NSWindowStyleMask};
 use objc2_foundation::{NSArray, NSPoint, NSRect, NSSize};
 use std::ffi::c_void;

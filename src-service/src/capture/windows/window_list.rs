@@ -3,14 +3,14 @@
 use crate::capture::WindowInfo;
 use std::ffi::OsString;
 use std::os::windows::ffi::OsStringExt;
+use windows::Win32::Foundation::RECT;
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM};
 use windows::Win32::System::ProcessStatus::GetModuleBaseNameW;
 use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ};
-use windows::Win32::Foundation::RECT;
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, GetWindowRect, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId,
-    IsIconic, IsWindowVisible, GA_ROOTOWNER, GetAncestor, GetWindow, GetWindowLongW,
-    GWL_EXSTYLE, GW_OWNER, WS_EX_TOOLWINDOW,
+    EnumWindows, GetAncestor, GetWindow, GetWindowLongW, GetWindowRect, GetWindowTextLengthW,
+    GetWindowTextW, GetWindowThreadProcessId, IsIconic, IsWindowVisible, GA_ROOTOWNER, GWL_EXSTYLE,
+    GW_OWNER, WS_EX_TOOLWINDOW,
 };
 
 /// List all visible, capturable windows.
@@ -92,9 +92,11 @@ unsafe extern "system" fn enum_window_callback(hwnd: HWND, lparam: LPARAM) -> BO
     GetWindowThreadProcessId(hwnd, Some(&mut process_id));
 
     let process_name = if process_id != 0 {
-        if let Ok(process_handle) =
-            OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, process_id)
-        {
+        if let Ok(process_handle) = OpenProcess(
+            PROCESS_QUERY_INFORMATION | PROCESS_VM_READ,
+            false,
+            process_id,
+        ) {
             let mut name_buf: Vec<u16> = vec![0; 260];
             let name_len = GetModuleBaseNameW(process_handle, None, &mut name_buf);
             if name_len > 0 {
