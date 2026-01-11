@@ -23,29 +23,36 @@ The system SHALL initialize a system tray icon on all supported platforms.
 
 ### Requirement: Tray Menu Structure
 
-The tray icon SHALL display a context menu with recording controls and navigation options.
+The tray icon SHALL display a context menu with recording controls, transcription access, and navigation options.
 
 #### Scenario: Tray menu contents
 
 - **WHEN** the user clicks or right-clicks the tray icon
 - **THEN** a menu SHALL appear with the following items:
-  - Start Recording
+  - Record Screen/Window (macOS) / Start Recording (Linux/Windows)
   - Stop Recording
+  - Transcription
   - Configuration
   - About
   - Exit
 
 #### Scenario: Start Recording menu item invokes recording
 
-- **WHEN** the user clicks "Start Recording"
+- **WHEN** the user clicks "Start Recording" (Linux/Windows)
 - **AND** no recording is currently in progress
 - **THEN** the recording workflow SHALL be initiated
 - **AND** platform-specific source selection SHALL occur
 
+#### Scenario: Record Screen/Window shows main window (macOS)
+
+- **WHEN** the user clicks "Record Screen/Window" (macOS)
+- **THEN** the main application window SHALL be shown
+- **AND** the main window SHALL be activated (brought to front)
+
 #### Scenario: Start Recording disabled during recording
 
 - **WHEN** a recording is in progress
-- **THEN** the "Start Recording" menu item SHALL be disabled (grayed out)
+- **THEN** the "Start Recording" or "Record Screen/Window" menu item SHALL be disabled (grayed out)
 
 #### Scenario: Stop Recording menu item stops recording
 
@@ -58,6 +65,18 @@ The tray icon SHALL display a context menu with recording controls and navigatio
 
 - **WHEN** no recording is in progress
 - **THEN** the "Stop Recording" menu item SHALL be disabled (grayed out)
+
+#### Scenario: Transcription menu item shows transcription
+
+- **WHEN** the user clicks "Transcription"
+- **AND** transcription is currently active
+- **THEN** the transcription window SHALL be shown and activated
+
+#### Scenario: Transcription disabled when not available
+
+- **WHEN** transcription is NOT currently active
+- **AND** the user clicks "Transcription"
+- **THEN** an error message SHALL be displayed
 
 #### Scenario: Configuration menu item shows settings
 
@@ -138,13 +157,11 @@ The tray implementation SHALL be organized into platform-specific modules with c
 
 Platforms without full tray implementation SHALL provide stub implementations that succeed without creating actual tray icons.
 
-#### Scenario: macOS stub implementation
+#### Scenario: All platforms have full implementations
 
-- **GIVEN** the macOS tray implementation is a stub
-- **WHEN** tray setup is called
-- **THEN** the function SHALL return success
-- **AND** a debug message SHALL be logged indicating stub mode
-- **AND** no actual tray icon SHALL be created
+- **GIVEN** macOS, Linux, and Windows all have full tray implementations
+- **THEN** no stub implementations are required
+- **AND** all platforms SHALL create functional tray icons
 
 ### Requirement: Windows Tray Implementation
 
@@ -176,4 +193,72 @@ The system SHALL provide full tray functionality on Windows, matching the behavi
 
 - **WHEN** a recording is stopped on Windows
 - **THEN** the tray icon SHALL return to the normal application icon
+
+### Requirement: macOS Tray Implementation
+
+The system SHALL provide full tray functionality on macOS using the system menu bar.
+
+#### Scenario: macOS tray icon created on startup
+
+- **WHEN** the application starts on macOS
+- **THEN** a menu bar icon SHALL be created in the system menu bar
+- **AND** the icon SHALL use a monochromatic template icon
+
+#### Scenario: macOS icon adapts to system theme
+
+- **WHEN** the macOS menu bar uses light appearance
+- **THEN** the tray icon SHALL appear dark (automatically tinted by macOS)
+
+- **WHEN** the macOS menu bar uses dark appearance
+- **THEN** the tray icon SHALL appear light (automatically tinted by macOS)
+
+#### Scenario: macOS tray menu available
+
+- **WHEN** the user clicks the macOS menu bar icon
+- **THEN** a menu SHALL appear with the following items:
+  - Record Screen/Window
+  - Stop Recording
+  - Transcription
+  - Configuration
+  - About
+  - Exit
+
+#### Scenario: macOS Record Screen/Window shows main window
+
+- **WHEN** the user clicks "Record Screen/Window" on macOS
+- **THEN** the main application window SHALL be shown
+- **AND** the main window SHALL be activated (brought to front)
+
+#### Scenario: macOS tray icon indicates recording state
+
+- **WHEN** a recording is in progress on macOS
+- **THEN** the tray icon SHALL change to a recording indicator with a red dot
+- **AND** the indicator SHALL use a template icon that adapts to menu bar appearance
+
+#### Scenario: macOS tray icon returns to idle after recording
+
+- **WHEN** a recording is stopped on macOS
+- **THEN** the tray icon SHALL return to the normal template icon
+
+### Requirement: Transcription Menu Item
+
+The tray menu SHALL include a Transcription item for accessing the live transcription view.
+
+#### Scenario: Transcription menu item in tray menu
+
+- **WHEN** the user opens the tray menu
+- **THEN** a "Transcription" menu item SHALL appear between "Stop Recording" and "Configuration"
+
+#### Scenario: Transcription item shows transcription window when active
+
+- **WHEN** the user clicks "Transcription"
+- **AND** transcription is currently active (recording with transcription enabled)
+- **THEN** the transcription window SHALL be shown
+- **AND** the transcription window SHALL be activated (brought to front)
+
+#### Scenario: Transcription item shows error when not active
+
+- **WHEN** the user clicks "Transcription"
+- **AND** transcription is NOT currently active
+- **THEN** an error message SHALL be displayed indicating transcription is not active
 

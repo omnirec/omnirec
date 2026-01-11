@@ -156,9 +156,9 @@ Platforms without full tray implementation SHALL provide stub implementations th
 - **THEN** no stub implementations are required
 - **AND** all platforms SHALL create functional tray icons
 
-## REMOVED Requirements
+## REMOVED Scenarios
 
-### Requirement: macOS stub implementation
+### Scenario: macOS stub implementation
 
 **Reason**: macOS now has a full tray implementation, so the stub is no longer needed.
 
