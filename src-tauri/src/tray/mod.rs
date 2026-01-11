@@ -3,7 +3,7 @@
 //! This module provides a unified tray interface across all platforms:
 //! - Linux: Full implementation with tray icon and menu
 //! - Windows: Full implementation with tray icon and menu
-//! - macOS: Stub (future implementation)
+//! - macOS: Full implementation with menu bar icon and menu
 //!
 //! On Linux portal-mode desktops (GNOME, KDE, COSMIC), the tray provides
 //! the primary interface for recording controls.
@@ -11,12 +11,13 @@
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "macos")]
-mod macos;
+pub mod macos;
 #[cfg(target_os = "windows")]
 mod windows;
 
 // Platform-specific implementations are accessed through the unified functions below.
 // The submodules are kept private; only the cross-platform API is exposed.
+// Exception: macOS module is public for menu event handling from lib.rs.
 
 // =============================================================================
 // Shared Types
@@ -26,6 +27,7 @@ mod windows;
 pub mod menu_ids {
     pub const RECORD: &str = "record";
     pub const STOP: &str = "stop";
+    pub const TRANSCRIPTION: &str = "transcription";
     pub const CONFIGURATION: &str = "configuration";
     pub const ABOUT: &str = "about";
     pub const EXIT: &str = "exit";
@@ -35,6 +37,7 @@ pub mod menu_ids {
 pub mod menu_labels {
     pub const RECORD: &str = "Record Screen/Window";
     pub const STOP: &str = "Stop Recording";
+    pub const TRANSCRIPTION: &str = "Transcription";
     pub const CONFIGURATION: &str = "Configuration";
     pub const ABOUT: &str = "About";
     pub const EXIT: &str = "Exit";
@@ -58,6 +61,12 @@ pub mod icon_names {
     pub const RECORDING_24: &str = "omnirec-recording-24.png";
     pub const RECORDING_32: &str = "omnirec-recording-32.png";
     pub const RECORDING: &str = "omnirec-recording.png";
+
+    /// macOS template icons (monochrome, adapts to menu bar appearance).
+    pub const TEMPLATE: &str = "omnirec-template.png";
+    pub const TEMPLATE_2X: &str = "omnirec-template@2x.png";
+    pub const RECORDING_TEMPLATE: &str = "omnirec-recording-template.png";
+    pub const RECORDING_TEMPLATE_2X: &str = "omnirec-recording-template@2x.png";
 }
 
 // =============================================================================
@@ -67,16 +76,13 @@ pub mod icon_names {
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-#[cfg(any(target_os = "linux", target_os = "windows"))]
 use tauri::tray::TrayIcon;
 
 /// System tray state.
 ///
 /// This struct holds the tray icon handle and recording state.
-/// On platforms without tray support, only the recording state is tracked.
 pub struct TrayState {
-    /// The tray icon handle (Linux and Windows).
-    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    /// The tray icon handle.
     pub tray: std::sync::Mutex<TrayIcon>,
 
     /// Whether a recording is currently in progress.
@@ -136,10 +142,14 @@ pub fn set_recording_state(app: &tauri::AppHandle, recording: bool) {
     windows::set_recording_state(app, recording)
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "macos")]
+pub fn set_recording_state(app: &tauri::AppHandle, recording: bool) {
+    macos::set_recording_state(app, recording)
+}
+
+#[cfg(target_os = "linux")]
 pub fn set_recording_state(_app: &tauri::AppHandle, _recording: bool) {
-    // No-op on other platforms for now
-    // Linux uses GNOME's system indicator during recording
+    // No-op on Linux - GNOME's system indicator is used during recording
 }
 
 /// Check if running in portal mode.

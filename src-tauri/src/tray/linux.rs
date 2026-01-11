@@ -187,6 +187,20 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         true,
         None::<&str>,
     )?;
+    let stop_item = MenuItem::with_id(
+        app,
+        menu_ids::STOP,
+        menu_labels::STOP,
+        false, // Disabled by default (not recording)
+        None::<&str>,
+    )?;
+    let transcription_item = MenuItem::with_id(
+        app,
+        menu_ids::TRANSCRIPTION,
+        menu_labels::TRANSCRIPTION,
+        true,
+        None::<&str>,
+    )?;
     let configuration = MenuItem::with_id(
         app,
         menu_ids::CONFIGURATION,
@@ -198,7 +212,17 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let exit = MenuItem::with_id(app, menu_ids::EXIT, menu_labels::EXIT, true, None::<&str>)?;
 
     // Build menu
-    let menu = Menu::with_items(app, &[&record_item, &configuration, &about, &exit])?;
+    let menu = Menu::with_items(
+        app,
+        &[
+            &record_item,
+            &stop_item,
+            &transcription_item,
+            &configuration,
+            &about,
+            &exit,
+        ],
+    )?;
 
     // Build tray icon
     let tray = TrayIconBuilder::new()
@@ -209,6 +233,14 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             id if id == menu_ids::RECORD => {
                 eprintln!("[Tray] Record Screen/Window clicked");
                 let _ = app.emit("tray-start-recording", ());
+            }
+            id if id == menu_ids::STOP => {
+                eprintln!("[Tray] Stop Recording clicked");
+                let _ = app.emit("tray-stop-recording", ());
+            }
+            id if id == menu_ids::TRANSCRIPTION => {
+                eprintln!("[Tray] Transcription clicked");
+                let _ = app.emit("tray-show-transcription", ());
             }
             id if id == menu_ids::CONFIGURATION => {
                 eprintln!("[Tray] Configuration clicked");

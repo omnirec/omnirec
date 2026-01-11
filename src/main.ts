@@ -554,6 +554,11 @@ window.addEventListener("DOMContentLoaded", () => {
     }
   });
 
+  listen("tray-show-transcription", () => {
+    console.log("[Tray] Show transcription event received");
+    handleTrayShowTranscription();
+  });
+
   // Listen for external recording stop (e.g., user clicked GNOME's recording indicator)
   listen("recording-stream-stopped", () => {
     console.log("[Stream] Recording stream stopped externally");
@@ -567,6 +572,17 @@ window.addEventListener("DOMContentLoaded", () => {
   checkPermissionsAndLoad();
   loadAppVersion();
   loadConfig();
+  
+  // Check URL parameters for initial tab (used when window is recreated from tray menu)
+  const urlParams = new URLSearchParams(window.location.search);
+  const initialTab = urlParams.get("tab");
+  if (initialTab === "config") {
+    console.log("[Init] Opening config tab from URL parameter");
+    setViewMode("config");
+  } else if (initialTab === "about") {
+    console.log("[Init] Opening about tab from URL parameter");
+    setViewMode("about");
+  }
 });
 
 // Check screen recording permission and show appropriate UI
@@ -1603,6 +1619,27 @@ async function handleTrayStopRecording(): Promise<void> {
       // Window may already be closed
     }
     regionSelectorWindow = null;
+  }
+}
+
+// Handle tray "Transcription" - show transcription window if active
+async function handleTrayShowTranscription(): Promise<void> {
+  // Check if transcription is currently active (recording with transcription enabled)
+  const isTranscriptionActive = currentState === "recording" && (transcriptionCheckbox?.checked ?? false);
+  
+  if (isTranscriptionActive) {
+    // Open/show the transcription window
+    try {
+      await invoke("open_transcript_window");
+      console.log("[Tray] Opened transcription window");
+    } catch (error) {
+      console.error("[Tray] Failed to open transcription window:", error);
+      setStatus("Failed to open transcription window", true);
+    }
+  } else {
+    // Transcription is not active - show error message
+    console.log("[Tray] Transcription not active");
+    setStatus("Transcription is not active. Start a recording with transcription enabled.", true);
   }
 }
 

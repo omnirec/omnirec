@@ -21,7 +21,6 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 // Re-export tray types for use in commands
-#[cfg(any(target_os = "linux", target_os = "windows"))]
 pub use tray::TrayState;
 
 // Legacy alias for backwards compatibility
@@ -185,10 +184,21 @@ fn setup_macos_window(_app: &tauri::App) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .manage(AppState::new())
+        .manage(AppState::new());
+
+    // On macOS, register menu event handler at the Builder level
+    // This ensures menu events work even when the window is hidden
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder.on_menu_event(|app, event| {
+            tray::macos::handle_menu_event(app, &event);
+        });
+    }
+
+    builder
         .setup(|app| {
             setup_macos_window(app);
 
@@ -255,19 +265,36 @@ pub fn run() {
 
             Ok(())
         })
-        .on_window_event(|_window, event| {
-            // On Windows, hide the window instead of closing it when the close button is clicked.
-            // The app continues running in the system tray. Use "Exit" from tray menu to quit.
-            #[cfg(target_os = "windows")]
+        .on_window_event(|window, event| {
+            // On Windows and macOS, hide the window instead of closing it when the close button is clicked.
+            // The app continues running in the system tray/menu bar. Use "Exit" from tray menu to quit.
+            #[cfg(any(target_os = "windows", target_os = "macos"))]
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                eprintln!("[Window] Close requested - hiding window (use tray Exit to quit)");
+                eprintln!("[Window] Close requested for window '{}' - hiding window (use tray Exit to quit)", window.label());
                 api.prevent_close();
-                let _ = _window.hide();
+                match window.hide() {
+                    Ok(()) => eprintln!("[Window] hide() succeeded"),
+                    Err(e) => eprintln!("[Window] hide() failed: {:?}", e),
+                }
+                
+                // On macOS, set activation policy to Accessory to hide from Dock and Cmd+Tab
+                #[cfg(target_os = "macos")]
+                {
+                    use tauri::Manager;
+                    let app = window.app_handle();
+                    let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+                    eprintln!("[Window] Set activation policy to Accessory");
+                }
             }
             
-            // Suppress unused variable warning on non-Windows
-            #[cfg(not(target_os = "windows"))]
-            let _ = event;
+            #[cfg(any(target_os = "windows", target_os = "macos"))]
+            if let tauri::WindowEvent::Destroyed = event {
+                eprintln!("[Window] Window '{}' was DESTROYED!", window.label());
+            }
+            
+            // Suppress unused variable warning on Linux
+            #[cfg(target_os = "linux")]
+            let _ = (window, event);
         })
         .invoke_handler(tauri::generate_handler![
             // Capture commands
@@ -328,6 +355,27 @@ pub fn run() {
             commands::cancel_download,
             commands::is_download_in_progress,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            use tauri::Manager;
+            match event {
+                // On macOS and Windows, prevent the app from exiting when all windows are closed.
+                // The app continues running in the system tray/menu bar.
+                #[cfg(any(target_os = "macos", target_os = "windows"))]
+                tauri::RunEvent::ExitRequested { api, .. } => {
+                    api.prevent_exit();
+                }
+                // On macOS, when all windows are closed but app is still running,
+                // clicking the dock icon should show the main window
+                #[cfg(target_os = "macos")]
+                tauri::RunEvent::Reopen { .. } => {
+                    if let Some(window) = app_handle.get_webview_window("main") {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                    }
+                }
+                _ => {}
+            }
+        });
 }
