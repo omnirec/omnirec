@@ -3469,6 +3469,7 @@ dependencies = [
  "tokio",
  "tracing",
  "which",
+ "windows 0.61.3",
 ]
 
 [[package]]

@@ -184,7 +184,14 @@ fn setup_macos_window(_app: &tauri::App) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "macos")]
     let mut builder = tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
+        .manage(AppState::new());
+
+    #[cfg(not(target_os = "macos"))]
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState::new());
@@ -357,8 +364,7 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|app_handle, event| {
-            use tauri::Manager;
+        .run(|_app_handle, event| {
             match event {
                 // On macOS and Windows, prevent the app from exiting when all windows are closed.
                 // The app continues running in the system tray/menu bar.
@@ -370,9 +376,13 @@ pub fn run() {
                 // clicking the dock icon should show the main window
                 #[cfg(target_os = "macos")]
                 tauri::RunEvent::Reopen { .. } => {
-                    if let Some(window) = app_handle.get_webview_window("main") {
-                        let _ = window.show();
-                        let _ = window.set_focus();
+                    #[cfg(target_os = "macos")]
+                    {
+                        use tauri::Manager;
+                        if let Some(window) = _app_handle.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
                     }
                 }
                 _ => {}

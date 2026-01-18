@@ -54,7 +54,8 @@ futures-util = "0.3"
 
 # Windows-specific dependencies
 [target.'cfg(windows)'.dependencies]
-# (No Windows-specific dependencies needed - capture moved to service)
+# Win32 API for window management (SetForegroundWindow, etc.)
+windows = { version = "0.61", features = ["Win32_UI_WindowsAndMessaging"] }
 
 # Linux-specific dependencies
 [target.'cfg(target_os = "linux")'.dependencies]
