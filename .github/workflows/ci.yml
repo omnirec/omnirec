@@ -68,7 +68,8 @@ jobs:
 
       - name: Rust lint (clippy) - service
         working-directory: src-service
-        # Note: --all-features omitted because 'cuda' feature requires NVIDIA CUDA Toolkit
+        # Note: --all-features omitted because 'cuda' feature requires NVIDIA CUDA Toolkit (Linux only)
+        # Windows always uses CUDA-enabled prebuilt binaries regardless of features
         run: cargo clippy --all-targets -- -D warnings
 
       - name: Rust lint (clippy) - main app
@@ -85,7 +86,7 @@ jobs:
 
       - name: Rust tests - service
         working-directory: src-service
-        # Note: --all-features omitted because 'cuda' feature requires NVIDIA CUDA Toolkit
+        # Note: --all-features omitted because 'cuda' feature requires NVIDIA CUDA Toolkit (Linux only)
         run: cargo test
 
       - name: Rust tests - main app

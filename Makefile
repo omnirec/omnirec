@@ -20,7 +20,7 @@ build-debug: frontend service-debug client-debug cli-debug picker
 # Build all components in release mode
 build-release: frontend service-release client-release cli-release picker
 
-# Build all components with CUDA acceleration (requires NVIDIA CUDA Toolkit on Linux)
+# Build all components with CUDA acceleration (Linux only - Windows always includes CUDA)
 build-cuda: frontend service-cuda client-release cli-release picker
 
 # =============================================================================
@@ -42,10 +42,10 @@ service-release:
 	@echo "==> Building omnirec-service (release)..."
 	cd src-service && cargo build --release
 
-# Build omnirec-service with CUDA acceleration (release)
+# Build omnirec-service with CUDA acceleration (release, Linux only)
 # Requires: NVIDIA CUDA Toolkit (nvcc, cuBLAS) on Linux
-#           On Windows, prebuilt CUDA binaries are downloaded automatically
-#           On macOS, this has no effect (Metal acceleration is always used)
+# Windows always includes CUDA binaries - use 'service-release' instead
+# macOS: No effect (Metal acceleration is always used)
 service-cuda:
 	@echo "==> Building omnirec-service with CUDA (release)..."
 	cd src-service && cargo build --release --features cuda
@@ -97,7 +97,7 @@ lint-rust:
 	@echo "==> Linting src-common..."
 	cd src-common && cargo clippy --all-targets --all-features -- -D warnings
 	@echo "==> Linting src-service..."
-	cd src-service && cargo clippy --all-targets --all-features -- -D warnings
+	cd src-service && cargo clippy --all-targets -- -D warnings
 	@echo "==> Linting src-tauri..."
 	cd src-tauri && cargo clippy --all-targets --all-features -- -D warnings
 	@echo "==> Linting src-cli..."
@@ -120,7 +120,7 @@ test-rust:
 	@echo "==> Testing src-common..."
 	cd src-common && cargo test --all-features
 	@echo "==> Testing src-service..."
-	cd src-service && cargo test --all-features
+	cd src-service && cargo test
 	@echo "==> Testing src-tauri..."
 	cd src-tauri && cargo test --all-features
 	@echo "==> Testing src-cli..."
@@ -177,7 +177,7 @@ run-service-release: service-release
 	@echo "==> Running omnirec-service (release)..."
 	./target/release/omnirec-service
 
-# Build and run service with CUDA in foreground (release)
+# Build and run service with CUDA in foreground (release, Linux only)
 run-service-cuda: service-cuda
 	@echo "==> Running omnirec-service with CUDA (release)..."
 	./target/release/omnirec-service
@@ -213,11 +213,11 @@ help:
 	@echo "  all, build       Build all components (release mode)"
 	@echo "  build-debug      Build all components (debug mode, faster)"
 	@echo "  build-release    Build all components (release mode)"
-	@echo "  build-cuda       Build with CUDA GPU acceleration for transcription"
+	@echo "  build-cuda       Build with CUDA GPU acceleration (Linux only)"
 	@echo "  frontend         Build frontend only"
 	@echo "  service          Build omnirec-service (release)"
 	@echo "  service-debug    Build omnirec-service (debug)"
-	@echo "  service-cuda     Build omnirec-service with CUDA (release)"
+	@echo "  service-cuda     Build omnirec-service with CUDA (Linux only)"
 	@echo "  client           Build omnirec Tauri app (release)"
 	@echo "  client-debug     Build omnirec Tauri app (debug)"
 	@echo "  cli              Build omnirec CLI (release)"
@@ -234,7 +234,7 @@ help:
 	@echo "Run Targets:"
 	@echo "  run-service         Build and run service (debug)"
 	@echo "  run-service-release Build and run service (release)"
-	@echo "  run-service-cuda    Build and run service with CUDA (release)"
+	@echo "  run-service-cuda    Build and run service with CUDA (Linux only)"
 	@echo "  run-cli             Build and run CLI (debug)"
 	@echo "  run-cli-release     Build and run CLI (release)"
 	@echo ""
@@ -246,7 +246,7 @@ help:
 	@echo "  help             Show this help message"
 	@echo ""
 	@echo "CUDA Acceleration:"
-	@echo "  The 'cuda' targets enable GPU-accelerated transcription via whisper.cpp."
-	@echo "  - Linux: Requires NVIDIA CUDA Toolkit (nvcc, cuBLAS) at build time"
-	@echo "  - Windows: Uses prebuilt CUDA binaries (downloaded automatically)"
+	@echo "  - Windows: CUDA binaries always included; falls back to CPU if no GPU"
+	@echo "  - Linux: Use 'cuda' targets to enable GPU acceleration"
+	@echo "           Requires NVIDIA CUDA Toolkit (nvcc, cuBLAS) at build time"
 	@echo "  - macOS: No effect (Metal acceleration is always used)"

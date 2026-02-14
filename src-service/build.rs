@@ -18,6 +18,7 @@ fn main() {
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
 
     // Check if CUDA feature is enabled (set by Cargo when --features cuda is used)
+    // This only affects Linux builds - Windows always uses CUDA-enabled prebuilt binaries
     let cuda_enabled = env::var("CARGO_FEATURE_CUDA").is_ok();
 
     // Linux: Build whisper.cpp from source using CMake
@@ -30,12 +31,13 @@ fn main() {
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR not set"));
 
     // Determine which binary to download and which libraries to extract
-    // When CUDA feature is enabled on Windows x64, use CUDA-enabled binaries
+    // Windows x64 always uses CUDA-enabled binaries - falls back to CPU at runtime if no GPU
+    // Linux requires explicit --features cuda flag (needs NVIDIA CUDA Toolkit at build time)
     let (zip_name, lib_names): (&str, Vec<&str>) = match (target_os.as_str(), target_arch.as_str())
     {
-        ("windows", "x86_64") if cuda_enabled => {
+        ("windows", "x86_64") => {
             println!(
-                "cargo:warning=CUDA feature enabled - using CUDA-accelerated whisper.cpp binaries"
+                "cargo:warning=Using CUDA-accelerated whisper.cpp binaries (falls back to CPU if no GPU)"
             );
             (
                 "whisper-cublas-12.4.0-bin-x64.zip",
@@ -56,21 +58,10 @@ fn main() {
                 ],
             )
         }
-        ("windows", "x86_64") => (
-            "whisper-bin-x64.zip",
+        ("windows", "x86") => (
+            "whisper-bin-Win32.zip",
             vec!["whisper.dll", "ggml.dll", "ggml-base.dll", "ggml-cpu.dll"],
         ),
-        ("windows", "x86") => {
-            if cuda_enabled {
-                println!(
-                    "cargo:warning=CUDA feature is not supported on Windows x86 - using CPU-only build"
-                );
-            }
-            (
-                "whisper-bin-Win32.zip",
-                vec!["whisper.dll", "ggml.dll", "ggml-base.dll", "ggml-cpu.dll"],
-            )
-        }
         ("macos", _) => {
             if cuda_enabled {
                 println!("cargo:warning=CUDA feature has no effect on macOS - using Metal acceleration via prebuilt framework");
@@ -94,14 +85,8 @@ fn main() {
     let cache_dir = out_dir.join("whisper-cache");
     fs::create_dir_all(&cache_dir).expect("Failed to create cache directory");
 
-    // Include cuda in cache path to separate CUDA and non-CUDA builds
-    let cuda_suffix = if cuda_enabled { "-cuda" } else { "" };
-    let zip_path = cache_dir.join(format!(
-        "whisper-{}-{}{}. zip",
-        WHISPER_VERSION, target_arch, cuda_suffix
-    ));
-    // Separate output directories for CUDA and non-CUDA to avoid mixing libraries
-    let lib_output_dir = out_dir.join(format!("whisper-lib{}", cuda_suffix));
+    let zip_path = cache_dir.join(format!("whisper-{}-{}.zip", WHISPER_VERSION, target_arch));
+    let lib_output_dir = out_dir.join("whisper-lib");
     fs::create_dir_all(&lib_output_dir).expect("Failed to create lib output directory");
 
     let primary_lib_path = lib_output_dir.join(primary_lib);
