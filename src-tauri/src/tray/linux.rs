@@ -243,7 +243,7 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                 let _ = app.emit("tray-show-transcription", ());
             }
             id if id == menu_ids::CONFIGURATION => {
-                eprintln!("[Tray] Configuration clicked");
+                eprintln!("[Tray] Configuration clicked - opening config window");
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.show();
                     let _ = window.set_focus();
@@ -251,7 +251,7 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                 let _ = app.emit("tray-show-config", ());
             }
             id if id == menu_ids::ABOUT => {
-                eprintln!("[Tray] About clicked");
+                eprintln!("[Tray] About clicked - opening about window");
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.show();
                     let _ = window.set_focus();

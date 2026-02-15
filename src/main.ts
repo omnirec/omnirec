@@ -1,13 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
-import { revealItemInDir, openUrl } from "@tauri-apps/plugin-opener";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { WebviewWindow, getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { listen } from "@tauri-apps/api/event";
-
-// Application URLs
-const OMNIREC_WEBSITE_URL = "https://omnirec.app";
-const OMNIREC_GITHUB_URL = "https://github.com/keathmilligan/omnirec";
-const OMNIREC_LICENSE_URL = "https://github.com/keathmilligan/omnirec/blob/main/LICENSE";
 
 // Types matching Rust structs
 interface WindowInfo {
@@ -37,14 +32,8 @@ interface CaptureRegion {
 }
 
 type CaptureMode = "window" | "region" | "display";
-type ViewMode = CaptureMode | "config" | "about";
+type ViewMode = CaptureMode;
 type RecordingState = "idle" | "recording" | "saving";
-
-interface AudioSource {
-  id: string;
-  name: string;
-  source_type: "input" | "output";
-}
 
 interface AudioConfig {
   enabled: boolean;
@@ -53,22 +42,10 @@ interface AudioConfig {
   echo_cancellation: boolean;
 }
 
-// TranscriptionConfig used in loadTranscriptionConfig
 interface TranscriptionConfig {
   enabled: boolean;
   model: string;
   show_transcript_window: boolean;
-}
-
-// Model info for dropdown
-interface ModelInfo {
-  id: string;
-  display_name: string;
-  size_bytes: number;
-  size_display: string;
-  description: string;
-  english_only: boolean;
-  downloaded: boolean;
 }
 
 // Model status response
@@ -80,16 +57,6 @@ interface ModelStatus {
   file_size: number | null;
   expected_size: number;
   size_display: string;
-}
-
-// Download progress event
-interface DownloadProgress {
-  model: string;
-  bytes_downloaded: number;
-  total_bytes: number;
-  percentage: number;
-  status: "downloading" | "completed" | "cancelled" | "error";
-  error: string | null;
 }
 
 type ThemeMode = "auto" | "light" | "dark";
@@ -228,48 +195,11 @@ let openSettingsBtn: HTMLButtonElement | null;
 let closeBtn: HTMLButtonElement | null;
 
 let modeConfigBtn: HTMLButtonElement | null;
-let configViewEl: HTMLElement | null;
-let outputDirInput: HTMLInputElement | null;
-let browseOutputDirBtn: HTMLButtonElement | null;
-let outputDirErrorEl: HTMLElement | null;
-let audioSourceSelect: HTMLSelectElement | null;
-let micSourceSelect: HTMLSelectElement | null;
-let aecCheckbox: HTMLInputElement | null;
-let aecConfigItem: HTMLElement | null;
-let refreshAudioBtn: HTMLButtonElement | null;
-let themeSelect: HTMLSelectElement | null;
-let macosSystemAudioCheckbox: HTMLInputElement | null;
-let macosSystemAudioConfigItem: HTMLElement | null;
-let macosSystemAudioHint: HTMLElement | null;
-let audioSourceConfigItem: HTMLElement | null;
 let modeAboutBtn: HTMLButtonElement | null;
-let aboutViewEl: HTMLElement | null;
-let aboutVersionEl: HTMLElement | null;
-let aboutWebsiteLink: HTMLAnchorElement | null;
-let aboutGithubLink: HTMLAnchorElement | null;
-let aboutLicenseLink: HTMLAnchorElement | null;
-let transcriptionCheckbox: HTMLInputElement | null;
-let transcriptionConfigItem: HTMLElement | null;
 let transcriptionQuickToggle: HTMLElement | null;
 let transcriptionQuickCheckbox: HTMLInputElement | null;
-let modelConfigItem: HTMLElement | null;
-let modelSelect: HTMLSelectElement | null;
-let modelInfo: HTMLElement | null;
-let modelStatus: HTMLElement | null;
-let modelDownloadBtn: HTMLButtonElement | null;
-let modelCancelBtn: HTMLButtonElement | null;
-let modelProgressContainer: HTMLElement | null;
-let modelProgressFill: HTMLElement | null;
-let modelProgressText: HTMLElement | null;
-let showTranscriptConfigItem: HTMLElement | null;
-let showTranscriptCheckbox: HTMLInputElement | null;
-
-// Model download state
-let isModelDownloading = false;
 
 // Platform state
-let currentPlatform: "macos" | "linux" | "windows" = "linux";
-let macosSystemAudioAvailable = false;
 let isTrayModeDesktop = false;
 type DesktopEnvironment = "gnome" | "kde" | "cosmic" | "cinnamon" | "hyprland" | "unknown";
 let desktopEnvironment: DesktopEnvironment = "unknown";
@@ -283,9 +213,6 @@ let regionSelectorWindow: WebviewWindow | null = null;
 let currentState: RecordingState = "idle";
 let timerInterval: number | null = null;
 let recordingStartTime: number = 0;
-let defaultOutputDir: string = "";
-let outputDirSaveTimeout: number | null = null;
-
 // Theme state
 let currentThemeMode: ThemeMode = "auto";
 let systemThemeMediaQuery: MediaQueryList | null = null;
@@ -369,45 +296,15 @@ window.addEventListener("DOMContentLoaded", () => {
   openSettingsBtn = document.querySelector("#open-settings-btn");
   closeBtn = document.querySelector("#close-btn");
   modeConfigBtn = document.querySelector("#mode-config-btn");
-  configViewEl = document.querySelector("#config-view");
-  outputDirInput = document.querySelector("#output-dir-input");
-  browseOutputDirBtn = document.querySelector("#browse-output-dir-btn");
-  outputDirErrorEl = document.querySelector("#output-dir-error");
-  audioSourceSelect = document.querySelector("#audio-source-select");
-  micSourceSelect = document.querySelector("#mic-source-select");
-  aecCheckbox = document.querySelector("#aec-checkbox");
-  aecConfigItem = document.querySelector("#aec-config-item");
-  refreshAudioBtn = document.querySelector("#refresh-audio-btn");
-  themeSelect = document.querySelector("#theme-select");
-  macosSystemAudioCheckbox = document.querySelector("#macos-system-audio-checkbox");
-  macosSystemAudioConfigItem = document.querySelector("#macos-system-audio-config-item");
-  macosSystemAudioHint = document.querySelector("#macos-system-audio-hint");
-  audioSourceConfigItem = document.querySelector("#audio-source-config-item");
   modeAboutBtn = document.querySelector("#mode-about-btn");
-  aboutViewEl = document.querySelector("#about-view");
-  aboutVersionEl = document.querySelector("#about-version");
-  aboutWebsiteLink = document.querySelector("#about-website-link");
-  aboutGithubLink = document.querySelector("#about-github-link");
-  aboutLicenseLink = document.querySelector("#about-license-link");
-  transcriptionCheckbox = document.querySelector("#transcription-checkbox");
-  transcriptionConfigItem = document.querySelector("#transcription-config-item");
   transcriptionQuickToggle = document.querySelector("#transcription-quick-toggle");
   transcriptionQuickCheckbox = document.querySelector("#transcription-quick-checkbox");
-  modelConfigItem = document.querySelector("#model-config-item");
-  modelSelect = document.querySelector("#model-select");
-  modelInfo = document.querySelector("#model-info");
-  modelStatus = document.querySelector("#model-status");
-  modelDownloadBtn = document.querySelector("#model-download-btn");
-  modelCancelBtn = document.querySelector("#model-cancel-btn");
-  modelProgressContainer = document.querySelector("#model-progress-container");
-  modelProgressFill = document.querySelector("#model-progress-fill");
-  modelProgressText = document.querySelector("#model-progress-text");
-  showTranscriptConfigItem = document.querySelector("#show-transcript-config-item");
-  showTranscriptCheckbox = document.querySelector("#show-transcript-checkbox");
 
   // Set up event listeners
   closeBtn?.addEventListener("click", async () => {
-    // Close region selector first if open, then close the main window
+    // Close secondary windows first
+    await closeSecondaryWindows();
+    // Close region selector if open
     if (regionSelectorWindow) {
       try {
         await regionSelectorWindow.close();
@@ -421,6 +318,8 @@ window.addEventListener("DOMContentLoaded", () => {
   
   // Also listen for window close event (e.g., from OS close button or Alt+F4)
   getCurrentWebviewWindow().onCloseRequested(async (_event) => {
+    // Close secondary windows
+    await closeSecondaryWindows();
     // If selector is open, close it first but don't prevent the main window close
     if (regionSelectorWindow) {
       try {
@@ -430,23 +329,6 @@ window.addEventListener("DOMContentLoaded", () => {
       }
       regionSelectorWindow = null;
     }
-    // Allow the close to proceed (don't call event.preventDefault())
-  });
-  
-  // Also listen for window close event (e.g., from OS close button or Alt+F4)
-  getCurrentWebviewWindow().onCloseRequested(async (_event) => {
-    console.log("onCloseRequested fired");
-    // If selector is open, close it first but don't prevent the main window close
-    if (regionSelectorWindow) {
-      console.log("Closing selector from onCloseRequested");
-      try {
-        await regionSelectorWindow.close();
-      } catch (e) {
-        console.warn("Failed to close selector on close request:", e);
-      }
-      regionSelectorWindow = null;
-    }
-    console.log("Allowing close to proceed");
     // Allow the close to proceed (don't call event.preventDefault())
   });
   statusOverlayEl?.addEventListener("click", dismissStatus);
@@ -463,44 +345,9 @@ window.addEventListener("DOMContentLoaded", () => {
   modeWindowBtn?.addEventListener("click", () => setViewMode("window"));
   modeRegionBtn?.addEventListener("click", () => setViewMode("region"));
   modeDisplayBtn?.addEventListener("click", () => setViewMode("display"));
-  modeConfigBtn?.addEventListener("click", () => setViewMode("config"));
-  modeAboutBtn?.addEventListener("click", () => setViewMode("about"));
-  
-  // About view handlers
-  aboutWebsiteLink?.addEventListener("click", (e) => {
-    e.preventDefault();
-    openUrl(OMNIREC_WEBSITE_URL);
-  });
-  aboutGithubLink?.addEventListener("click", (e) => {
-    e.preventDefault();
-    openUrl(OMNIREC_GITHUB_URL);
-  });
-  aboutLicenseLink?.addEventListener("click", (e) => {
-    e.preventDefault();
-    openUrl(OMNIREC_LICENSE_URL);
-  });
-
-  // Config view handlers
-  outputDirInput?.addEventListener("input", handleOutputDirInput);
-  outputDirInput?.addEventListener("blur", handleOutputDirBlur);
-  browseOutputDirBtn?.addEventListener("click", handleBrowseOutputDir);
-  audioSourceSelect?.addEventListener("change", handleAudioConfigChange);
-  micSourceSelect?.addEventListener("change", handleAudioConfigChange);
-  aecCheckbox?.addEventListener("change", handleAudioConfigChange);
-  refreshAudioBtn?.addEventListener("click", loadAudioSources);
-  themeSelect?.addEventListener("change", handleThemeChange);
-  macosSystemAudioCheckbox?.addEventListener("change", handleMacosSystemAudioChange);
-  transcriptionCheckbox?.addEventListener("change", handleTranscriptionChange);
+  modeConfigBtn?.addEventListener("click", () => openConfigWindow());
+  modeAboutBtn?.addEventListener("click", () => openAboutWindow());
   transcriptionQuickCheckbox?.addEventListener("change", handleTranscriptionQuickToggleChange);
-  modelSelect?.addEventListener("change", handleModelChange);
-  modelDownloadBtn?.addEventListener("click", handleModelDownload);
-  modelCancelBtn?.addEventListener("click", handleModelCancel);
-  showTranscriptCheckbox?.addEventListener("change", handleShowTranscriptChange);
-
-  // Listen for model download progress events
-  listen<DownloadProgress>("model-download-progress", (event) => {
-    handleDownloadProgress(event.payload);
-  });
 
   // Listen for region updates from selector window (continuous updates as user moves/resizes)
   listen<CaptureRegion>("region-updated", (event) => {
@@ -538,12 +385,12 @@ window.addEventListener("DOMContentLoaded", () => {
 
   listen("tray-show-config", () => {
     console.log("[Tray] Show config event received");
-    setViewMode("config");
+    openConfigWindow();
   });
 
   listen("tray-show-about", () => {
     console.log("[Tray] Show about event received");
-    setViewMode("about");
+    openAboutWindow();
   });
 
   listen("tray-exit", () => {
@@ -573,16 +420,7 @@ window.addEventListener("DOMContentLoaded", () => {
   loadAppVersion();
   loadConfig();
   
-  // Check URL parameters for initial tab (used when window is recreated from tray menu)
-  const urlParams = new URLSearchParams(window.location.search);
-  const initialTab = urlParams.get("tab");
-  if (initialTab === "config") {
-    console.log("[Init] Opening config tab from URL parameter");
-    setViewMode("config");
-  } else if (initialTab === "about") {
-    console.log("[Init] Opening about tab from URL parameter");
-    setViewMode("about");
-  }
+
 });
 
 // Check screen recording permission and show appropriate UI
@@ -623,9 +461,6 @@ async function loadAppVersion(): Promise<void> {
     if (appVersionEl) {
       appVersionEl.textContent = `v${version}`;
     }
-    if (aboutVersionEl) {
-      aboutVersionEl.textContent = `Version ${version}`;
-    }
   } catch (error) {
     console.error("Failed to load app version:", error);
   }
@@ -658,36 +493,25 @@ function applyTrayMode(): void {
   modeRegionBtn?.classList.add("hidden");
   modeDisplayBtn?.classList.add("hidden");
   
-  // Set config as default view in tray mode
-  setViewMode("config");
+  // Open config window in tray mode
+  openConfigWindow();
 }
 
-// Set view mode (capture mode or config or about)
+// Set view mode (capture mode only)
 function setViewMode(mode: ViewMode): void {
   if (currentState !== "idle") return;
 
-  // Update button states for all tabs
+  // Update button states for capture tabs
   modeWindowBtn?.classList.toggle("active", mode === "window");
   modeRegionBtn?.classList.toggle("active", mode === "region");
   modeDisplayBtn?.classList.toggle("active", mode === "display");
-  modeConfigBtn?.classList.toggle("active", mode === "config");
-  modeAboutBtn?.classList.toggle("active", mode === "about");
 
   // Show/hide sections
   windowSelectionEl?.classList.toggle("hidden", mode !== "window");
   regionSelectionEl?.classList.toggle("hidden", mode !== "region");
   displaySelectionEl?.classList.toggle("hidden", mode !== "display");
-  configViewEl?.classList.toggle("hidden", mode !== "config");
-  aboutViewEl?.classList.toggle("hidden", mode !== "about");
 
-  // Show/hide controls section (hidden in config and about modes)
-  const controlsEl = document.querySelector(".controls");
-  controlsEl?.classList.toggle("hidden", mode === "config" || mode === "about");
-
-  // Handle switching to/from capture modes
-  if (mode !== "config" && mode !== "about") {
-    captureMode = mode;
-  }
+  captureMode = mode;
 
   // Clear window selection when switching away from window mode
   if (mode !== "window") {
@@ -718,10 +542,7 @@ function setViewMode(mode: ViewMode): void {
     startWindowThumbnailRefresh();
   }
 
-  // Update record button only for capture modes
-  if (mode !== "config" && mode !== "about") {
-    updateRecordButton();
-  }
+  updateRecordButton();
 }
 
 // Update region display
@@ -1459,13 +1280,16 @@ async function startRecording(): Promise<void> {
   }
   
   // Check if transcription is enabled but model is not downloaded
-  const transcriptionEnabled = transcriptionCheckbox?.checked ?? false;
-  if (transcriptionEnabled && modelSelect?.value) {
+  const transcriptionEnabled = transcriptionQuickCheckbox?.checked ?? false;
+  if (transcriptionEnabled) {
     try {
-      const status = await invoke<ModelStatus>("get_model_status", { model: modelSelect.value });
-      if (!status.exists) {
-        setStatus(`Transcription model "${status.display_name}" not downloaded. Please download it first or disable transcription.`, true);
-        return;
+      const txConfig = await invoke<TranscriptionConfig>("get_transcription_config");
+      if (txConfig.model) {
+        const status = await invoke<ModelStatus>("get_model_status", { model: txConfig.model });
+        if (!status.exists) {
+          setStatus(`Transcription model "${status.display_name}" not downloaded. Please download it first or disable transcription.`, true);
+          return;
+        }
       }
     } catch (error) {
       console.error("[Recording] Failed to check model status:", error);
@@ -1508,10 +1332,18 @@ async function startRecording(): Promise<void> {
     
     // Open transcript window if transcription is enabled and setting is on
     // Fire and forget - don't await to avoid blocking
-    if (transcriptionEnabled && showTranscriptCheckbox?.checked) {
-      invoke("open_transcript_window")
-        .then(() => console.log("[Recording] Opened transcript window"))
-        .catch((error) => console.error("[Recording] Failed to open transcript window:", error));
+    if (transcriptionEnabled) {
+      // Check the show_transcript_window config setting
+      let showTranscript = true; // default
+      try {
+        const txCfg = await invoke<TranscriptionConfig>("get_transcription_config");
+        showTranscript = txCfg.show_transcript_window;
+      } catch { /* use default */ }
+      if (showTranscript) {
+        invoke("open_transcript_window")
+          .then(() => console.log("[Recording] Opened transcript window"))
+          .catch((error) => console.error("[Recording] Failed to open transcript window:", error));
+      }
     }
   } catch (error) {
     setStatus(`Failed to start recording: ${error}`, true);
@@ -1625,7 +1457,7 @@ async function handleTrayStopRecording(): Promise<void> {
 // Handle tray "Transcription" - show transcription window if active
 async function handleTrayShowTranscription(): Promise<void> {
   // Check if transcription is currently active (recording with transcription enabled)
-  const isTranscriptionActive = currentState === "recording" && (transcriptionCheckbox?.checked ?? false);
+  const isTranscriptionActive = currentState === "recording" && (transcriptionQuickCheckbox?.checked ?? false);
   
   if (isTranscriptionActive) {
     // Open/show the transcription window
@@ -1845,406 +1677,58 @@ function dismissStatus(): void {
 }
 
 // =============================================================================
-// Configuration Functions
+// Configuration Functions (simplified - config UI is in separate window)
 // =============================================================================
 
-// Load configuration and populate UI
+// Load configuration (theme and transcription quick toggle state only)
 async function loadConfig(): Promise<void> {
   try {
-    // Load default output directory for placeholder
-    defaultOutputDir = await invoke<string>("get_default_output_directory");
-    
-    // Load saved config
     const config = await invoke<AppConfig>("get_config");
-    
-    // Update output directory input
-    if (outputDirInput) {
-      outputDirInput.placeholder = defaultOutputDir;
-      outputDirInput.value = config.output.directory || "";
-    }
-    
+
     // Initialize theme with saved preference
     const themeMode = config.appearance?.theme || "auto";
     initTheme(themeMode);
-    
-    // Update theme selector to match
-    if (themeSelect) {
-      themeSelect.value = themeMode;
-    }
-    
-    console.log("[Config] Loaded config, default dir:", defaultOutputDir, ", theme:", themeMode);
-    
-    // Load audio sources and restore selection
-    await loadAudioSources();
+
+    // Load transcription state for quick toggle
+    await loadTranscriptionQuickToggle();
+
+    console.log("[Config] Loaded config, theme:", themeMode);
   } catch (error) {
     console.error("[Config] Failed to load config:", error);
   }
 }
 
-// Handle input in output directory field (debounced auto-save)
-function handleOutputDirInput(): void {
-  // Clear existing timeout
-  if (outputDirSaveTimeout !== null) {
-    clearTimeout(outputDirSaveTimeout);
-  }
-  
-  // Clear any previous error
-  clearOutputDirError();
-  
-  // Set new timeout for auto-save (500ms debounce)
-  outputDirSaveTimeout = window.setTimeout(() => {
-    saveOutputDirectory();
-  }, 500);
-}
-
-// Handle blur on output directory field (immediate save)
-function handleOutputDirBlur(): void {
-  // Clear pending debounce timeout
-  if (outputDirSaveTimeout !== null) {
-    clearTimeout(outputDirSaveTimeout);
-    outputDirSaveTimeout = null;
-  }
-  
-  // Save immediately on blur
-  saveOutputDirectory();
-}
-
-// Save output directory to config
-async function saveOutputDirectory(): Promise<void> {
-  if (!outputDirInput) return;
-  
-  const directory = outputDirInput.value.trim();
-  
-  try {
-    // Save to backend (validates directory if not empty)
-    await invoke("save_output_directory", { 
-      directory: directory || null 
-    });
-    
-    clearOutputDirError();
-    console.log("[Config] Saved output directory:", directory || "(default)");
-  } catch (error) {
-    showOutputDirError(String(error));
-    console.error("[Config] Failed to save output directory:", error);
-  }
-}
-
-// Handle browse button click
-async function handleBrowseOutputDir(): Promise<void> {
-  try {
-    const selectedPath = await invoke<string | null>("pick_output_directory");
-    
-    if (selectedPath && outputDirInput) {
-      outputDirInput.value = selectedPath;
-      // Save immediately after picker selection
-      await saveOutputDirectory();
-    }
-  } catch (error) {
-    console.error("[Config] Failed to pick directory:", error);
-    setStatus(`Failed to open folder picker: ${error}`, true);
-  }
-}
-
-// Show error message for output directory
-function showOutputDirError(message: string): void {
-  if (outputDirErrorEl) {
-    outputDirErrorEl.textContent = message;
-    outputDirErrorEl.classList.remove("hidden");
-  }
-  outputDirInput?.classList.add("has-error");
-}
-
-// Clear output directory error
-function clearOutputDirError(): void {
-  if (outputDirErrorEl) {
-    outputDirErrorEl.textContent = "";
-    outputDirErrorEl.classList.add("hidden");
-  }
-  outputDirInput?.classList.remove("has-error");
-}
-
-// =============================================================================
-// Audio Configuration Functions
-// =============================================================================
-
-// Load available audio sources
-async function loadAudioSources(): Promise<void> {
-  if (!audioSourceSelect || !micSourceSelect) return;
-  
-  try {
-    // Detect platform and system audio availability
-    currentPlatform = await invoke<"macos" | "linux" | "windows">("get_platform");
-    macosSystemAudioAvailable = await invoke<boolean>("is_system_audio_available");
-    
-    const sources = await invoke<AudioSource[]>("get_audio_sources");
-    
-    // Get current audio config to preserve selection
-    const audioConfig = await invoke<AudioConfig>("get_audio_config");
-    
-    // Group sources by type
-    const inputSources = sources.filter(s => s.source_type === "input");
-    const outputSources = sources.filter(s => s.source_type === "output");
-    
-    // Handle macOS-specific UI
-    if (currentPlatform === "macos") {
-      // Hide the system audio dropdown on macOS
-      audioSourceConfigItem?.classList.add("hidden");
-      
-      // Show the macOS system audio checkbox
-      macosSystemAudioConfigItem?.classList.remove("hidden");
-      
-      // Update checkbox state and hint based on availability
-      if (macosSystemAudioCheckbox) {
-        if (macosSystemAudioAvailable) {
-          macosSystemAudioCheckbox.disabled = false;
-          // Restore checkbox state from config (source_id "system" means enabled)
-          macosSystemAudioCheckbox.checked = audioConfig.source_id === "system";
-        } else {
-          // Disable checkbox on macOS < 13
-          macosSystemAudioCheckbox.disabled = true;
-          macosSystemAudioCheckbox.checked = false;
-        }
-      }
-      
-      // Update hint text based on availability
-      if (macosSystemAudioHint) {
-        if (macosSystemAudioAvailable) {
-          macosSystemAudioHint.textContent = "Capture all system audio during recording";
-        } else {
-          macosSystemAudioHint.textContent = "Requires macOS 13 (Ventura) or later";
-          macosSystemAudioHint.classList.add("config-item__hint--warning");
-        }
-      }
-    } else {
-      // Show the system audio dropdown on Linux/Windows
-      audioSourceConfigItem?.classList.remove("hidden");
-      
-      // Hide the macOS checkbox
-      macosSystemAudioConfigItem?.classList.add("hidden");
-      
-      // Populate system audio dropdown (output sources only)
-      audioSourceSelect.innerHTML = '<option value="">None (no system audio)</option>';
-      for (const source of outputSources) {
-        const option = document.createElement("option");
-        option.value = source.id;
-        option.textContent = source.name;
-        audioSourceSelect.appendChild(option);
-      }
-      
-      // Restore previous system audio selection if still available
-      if (audioConfig.source_id && audioConfig.source_id !== "system") {
-        audioSourceSelect.value = audioConfig.source_id;
-        if (audioSourceSelect.value !== audioConfig.source_id) {
-          audioSourceSelect.value = "";
-        }
-      }
-    }
-    
-    // Populate microphone dropdown (input sources only) - all platforms
-    micSourceSelect.innerHTML = '<option value="">None (no microphone)</option>';
-    for (const source of inputSources) {
-      const option = document.createElement("option");
-      option.value = source.id;
-      option.textContent = source.name;
-      micSourceSelect.appendChild(option);
-    }
-    
-    // Restore previous microphone selection if still available
-    if (audioConfig.microphone_id) {
-      micSourceSelect.value = audioConfig.microphone_id;
-      if (micSourceSelect.value !== audioConfig.microphone_id) {
-        micSourceSelect.value = "";
-      }
-    }
-    
-    // Restore AEC checkbox state
-    if (aecCheckbox) {
-      aecCheckbox.checked = audioConfig.echo_cancellation;
-    }
-    
-    // Update AEC visibility (only show when mic is selected)
-    updateAecVisibility();
-    
-    // Update transcription visibility (only show when system audio is enabled)
-    updateTranscriptionVisibility();
-    
-    // Load transcription config
-    await loadTranscriptionConfig();
-    
-    console.log("[Audio] Platform:", currentPlatform, ", macOS system audio available:", macosSystemAudioAvailable);
-    console.log("[Audio] Loaded", sources.length, "audio sources (", 
-      inputSources.length, "inputs,", outputSources.length, "outputs)");
-  } catch (error) {
-    console.error("[Audio] Failed to load audio sources:", error);
-  }
-}
-
-// Update AEC checkbox visibility based on microphone selection
-function updateAecVisibility(): void {
-  if (!aecConfigItem || !micSourceSelect) return;
-  
-  const hasMic = micSourceSelect.value !== "";
-  aecConfigItem.classList.toggle("hidden", !hasMic);
-}
-
-// Handle any audio configuration change
-async function handleAudioConfigChange(): Promise<void> {
-  if (!audioSourceSelect || !micSourceSelect || !aecCheckbox) return;
-  
-  const sourceId = audioSourceSelect.value || null;
-  const microphoneId = micSourceSelect.value || null;
-  const echoCancellation = aecCheckbox.checked;
-  
-  // Update AEC visibility
-  updateAecVisibility();
-  
-  // Update transcription visibility
-  updateTranscriptionVisibility();
-  
-  try {
-    await invoke("save_audio_config", {
-      enabled: true,
-      sourceId,
-      microphoneId,
-      echoCancellation,
-    });
-    console.log("[Audio] Saved config: system=", sourceId || "(none)", 
-      ", mic=", microphoneId || "(none)", ", aec=", echoCancellation);
-  } catch (error) {
-    console.error("[Audio] Failed to save audio config:", error);
-  }
-}
-
-// Handle macOS system audio checkbox change
-async function handleMacosSystemAudioChange(): Promise<void> {
-  if (!macosSystemAudioCheckbox) return;
-  
-  const enabled = macosSystemAudioCheckbox.checked;
-  
-  try {
-    // On macOS, we use a special "system" source ID to indicate system audio capture
-    await invoke("save_audio_config", {
-      enabled: true,
-      sourceId: enabled ? "system" : null,
-      microphoneId: micSourceSelect?.value || null,
-      echoCancellation: aecCheckbox?.checked ?? false,
-    });
-    console.log("[Audio] macOS system audio:", enabled ? "enabled" : "disabled");
-    
-    // Update transcription visibility
-    updateTranscriptionVisibility();
-  } catch (error) {
-    console.error("[Audio] Failed to save macOS audio config:", error);
-  }
-}
-
-// Update transcription checkbox visibility based on system audio selection
-function updateTranscriptionVisibility(): void {
-  // On macOS, check the system audio checkbox; on Linux/Windows, check the dropdown
-  let hasSystemAudio = false;
-  if (currentPlatform === "macos") {
-    hasSystemAudio = macosSystemAudioCheckbox?.checked ?? false;
-  } else {
-    hasSystemAudio = (audioSourceSelect?.value ?? "") !== "";
-  }
-  
-  // Update settings view checkbox visibility
-  if (transcriptionConfigItem) {
-    transcriptionConfigItem.classList.toggle("hidden", !hasSystemAudio);
-  }
-  
-  // Update quick toggle visibility in controls
-  if (transcriptionQuickToggle) {
-    transcriptionQuickToggle.classList.toggle("hidden", !hasSystemAudio);
-  }
-  
-  // Model config item is visible when system audio is enabled AND transcription is enabled
-  const transcriptionEnabled = transcriptionCheckbox?.checked ?? false;
-  const showModelConfig = hasSystemAudio && transcriptionEnabled;
-  if (modelConfigItem) {
-    modelConfigItem.classList.toggle("hidden", !showModelConfig);
-  }
-  
-  // Show transcript window config is visible when transcription is enabled
-  if (showTranscriptConfigItem) {
-    showTranscriptConfigItem.classList.toggle("hidden", !showModelConfig);
-  }
-}
-
-// Handle transcription checkbox change (settings view)
-async function handleTranscriptionChange(): Promise<void> {
-  if (!transcriptionCheckbox) return;
-  
-  const enabled = transcriptionCheckbox.checked;
-  
-  // Sync with quick toggle
-  if (transcriptionQuickCheckbox) {
-    transcriptionQuickCheckbox.checked = enabled;
-  }
-  
-  // Update model config visibility
-  updateTranscriptionVisibility();
-  
-  // If enabling transcription, load models and update status
-  if (enabled) {
-    await loadAvailableModels();
-    await updateModelStatus();
-  }
-  
-  try {
-    await invoke("save_transcription_config", { enabled });
-    console.log("[Transcription] Saved config: enabled=", enabled);
-  } catch (error) {
-    console.error("[Transcription] Failed to save config:", error);
-  }
-}
-
-// Load transcription configuration
-async function loadTranscriptionConfig(): Promise<void> {
+// Load transcription enabled state for the quick toggle
+async function loadTranscriptionQuickToggle(): Promise<void> {
   try {
     const config = await invoke<TranscriptionConfig>("get_transcription_config");
-    // Sync both settings checkbox and quick toggle
-    if (transcriptionCheckbox) {
-      transcriptionCheckbox.checked = config.enabled;
-    }
     if (transcriptionQuickCheckbox) {
       transcriptionQuickCheckbox.checked = config.enabled;
     }
-    
-    // Set show transcript window checkbox
-    if (showTranscriptCheckbox) {
-      showTranscriptCheckbox.checked = config.show_transcript_window;
+
+    // Update quick toggle visibility based on audio config
+    const audioConfig = await invoke<AudioConfig>("get_audio_config");
+    const platform = await invoke<string>("get_platform");
+    let hasSystemAudio = false;
+    if (platform === "macos") {
+      hasSystemAudio = audioConfig.source_id === "system";
+    } else {
+      hasSystemAudio = audioConfig.source_id !== null && audioConfig.source_id !== "";
     }
-    
-    // Load available models and select the configured one
-    await loadAvailableModels();
-    if (modelSelect && config.model) {
-      modelSelect.value = config.model;
+    if (transcriptionQuickToggle) {
+      transcriptionQuickToggle.classList.toggle("hidden", !hasSystemAudio);
     }
-    
-    // Update model status display
-    await updateModelStatus();
-    
-    // Update visibility (model config depends on transcription being enabled)
-    updateTranscriptionVisibility();
-    
-    console.log("[Transcription] Loaded config: enabled=", config.enabled, "model=", config.model, "show_transcript_window=", config.show_transcript_window);
   } catch (error) {
-    console.error("[Transcription] Failed to load config:", error);
+    console.error("[Config] Failed to load transcription state:", error);
   }
 }
 
-// Handle quick toggle change (sync with settings and save)
+// Handle quick toggle change (save to config)
 async function handleTranscriptionQuickToggleChange(): Promise<void> {
   if (!transcriptionQuickCheckbox) return;
-  
+
   const enabled = transcriptionQuickCheckbox.checked;
-  
-  // Sync with settings checkbox
-  if (transcriptionCheckbox) {
-    transcriptionCheckbox.checked = enabled;
-  }
-  
+
   try {
     await invoke("save_transcription_config", { enabled });
     console.log("[Transcription] Quick toggle: enabled=", enabled);
@@ -2253,237 +1737,105 @@ async function handleTranscriptionQuickToggleChange(): Promise<void> {
   }
 }
 
-// Handle show transcript window checkbox change
-async function handleShowTranscriptChange(): Promise<void> {
-  if (!showTranscriptCheckbox) return;
-  
-  const show = showTranscriptCheckbox.checked;
-  
-  try {
-    await invoke("save_transcription_config", {
-      enabled: transcriptionCheckbox?.checked ?? false,
-      showTranscriptWindow: show,
-    });
-    console.log("[Transcription] Show transcript window:", show);
-  } catch (error) {
-    console.error("[Transcription] Failed to save show transcript setting:", error);
-  }
-}
-
 // =============================================================================
-// Model Management Functions
+// Window Opening Functions
 // =============================================================================
 
-// Load available models and populate the dropdown
-async function loadAvailableModels(): Promise<void> {
-  if (!modelSelect) return;
-  
-  try {
-    const models = await invoke<ModelInfo[]>("list_available_models");
-    
-    // Clear existing options
-    modelSelect.innerHTML = "";
-    
-    // Add options for each model - show only description
-    for (const model of models) {
-      const option = document.createElement("option");
-      option.value = model.id;
-      option.textContent = model.description;
-      modelSelect.appendChild(option);
+// Open the configuration window (single instance)
+async function openConfigWindow(): Promise<void> {
+  // Check if config window already exists
+  const existing = await WebviewWindow.getByLabel("config");
+  if (existing) {
+    try {
+      await existing.show();
+      await existing.setFocus();
+      return;
+    } catch {
+      // Window may have been destroyed, create a new one
     }
-    
-    console.log("[Model] Loaded", models.length, "available models");
-  } catch (error) {
-    console.error("[Model] Failed to load models:", error);
-    modelSelect.innerHTML = '<option value="">Failed to load models</option>';
   }
-}
 
-// Update model status display based on selected model
-async function updateModelStatus(): Promise<void> {
-  if (!modelSelect || !modelStatus || !modelDownloadBtn || !modelCancelBtn) return;
-  
-  const selectedModel = modelSelect.value;
-  if (!selectedModel) {
-    if (modelInfo) modelInfo.textContent = "";
-    modelStatus.textContent = "";
-    modelDownloadBtn.classList.add("hidden");
-    modelCancelBtn.classList.add("hidden");
-    return;
-  }
-  
-  try {
-    const status = await invoke<ModelStatus>("get_model_status", { model: selectedModel });
-    
-    // Show model name and size on the left
-    if (modelInfo) {
-      modelInfo.textContent = `${status.model} (${status.size_display})`;
-    }
-    
-    if (isModelDownloading) {
-      // During download, show download in progress
-      modelStatus.textContent = "Downloading...";
-      modelStatus.className = "model-status model-status--downloading";
-      modelDownloadBtn.classList.add("hidden");
-      modelCancelBtn.classList.remove("hidden");
-      modelSelect.disabled = true;
-    } else if (status.exists) {
-      // Model is downloaded
-      modelStatus.textContent = "Downloaded";
-      modelStatus.className = "model-status model-status--downloaded";
-      modelDownloadBtn.classList.add("hidden");
-      modelCancelBtn.classList.add("hidden");
-      modelSelect.disabled = false;
-    } else {
-      // Model not downloaded
-      modelStatus.textContent = "Not downloaded";
-      modelStatus.className = "model-status model-status--not-downloaded";
-      modelDownloadBtn.classList.remove("hidden");
-      modelCancelBtn.classList.add("hidden");
-      modelSelect.disabled = false;
-    }
-  } catch (error) {
-    console.error("[Model] Failed to get status:", error);
-    if (modelInfo) modelInfo.textContent = "";
-    modelStatus.textContent = "Error checking status";
-    modelStatus.className = "model-status model-status--error";
-    modelDownloadBtn.classList.add("hidden");
-    modelCancelBtn.classList.add("hidden");
-  }
-}
+  const isDev = window.location.hostname === "localhost";
+  const url = isDev
+    ? "http://localhost:1420/src/config.html"
+    : "src/config.html";
 
-// Handle model selection change
-async function handleModelChange(): Promise<void> {
-  if (!modelSelect) return;
-  
-  const selectedModel = modelSelect.value;
-  console.log("[Model] Selection changed to:", selectedModel);
-  
-  // Update status display for the new selection
-  await updateModelStatus();
-  
-  // Save the selection to config
-  try {
-    await invoke("save_transcription_config", {
-      enabled: transcriptionCheckbox?.checked ?? false,
-      model: selectedModel,
+  const configWindow = new WebviewWindow("config", {
+    url,
+    title: "OmniRec Settings",
+    decorations: false,
+    transparent: true,
+    shadow: false,
+    resizable: false,
+    maximizable: false,
+    width: 450,
+    height: 550,
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    configWindow.once("tauri://created", () => {
+      console.log("[Window] Config window created");
+      resolve();
     });
-    console.log("[Model] Saved model selection:", selectedModel);
-  } catch (error) {
-    console.error("[Model] Failed to save selection:", error);
-  }
-}
-
-// Handle model download button click
-async function handleModelDownload(): Promise<void> {
-  if (!modelSelect) return;
-  
-  const selectedModel = modelSelect.value;
-  if (!selectedModel) return;
-  
-  console.log("[Model] Starting download:", selectedModel);
-  isModelDownloading = true;
-  
-  // Show progress UI
-  if (modelProgressContainer) {
-    modelProgressContainer.classList.remove("hidden");
-  }
-  if (modelProgressFill) {
-    modelProgressFill.style.width = "0%";
-  }
-  if (modelProgressText) {
-    modelProgressText.textContent = "0%";
-  }
-  
-  // Update status display
-  await updateModelStatus();
-  
-  try {
-    await invoke("download_model", { model: selectedModel });
-    // Success is handled via the progress event with status "completed"
-  } catch (error) {
-    console.error("[Model] Download failed:", error);
-    isModelDownloading = false;
-    
-    // Hide progress, show error
-    if (modelProgressContainer) {
-      modelProgressContainer.classList.add("hidden");
-    }
-    await updateModelStatus();
-    
-    // Show error notification
-    setStatus(`Download failed: ${error}`, true);
-  }
-}
-
-// Handle cancel download button click
-async function handleModelCancel(): Promise<void> {
-  console.log("[Model] Cancelling download");
-  
-  try {
-    await invoke("cancel_download");
-    // Cancellation is handled via the progress event with status "cancelled"
-  } catch (error) {
-    console.error("[Model] Failed to cancel download:", error);
-  }
-}
-
-// Handle download progress events
-function handleDownloadProgress(progress: DownloadProgress): void {
-  console.log("[Model] Progress:", progress.percentage.toFixed(1) + "%", progress.status);
-  
-  // Update progress bar
-  if (modelProgressFill) {
-    modelProgressFill.style.width = `${progress.percentage}%`;
-  }
-  if (modelProgressText) {
-    const downloadedMB = (progress.bytes_downloaded / (1024 * 1024)).toFixed(1);
-    const totalMB = (progress.total_bytes / (1024 * 1024)).toFixed(1);
-    modelProgressText.textContent = `${progress.percentage.toFixed(0)}% (${downloadedMB}/${totalMB} MB)`;
-  }
-  
-  // Handle terminal states
-  if (progress.status === "completed") {
-    console.log("[Model] Download completed");
-    isModelDownloading = false;
-    
-    // Hide progress bar
-    if (modelProgressContainer) {
-      modelProgressContainer.classList.add("hidden");
-    }
-    
-    // Refresh model list to show checkmark
-    loadAvailableModels().then(() => {
-      // Restore selection
-      if (modelSelect) {
-        modelSelect.value = progress.model;
-      }
-      updateModelStatus();
+    configWindow.once("tauri://error", (e) => {
+      console.error("[Window] Failed to create config window:", e);
+      reject(new Error(`Failed to create config window: ${e}`));
     });
-    
-    setStatus("Model downloaded successfully");
-  } else if (progress.status === "cancelled") {
-    console.log("[Model] Download cancelled");
-    isModelDownloading = false;
-    
-    // Hide progress bar
-    if (modelProgressContainer) {
-      modelProgressContainer.classList.add("hidden");
+  });
+}
+
+// Open the about window (single instance)
+async function openAboutWindow(): Promise<void> {
+  // Check if about window already exists
+  const existing = await WebviewWindow.getByLabel("about");
+  if (existing) {
+    try {
+      await existing.show();
+      await existing.setFocus();
+      return;
+    } catch {
+      // Window may have been destroyed, create a new one
     }
-    
-    updateModelStatus();
-    setStatus("Download cancelled");
-  } else if (progress.status === "error") {
-    console.error("[Model] Download error:", progress.error);
-    isModelDownloading = false;
-    
-    // Hide progress bar
-    if (modelProgressContainer) {
-      modelProgressContainer.classList.add("hidden");
-    }
-    
-    updateModelStatus();
-    setStatus(`Download failed: ${progress.error}`, true);
+  }
+
+  const isDev = window.location.hostname === "localhost";
+  const url = isDev
+    ? "http://localhost:1420/src/about.html"
+    : "src/about.html";
+
+  const aboutWindow = new WebviewWindow("about", {
+    url,
+    title: "About OmniRec",
+    decorations: false,
+    transparent: true,
+    shadow: false,
+    resizable: false,
+    maximizable: false,
+    width: 350,
+    height: 400,
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    aboutWindow.once("tauri://created", () => {
+      console.log("[Window] About window created");
+      resolve();
+    });
+    aboutWindow.once("tauri://error", (e) => {
+      console.error("[Window] Failed to create about window:", e);
+      reject(new Error(`Failed to create about window: ${e}`));
+    });
+  });
+}
+
+// Close config and about windows (called when main window hides)
+async function closeSecondaryWindows(): Promise<void> {
+  const configWindow = await WebviewWindow.getByLabel("config");
+  if (configWindow) {
+    try { await configWindow.close(); } catch { /* ignore */ }
+  }
+  const aboutWindow = await WebviewWindow.getByLabel("about");
+  if (aboutWindow) {
+    try { await aboutWindow.close(); } catch { /* ignore */ }
   }
 }
 
@@ -2506,58 +1858,28 @@ function getEffectiveTheme(mode: ThemeMode): "light" | "dark" {
 
 // Apply the theme to the document
 function applyTheme(theme: "light" | "dark"): void {
-  // Apply theme to body (not documentElement/html) to allow transparent window background
   const body = document.body;
-  
-  // Remove existing theme classes
   body.classList.remove("theme-light", "theme-dark");
-  
-  // Add the new theme class
   body.classList.add(`theme-${theme}`);
-  
   console.log("[Theme] Applied theme:", theme);
 }
 
 // Initialize theme system
 function initTheme(mode: ThemeMode): void {
   currentThemeMode = mode;
-  
-  // Apply initial theme
   const effectiveTheme = getEffectiveTheme(mode);
   applyTheme(effectiveTheme);
-  
-  // Set up system theme change listener
+
   systemThemeMediaQuery = window.matchMedia("(prefers-color-scheme: light)");
   systemThemeMediaQuery.addEventListener("change", handleSystemThemeChange);
 }
 
 // Handle system theme change
 function handleSystemThemeChange(): void {
-  // Only respond if in auto mode
   if (currentThemeMode === "auto") {
     const effectiveTheme = getEffectiveTheme("auto");
     applyTheme(effectiveTheme);
     console.log("[Theme] System theme changed, applied:", effectiveTheme);
-  }
-}
-
-// Handle theme selector change
-async function handleThemeChange(): Promise<void> {
-  if (!themeSelect) return;
-  
-  const newMode = themeSelect.value as ThemeMode;
-  currentThemeMode = newMode;
-  
-  // Apply the theme immediately
-  const effectiveTheme = getEffectiveTheme(newMode);
-  applyTheme(effectiveTheme);
-  
-  // Save to backend
-  try {
-    await invoke("save_theme", { theme: newMode });
-    console.log("[Theme] Saved theme mode:", newMode);
-  } catch (error) {
-    console.error("[Theme] Failed to save theme:", error);
   }
 }
 

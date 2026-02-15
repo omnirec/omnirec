@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="./config.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OmniRec Settings</title>
+    <script type="module" src="./config.ts" defer></script>
+  </head>
+
+  <body>
+    <div class="config-container" data-tauri-drag-region>
+      <button id="close-btn" class="close-btn" type="button" title="Close">&times;</button>
+      <header class="config-header" data-tauri-drag-region>
+        <span class="config-title">Settings</span>
+      </header>
+      <main class="config-main">
+        <div class="config-group">
+          <h3 class="config-group__title">Output</h3>
+          <div class="config-group__content">
+            <div class="config-item">
+              <label for="output-dir-input" class="config-item__label">Output Directory</label>
+              <div class="config-item__input-row">
+                <input type="text" id="output-dir-input" class="config-item__input" placeholder="Loading...">
+                <button id="browse-output-dir-btn" type="button" class="config-item__browse-btn" title="Browse...">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                  </svg>
+                </button>
+              </div>
+              <p id="output-dir-error" class="config-item__error hidden"></p>
+              <p class="config-item__hint">Leave empty to use system default</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="config-group">
+          <h3 class="config-group__title">Audio</h3>
+          <div class="config-group__content">
+            <!-- System audio dropdown (shown on Linux/Windows) -->
+            <div class="config-item" id="audio-source-config-item">
+              <label for="audio-source-select" class="config-item__label">System Audio</label>
+              <div class="config-item__input-row">
+                <select id="audio-source-select" class="config-item__select">
+                  <option value="">None (no system audio)</option>
+                </select>
+                <button id="refresh-audio-btn" type="button" class="config-item__browse-btn" title="Refresh audio devices">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="23 4 23 10 17 10"></polyline>
+                    <polyline points="1 20 1 14 7 14"></polyline>
+                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                  </svg>
+                </button>
+              </div>
+              <p class="config-item__hint">Capture audio from apps (e.g., Zoom, Teams)</p>
+            </div>
+            <!-- System audio checkbox (shown on macOS only) -->
+            <div class="config-item config-item--checkbox hidden" id="macos-system-audio-config-item">
+              <label class="config-item__checkbox-label">
+                <input type="checkbox" id="macos-system-audio-checkbox" />
+                <span>Record System Audio</span>
+              </label>
+              <p class="config-item__hint" id="macos-system-audio-hint">Capture all system audio (requires macOS 13+)</p>
+            </div>
+            <div class="config-item">
+              <label for="mic-source-select" class="config-item__label">Microphone</label>
+              <div class="config-item__input-row">
+                <select id="mic-source-select" class="config-item__select">
+                  <option value="">None (no microphone)</option>
+                </select>
+              </div>
+              <p class="config-item__hint">Capture your voice (mixed with system audio)</p>
+            </div>
+            <div class="config-item config-item--checkbox" id="aec-config-item">
+              <label class="config-item__checkbox-label">
+                <input type="checkbox" id="aec-checkbox" checked />
+                <span>Echo Cancellation</span>
+              </label>
+              <p class="config-item__hint">Remove echo when using speakers with microphone</p>
+            </div>
+            <div class="config-item config-item--checkbox hidden" id="transcription-config-item">
+              <label class="config-item__checkbox-label">
+                <input type="checkbox" id="transcription-checkbox" />
+                <span>Voice Transcription</span>
+              </label>
+              <p class="config-item__hint">Generate a text transcript of voice audio</p>
+            </div>
+            <div class="config-item hidden" id="model-config-item">
+              <label for="model-select" class="config-item__label">Transcription Model</label>
+              <div class="config-item__input-row">
+                <select id="model-select" class="config-item__select">
+                  <option value="">Loading...</option>
+                </select>
+              </div>
+              <div id="model-status-row" class="config-item__status-row">
+                <span id="model-info" class="model-info"></span>
+                <span class="model-status-right">
+                  <span id="model-status" class="model-status"></span>
+                  <button id="model-download-btn" type="button" class="config-item__action-btn hidden">Download</button>
+                  <button id="model-cancel-btn" type="button" class="config-item__action-btn config-item__action-btn--cancel hidden">Cancel</button>
+                </span>
+              </div>
+              <div id="model-progress-container" class="model-progress hidden">
+                <div class="model-progress__bar">
+                  <div id="model-progress-fill" class="model-progress__fill"></div>
+                </div>
+                <span id="model-progress-text" class="model-progress__text">0%</span>
+              </div>
+            </div>
+            <div class="config-item config-item--checkbox hidden" id="show-transcript-config-item">
+              <label class="config-item__checkbox-label">
+                <input type="checkbox" id="show-transcript-checkbox" checked />
+                <span>Show Transcript Window</span>
+              </label>
+              <p class="config-item__hint">Display live transcription during recording</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="config-group">
+          <h3 class="config-group__title">Appearance</h3>
+          <div class="config-group__content">
+            <div class="config-item">
+              <label for="theme-select" class="config-item__label">Theme</label>
+              <div class="config-item__input-row">
+                <select id="theme-select" class="config-item__select">
+                  <option value="auto">Auto (follow system)</option>
+                  <option value="light">Light</option>
+                  <option value="dark">Dark</option>
+                </select>
+              </div>
+              <p class="config-item__hint">Choose light or dark mode, or follow system preference</p>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </body>
+</html>

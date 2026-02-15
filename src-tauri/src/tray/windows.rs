@@ -52,41 +52,18 @@ fn show_and_focus_window(window: &WebviewWindow) {
 /// On Windows, transparent/borderless windows can sometimes be destroyed
 /// even when hide() is called. This function handles that case by recreating
 /// the window if it doesn't exist.
-///
-/// The `initial_tab` parameter can be used to specify which tab to show when the window opens.
-/// Valid values: None (default/record tab), Some("config"), Some("about")
-fn show_main_window(app: &tauri::AppHandle, initial_tab: Option<&str>) {
+fn show_main_window(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         // Window exists, just show and focus it
         eprintln!("[Tray] Found existing main window, showing...");
         show_and_focus_window(&window);
-
-        // Emit tab navigation event if needed
-        if let Some(tab) = initial_tab {
-            match tab {
-                "config" => {
-                    let _ = app.emit("tray-show-config", ());
-                }
-                "about" => {
-                    let _ = app.emit("tray-show-about", ());
-                }
-                _ => {}
-            }
-        }
     } else {
         // Window was destroyed - recreate it
         eprintln!("[Tray] Main window was destroyed, recreating...");
 
-        // Build URL with optional tab parameter
-        let url = match initial_tab {
-            Some("config") => "index.html?tab=config",
-            Some("about") => "index.html?tab=about",
-            _ => "index.html",
-        };
-
-        match tauri::WebviewWindowBuilder::new(app, "main", WebviewUrl::App(url.into()))
+        match tauri::WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
             .title("OmniRec")
-            .inner_size(500.0, 650.0)
+            .inner_size(375.0, 488.0)
             .resizable(false)
             .maximizable(false)
             .decorations(false)
@@ -95,10 +72,7 @@ fn show_main_window(app: &tauri::AppHandle, initial_tab: Option<&str>) {
             .build()
         {
             Ok(window) => {
-                eprintln!(
-                    "[Tray] Window recreated successfully with tab: {:?}",
-                    initial_tab
-                );
+                eprintln!("[Tray] Window recreated successfully");
                 // Focus the new window
                 show_and_focus_window(&window);
             }
@@ -275,14 +249,14 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             // Handle double-click on tray icon to show/activate main window
             if let tauri::tray::TrayIconEvent::DoubleClick { .. } = event {
                 eprintln!("[Tray] Double-click - showing main window");
-                show_main_window(tray.app_handle(), None);
+                show_main_window(tray.app_handle());
             }
         })
         .on_menu_event(|app, event| match event.id.as_ref() {
             id if id == menu_ids::RECORD => {
                 // On Windows, show the main window so user can select capture source
                 eprintln!("[Tray] Record/Window clicked - showing main window");
-                show_main_window(app, None);
+                show_main_window(app);
             }
             id if id == menu_ids::STOP => {
                 eprintln!("[Tray] Stop Recording clicked");
@@ -293,12 +267,14 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                 let _ = app.emit("tray-show-transcription", ());
             }
             id if id == menu_ids::CONFIGURATION => {
-                eprintln!("[Tray] Configuration clicked - showing config");
-                show_main_window(app, Some("config"));
+                eprintln!("[Tray] Configuration clicked - opening config window");
+                show_main_window(app);
+                let _ = app.emit("tray-show-config", ());
             }
             id if id == menu_ids::ABOUT => {
-                eprintln!("[Tray] About clicked - showing about");
-                show_main_window(app, Some("about"));
+                eprintln!("[Tray] About clicked - opening about window");
+                show_main_window(app);
+                let _ = app.emit("tray-show-about", ());
             }
             id if id == menu_ids::EXIT => {
                 eprintln!("[Tray] Exit clicked");

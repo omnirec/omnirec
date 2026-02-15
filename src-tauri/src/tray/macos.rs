@@ -208,16 +208,12 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// Show and activate the main window on macOS, optionally navigating to a specific tab.
+/// Show and activate the main window on macOS.
 /// This handles the complexity of bringing a hidden window back to the foreground.
 /// If the window was destroyed (which happens on macOS after hide()), it will be recreated.
-///
-/// The `initial_tab` parameter can be used to specify which tab to show when the window opens.
-/// Valid values: None (default/record tab), Some("config"), Some("about")
 #[allow(deprecated)] // cocoa crate is deprecated in favor of objc2-app-kit, but still works
-fn show_main_window(app: &tauri::AppHandle, initial_tab: Option<&str>) {
+fn show_main_window(app: &tauri::AppHandle) {
     use cocoa::appkit::{NSApp, NSApplication};
-    use tauri::Emitter;
     use tauri::WebviewUrl;
 
     // Set activation policy to Regular so app appears in Dock and Cmd+Tab
@@ -235,33 +231,13 @@ fn show_main_window(app: &tauri::AppHandle, initial_tab: Option<&str>) {
         let _ = window.show();
         let _ = window.unminimize();
         let _ = window.set_focus();
-
-        // Emit tab navigation event if needed
-        if let Some(tab) = initial_tab {
-            match tab {
-                "config" => {
-                    let _ = app.emit("tray-show-config", ());
-                }
-                "about" => {
-                    let _ = app.emit("tray-show-about", ());
-                }
-                _ => {}
-            }
-        }
     } else {
         // Window was destroyed after hide() on macOS - recreate it
         eprintln!("[Tray] Main window was destroyed, recreating...");
 
-        // Build URL with optional tab parameter
-        let url = match initial_tab {
-            Some("config") => "index.html?tab=config",
-            Some("about") => "index.html?tab=about",
-            _ => "index.html",
-        };
-
-        match tauri::WebviewWindowBuilder::new(app, "main", WebviewUrl::App(url.into()))
+        match tauri::WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
             .title("OmniRec")
-            .inner_size(500.0, 650.0)
+            .inner_size(375.0, 488.0)
             .resizable(false)
             .maximizable(false)
             .decorations(false)
@@ -271,10 +247,7 @@ fn show_main_window(app: &tauri::AppHandle, initial_tab: Option<&str>) {
             .build()
         {
             Ok(window) => {
-                eprintln!(
-                    "[Tray] Window recreated successfully with tab: {:?}",
-                    initial_tab
-                );
+                eprintln!("[Tray] Window recreated successfully");
                 let _ = window.set_focus();
             }
             Err(e) => {
@@ -293,7 +266,7 @@ pub fn handle_menu_event(app: &tauri::AppHandle, event: &tauri::menu::MenuEvent)
     if id == menu_ids::RECORD {
         // macOS: Show the main window so user can select capture source
         eprintln!("[Tray] Record Screen/Window clicked - showing main window");
-        show_main_window(app, None);
+        show_main_window(app);
     } else if id == menu_ids::STOP {
         eprintln!("[Tray] Stop Recording clicked");
         use tauri::Emitter;
@@ -303,11 +276,15 @@ pub fn handle_menu_event(app: &tauri::AppHandle, event: &tauri::menu::MenuEvent)
         use tauri::Emitter;
         let _ = app.emit("tray-show-transcription", ());
     } else if id == menu_ids::CONFIGURATION {
-        eprintln!("[Tray] Configuration clicked");
-        show_main_window(app, Some("config"));
+        eprintln!("[Tray] Configuration clicked - opening config window");
+        show_main_window(app);
+        use tauri::Emitter;
+        let _ = app.emit("tray-show-config", ());
     } else if id == menu_ids::ABOUT {
-        eprintln!("[Tray] About clicked");
-        show_main_window(app, Some("about"));
+        eprintln!("[Tray] About clicked - opening about window");
+        show_main_window(app);
+        use tauri::Emitter;
+        let _ = app.emit("tray-show-about", ());
     } else if id == menu_ids::EXIT {
         eprintln!("[Tray] Exit clicked, calling app.exit(0)...");
         app.exit(0);
