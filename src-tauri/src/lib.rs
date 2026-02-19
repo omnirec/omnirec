@@ -273,24 +273,29 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            // On Windows and macOS, hide the window instead of closing it when the close button is clicked.
-            // The app continues running in the system tray/menu bar. Use "Exit" from tray menu to quit.
+            // On Windows and macOS, hide the main window instead of closing it when the close button
+            // is clicked. The app continues running in the system tray/menu bar. Use "Exit" from tray
+            // menu to quit. Secondary windows (About, Config, etc.) are allowed to close normally.
             #[cfg(any(target_os = "windows", target_os = "macos"))]
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                eprintln!("[Window] Close requested for window '{}' - hiding window (use tray Exit to quit)", window.label());
-                api.prevent_close();
-                match window.hide() {
-                    Ok(()) => eprintln!("[Window] hide() succeeded"),
-                    Err(e) => eprintln!("[Window] hide() failed: {:?}", e),
-                }
-                
-                // On macOS, set activation policy to Accessory to hide from Dock and Cmd+Tab
-                #[cfg(target_os = "macos")]
-                {
-                    use tauri::Manager;
-                    let app = window.app_handle();
-                    let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
-                    eprintln!("[Window] Set activation policy to Accessory");
+                if window.label() == "main" {
+                    eprintln!("[Window] Close requested for main window - hiding (use tray Exit to quit)");
+                    api.prevent_close();
+                    match window.hide() {
+                        Ok(()) => eprintln!("[Window] hide() succeeded"),
+                        Err(e) => eprintln!("[Window] hide() failed: {:?}", e),
+                    }
+
+                    // On macOS, set activation policy to Accessory to hide from Dock and Cmd+Tab
+                    #[cfg(target_os = "macos")]
+                    {
+                        use tauri::Manager;
+                        let app = window.app_handle();
+                        let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+                        eprintln!("[Window] Set activation policy to Accessory");
+                    }
+                } else {
+                    eprintln!("[Window] Close requested for window '{}' - allowing close", window.label());
                 }
             }
             
