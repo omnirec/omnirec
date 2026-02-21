@@ -28,7 +28,7 @@ use std::sync::Arc;
 use std::thread;
 use tokio::sync::mpsc;
 
-use windows::core::{PCWSTR, PROPVARIANT, PWSTR};
+use windows::core::{PCWSTR, PWSTR};
 use windows::Win32::Foundation::HANDLE;
 use windows::Win32::Media::Audio::{
     eCapture, eRender, IAudioCaptureClient, IAudioClient, IMMDevice, IMMDeviceCollection,
@@ -43,11 +43,12 @@ use windows::Win32::System::Com::{
     COINIT_MULTITHREADED, STGM_READ,
 };
 use windows::Win32::System::Threading::{CreateEventW, WaitForSingleObject};
-use windows::Win32::UI::Shell::PropertiesSystem::{IPropertyStore, PROPERTYKEY};
+use windows::Win32::UI::Shell::PropertiesSystem::IPropertyStore;
+use windows::Win32::System::Com::StructuredStorage::PROPVARIANT;
 
 /// PKEY_Device_FriendlyName - the friendly name property key
 /// {a45c254e-df1c-4efd-8020-67d146a850e0}, 14
-const PKEY_DEVICE_FRIENDLY_NAME: PROPERTYKEY = PROPERTYKEY {
+const PKEY_DEVICE_FRIENDLY_NAME: windows::Win32::Foundation::PROPERTYKEY = windows::Win32::Foundation::PROPERTYKEY {
     fmtid: windows::core::GUID::from_u128(0xa45c254e_df1c_4efd_8020_67d146a850e0),
     pid: 14,
 };
@@ -217,30 +218,21 @@ fn get_device_friendly_name(device: &IMMDevice) -> Option<String> {
         // Get friendly name property
         let prop_value: PROPVARIANT = store.GetValue(&PKEY_DEVICE_FRIENDLY_NAME).ok()?;
 
-        // Extract string from PROPVARIANT using the windows crate's built-in conversion
+        // Extract string from PROPVARIANT
         propvariant_to_string(&prop_value)
     }
 }
 
 /// Convert a PROPVARIANT to a String if it contains a string value.
 fn propvariant_to_string(pv: &PROPVARIANT) -> Option<String> {
-    // The windows crate PROPVARIANT has a method to convert to string types
-    // We can use the VT_LPWSTR type check and extract the wide string
     unsafe {
-        // Try to get as a PWSTR (wide string)
-        // The PROPVARIANT anonymous union contains the actual value
-        // For VT_LPWSTR, it's stored in the pwszVal field
-
-        // Use the windows crate's built-in display/debug to see if it's a string
-        // or we can check the vt type directly
-        let inner = &pv.as_raw().Anonymous.Anonymous;
-        let vt = inner.vt;
-
-        // VT_LPWSTR = 31
-        if vt == 31 {
-            let pwsz = inner.Anonymous.pwszVal;
+        // VT_LPWSTR = 31 - check if this is a wide string
+        let vt = pv.vt();
+        if vt == windows::Win32::System::Variant::VARENUM(31) {
+            // Access the pwszVal field for LPWSTR (PWSTR type, access .0 for *mut u16)
+            let pwsz = pv.Anonymous.Anonymous.Anonymous.pwszVal;
             if !pwsz.is_null() {
-                return pcwstr_to_string(PCWSTR(pwsz));
+                return pcwstr_to_string(PCWSTR(pwsz.0 as *const u16));
             }
         }
     }

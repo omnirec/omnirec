@@ -3,12 +3,13 @@
 use crate::capture::MonitorInfo;
 use std::ffi::OsString;
 use std::os::windows::ffi::OsStringExt;
-use windows::Win32::Foundation::{BOOL, LPARAM, RECT};
+use windows::Win32::Foundation::{LPARAM, RECT};
 use windows::Win32::Graphics::Gdi::{
     EnumDisplayDevicesW, EnumDisplayMonitors, GetMonitorInfoW, DISPLAY_DEVICEW,
-    DISPLAY_DEVICE_ACTIVE, HDC, HMONITOR, MONITORINFOEXW,
+    DISPLAY_DEVICE_ACTIVE, DISPLAY_DEVICE_STATE_FLAGS, HDC, HMONITOR, MONITORINFOEXW,
 };
 use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
+use windows_core::BOOL;
 
 /// List all connected monitors.
 pub fn list_monitors() -> Vec<MonitorInfo> {
@@ -16,7 +17,7 @@ pub fn list_monitors() -> Vec<MonitorInfo> {
 
     unsafe {
         let _ = EnumDisplayMonitors(
-            HDC::default(),
+            Some(HDC::default()),
             None,
             Some(enum_monitor_callback),
             LPARAM(&mut monitors as *mut Vec<MonitorInfo> as isize),
@@ -127,7 +128,9 @@ fn get_display_friendly_name(device_name: &str) -> Option<String> {
                 .to_string_lossy()
                 .to_string();
 
-            if current_name == device_name && (device.StateFlags & DISPLAY_DEVICE_ACTIVE) != 0 {
+            if current_name == device_name
+                && (device.StateFlags & DISPLAY_DEVICE_ACTIVE) != DISPLAY_DEVICE_STATE_FLAGS(0)
+            {
                 // Get adapter info
                 let adapter_name_len = device
                     .DeviceString

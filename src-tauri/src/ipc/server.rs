@@ -227,9 +227,9 @@ fn create_security_attributes() -> Result<
 
         // Copy the string and free the original
         let sid_string = sid_string_ptr.to_string()?;
-        let _ = LocalFree(windows::Win32::Foundation::HLOCAL(
+        let _ = LocalFree(Some(windows::Win32::Foundation::HLOCAL(
             sid_string_ptr.0 as *mut _,
-        ));
+        )));
 
         sid_string
     };
@@ -257,7 +257,7 @@ fn create_security_attributes() -> Result<
 
     // Free the original (we've copied it)
     unsafe {
-        let _ = LocalFree(windows::Win32::Foundation::HLOCAL(sd.0));
+        let _ = LocalFree(Some(windows::Win32::Foundation::HLOCAL(sd.0)));
     }
 
     let sa = SECURITY_ATTRIBUTES {
@@ -274,31 +274,41 @@ fn create_security_attributes() -> Result<
     Ok((sa, sd_bytes))
 }
 
+/// Create a new named pipe server with security attributes.
+#[cfg(windows)]
+fn create_pipe_server(
+    first_instance: bool,
+    sa: &mut windows::Win32::Security::SECURITY_ATTRIBUTES,
+) -> Result<tokio::net::windows::named_pipe::NamedPipeServer, std::io::Error> {
+    use tokio::net::windows::named_pipe::{PipeMode, ServerOptions};
+    
+    unsafe {
+        ServerOptions::new()
+            .first_pipe_instance(first_instance)
+            .pipe_mode(PipeMode::Byte)
+            .create_with_security_attributes_raw(
+                PIPE_NAME,
+                sa as *mut _ as *mut std::ffi::c_void,
+            )
+    }
+}
+
 /// Run the IPC server (Windows implementation).
 #[cfg(windows)]
 pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
     use omnirec_common::security::peer_verify::verify_peer;
     use std::os::windows::io::AsRawHandle;
-    use tokio::net::windows::named_pipe::{PipeMode, ServerOptions};
     use windows::Win32::Foundation::HANDLE;
 
     info!("Starting IPC server at {}", PIPE_NAME);
 
-    // Create security attributes for current user only
-    let (mut sa, _sd_bytes) = create_security_attributes()?;
+    info!("IPC server listening on {}", PIPE_NAME);
 
     // Create the first pipe instance
-    let mut server = unsafe {
-        ServerOptions::new()
-            .first_pipe_instance(true)
-            .pipe_mode(PipeMode::Byte)
-            .create_with_security_attributes_raw(
-                PIPE_NAME,
-                &mut sa as *mut _ as *mut std::ffi::c_void,
-            )?
+    let mut server = {
+        let (mut sa, _sd_bytes) = create_security_attributes()?;
+        create_pipe_server(true, &mut sa)?
     };
-
-    info!("IPC server listening on {}", PIPE_NAME);
 
     loop {
         // Check for shutdown before accepting new connections
@@ -329,14 +339,9 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
 
                         // Take ownership of the connected pipe and create a new one for the next client
                         let connected_pipe = server;
-                        server = unsafe {
-                            ServerOptions::new()
-                                .first_pipe_instance(false)
-                                .pipe_mode(PipeMode::Byte)
-                                .create_with_security_attributes_raw(
-                                    PIPE_NAME,
-                                    &mut sa as *mut _ as *mut std::ffi::c_void,
-                                )?
+                        server = {
+                            let (mut sa, _sd_bytes) = create_security_attributes()?;
+                            create_pipe_server(false, &mut sa)?
                         };
 
                         let peer_info = format!("pid={}", peer.pid);
@@ -352,14 +357,9 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
             Some(Err(e)) => {
                 error!("Accept error: {}", e);
                 // Try to recreate the pipe
-                server = unsafe {
-                    ServerOptions::new()
-                        .first_pipe_instance(false)
-                        .pipe_mode(PipeMode::Byte)
-                        .create_with_security_attributes_raw(
-                            PIPE_NAME,
-                            &mut sa as *mut _ as *mut std::ffi::c_void,
-                        )?
+                server = {
+                    let (mut sa, _sd_bytes) = create_security_attributes()?;
+                    create_pipe_server(false, &mut sa)?
                 };
             }
             None => {

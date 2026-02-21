@@ -75,9 +75,9 @@ unsafe fn run_highlight_window(x: i32, y: i32, width: i32, height: i32) {
         y,
         width,
         height,
-        HWND::default(),
+        Some(HWND::default()),
         None,
-        hinstance,
+        Some(hinstance),
         None,
     )
     .unwrap_or_default();
@@ -87,8 +87,8 @@ unsafe fn run_highlight_window(x: i32, y: i32, width: i32, height: i32) {
     }
 
     // Create the border bitmap with per-pixel alpha (32-bit ARGB)
-    let screen_dc = GetDC(HWND::default());
-    let mem_dc = CreateCompatibleDC(screen_dc);
+    let screen_dc = GetDC(Some(HWND::default()));
+    let mem_dc = CreateCompatibleDC(Some(screen_dc));
 
     // Create 32-bit DIB section for per-pixel alpha
     let bmi = BITMAPINFO {
@@ -109,16 +109,16 @@ unsafe fn run_highlight_window(x: i32, y: i32, width: i32, height: i32) {
     };
 
     let mut bits: *mut std::ffi::c_void = std::ptr::null_mut();
-    let bitmap =
-        CreateDIBSection(screen_dc, &bmi, DIB_RGB_COLORS, &mut bits, None, 0).unwrap_or_default();
+    let bitmap = CreateDIBSection(Some(screen_dc), &bmi, DIB_RGB_COLORS, &mut bits, None, 0)
+        .unwrap_or_default();
 
     if bitmap.is_invalid() || bits.is_null() {
         let _ = DeleteDC(mem_dc);
-        let _ = ReleaseDC(HWND::default(), screen_dc);
+        let _ = ReleaseDC(Some(HWND::default()), screen_dc);
         return;
     }
 
-    let old_bitmap = SelectObject(mem_dc, bitmap);
+    let old_bitmap = SelectObject(mem_dc, bitmap.into());
 
     // Draw directly to the pixel buffer
     // Windows DIB is BGRA in memory, and for AC_SRC_ALPHA we need premultiplied alpha
@@ -186,11 +186,11 @@ unsafe fn run_highlight_window(x: i32, y: i32, width: i32, height: i32) {
     let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
 
     // Start animation timer
-    SetTimer(hwnd, TIMER_ID, TIMER_INTERVAL_MS, None);
+    SetTimer(Some(hwnd), TIMER_ID, TIMER_INTERVAL_MS, None);
 
     // Message loop
     let mut msg = MSG::default();
-    while GetMessageW(&mut msg, HWND::default(), 0, 0).as_bool() {
+    while GetMessageW(&mut msg, Some(HWND::default()), 0, 0).as_bool() {
         DispatchMessageW(&msg);
     }
 
@@ -198,9 +198,9 @@ unsafe fn run_highlight_window(x: i32, y: i32, width: i32, height: i32) {
     RENDER_STATE.with(|state| {
         if let Some(rs) = state.borrow_mut().take() {
             SelectObject(rs.mem_dc, rs.old_bitmap);
-            let _ = DeleteObject(rs.bitmap);
+            let _ = DeleteObject(rs.bitmap.into());
             let _ = DeleteDC(rs.mem_dc);
-            let _ = ReleaseDC(HWND::default(), rs.screen_dc);
+            let _ = ReleaseDC(Some(HWND::default()), rs.screen_dc);
         }
     });
 }
@@ -218,10 +218,10 @@ unsafe fn update_window_alpha(hwnd: HWND, alpha: u8) {
 
             let _ = UpdateLayeredWindow(
                 hwnd,
-                rs.screen_dc,
+                Some(rs.screen_dc),
                 Some(&rs.pt_dst),
                 Some(&rs.size),
-                rs.mem_dc,
+                Some(rs.mem_dc),
                 Some(&rs.pt_src),
                 COLORREF(0),
                 Some(&blend),
@@ -247,7 +247,7 @@ unsafe extern "system" fn highlight_wnd_proc(
 
                 if elapsed_ms >= ANIMATION_DURATION_MS {
                     // Animation complete, close window
-                    KillTimer(hwnd, TIMER_ID).ok();
+                    KillTimer(Some(hwnd), TIMER_ID).ok();
                     DestroyWindow(hwnd).ok();
                 } else {
                     // Calculate alpha based on animation progress

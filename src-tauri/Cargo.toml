@@ -84,6 +84,9 @@ windows-capture = "1"
 # Acoustic Echo Cancellation
 aec3 = "0.1"
 
+# Windows core types (BOOL, etc.)
+windows-core = "0.61"
+
 # Windows APIs (merged features from service + app)
 windows = { version = "0.61", features = [
     "Win32_Foundation",

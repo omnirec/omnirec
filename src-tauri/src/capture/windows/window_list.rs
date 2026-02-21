@@ -3,8 +3,7 @@
 use crate::capture::WindowInfo;
 use std::ffi::OsString;
 use std::os::windows::ffi::OsStringExt;
-use windows::Win32::Foundation::RECT;
-use windows::Win32::Foundation::{BOOL, HWND, LPARAM};
+use windows::Win32::Foundation::{HWND, LPARAM, RECT};
 use windows::Win32::System::ProcessStatus::GetModuleBaseNameW;
 use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ};
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -12,6 +11,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowTextW, GetWindowThreadProcessId, IsIconic, IsWindowVisible, GA_ROOTOWNER, GWL_EXSTYLE,
     GW_OWNER, WS_EX_TOOLWINDOW,
 };
+use windows_core::BOOL;
 
 /// List all visible, capturable windows.
 pub fn list_windows() -> Vec<WindowInfo> {
