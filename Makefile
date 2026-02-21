@@ -3,9 +3,13 @@
 
 .PHONY: all clean build build-debug build-release build-cuda \
         frontend client client-debug client-release cli cli-debug cli-release picker \
+        package stage-cli \
         run-cli run-cli-release \
         lint lint-rust lint-ts test \
         install-deps check-binaries help
+
+# Optional args to pass through to pnpm tauri build (e.g. ARGS="--target aarch64-apple-darwin")
+ARGS ?=
 
 # Default target
 all: build
@@ -51,6 +55,42 @@ client-cuda:
 
 # Alias for release
 client: client-release
+
+# =============================================================================
+# Packaging
+# =============================================================================
+
+# Build and stage the CLI sidecar binary into src-tauri/binaries/ for Tauri bundling.
+# Required before running pnpm tauri build or make package.
+# Supports optional ARGS for cross-compilation (e.g. make stage-cli ARGS="--target aarch64-apple-darwin")
+stage-cli:
+	@echo "==> Building CLI binary..."
+	@if echo "$(ARGS)" | grep -q "aarch64-apple-darwin"; then \
+		cargo build --release -p omnirec-cli --target aarch64-apple-darwin; \
+	elif echo "$(ARGS)" | grep -q "x86_64-apple-darwin"; then \
+		cargo build --release -p omnirec-cli --target x86_64-apple-darwin; \
+	else \
+		cargo build --release -p omnirec-cli; \
+	fi
+	@echo "==> Staging CLI sidecar binary into src-tauri/binaries/..."
+	@mkdir -p src-tauri/binaries
+	@if echo "$(ARGS)" | grep -q "aarch64-apple-darwin"; then \
+		cp target/aarch64-apple-darwin/release/omnirec src-tauri/binaries/omnirec-aarch64-apple-darwin; \
+	elif echo "$(ARGS)" | grep -q "x86_64-apple-darwin"; then \
+		cp target/x86_64-apple-darwin/release/omnirec src-tauri/binaries/omnirec-x86_64-apple-darwin; \
+	elif [ "$$(uname -s)" = "Linux" ]; then \
+		cp target/release/omnirec src-tauri/binaries/omnirec-x86_64-unknown-linux-gnu; \
+	elif [ "$$(uname -s)" = "Darwin" ]; then \
+		cp target/release/omnirec src-tauri/binaries/omnirec-$$(rustc -vV | grep host | cut -d' ' -f2); \
+	else \
+		cp target/release/omnirec.exe "src-tauri/binaries/omnirec-$$(rustc -vV | grep host | cut -d' ' -f2).exe"; \
+	fi
+
+# Build the complete installer package (CLI sidecar + Tauri app).
+# Supports optional ARGS for cross-compilation (e.g. make package ARGS="--target aarch64-apple-darwin")
+package: stage-cli
+	@echo "==> Building Tauri installer package..."
+	pnpm tauri build $(ARGS)
 
 # Build omnirec CLI (debug)
 cli-debug:
@@ -185,6 +225,13 @@ help:
 	@echo "  cli              Build omnirec CLI (release)"
 	@echo "  cli-debug        Build omnirec CLI (debug)"
 	@echo "  picker           Build omnirec-picker (C++/Qt6)"
+	@echo ""
+	@echo "Package Targets:"
+	@echo "  package          Build complete installer with CLI sidecar (uses pnpm tauri build)"
+	@echo "                   Supports ARGS for cross-compilation:"
+	@echo "                   make package ARGS=\"--target aarch64-apple-darwin\""
+	@echo "  stage-cli        Build CLI binary and stage into src-tauri/binaries/"
+	@echo "                   (run this before pnpm tauri build when using tauri-action)"
 	@echo ""
 	@echo "Quality Targets:"
 	@echo "  lint             Run all linters"

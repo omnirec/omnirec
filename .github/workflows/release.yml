@@ -226,43 +226,10 @@ jobs:
         with:
           workspaces: . -> target
 
-      - name: Build CLI binary (Linux)
-        if: matrix.platform == 'ubuntu-22.04'
-        run: cargo build --release -p omnirec-cli
+      - name: Build and stage CLI sidecar binary
+        run: make stage-cli ARGS="${{ matrix.args }}"
 
-      - name: Build CLI binary (macOS)
-        if: matrix.platform == 'macos-latest'
-        run: |
-          cargo build --release -p omnirec-cli --target aarch64-apple-darwin
-          cargo build --release -p omnirec-cli --target x86_64-apple-darwin
-
-      - name: Build CLI binary (Windows)
-        if: matrix.platform == 'windows-latest'
-        run: cargo build --release -p omnirec-cli
-
-      - name: Stage CLI binary for Tauri bundle (Linux)
-        if: matrix.platform == 'ubuntu-22.04'
-        run: |
-          mkdir -p src-tauri/binaries
-          cp target/release/omnirec src-tauri/binaries/omnirec-x86_64-unknown-linux-gnu
-
-      - name: Stage CLI binary for Tauri bundle (macOS)
-        if: matrix.platform == 'macos-latest'
-        run: |
-          mkdir -p src-tauri/binaries
-          if [[ "${{ matrix.args }}" == *"aarch64"* ]]; then
-            cp target/aarch64-apple-darwin/release/omnirec src-tauri/binaries/omnirec-aarch64-apple-darwin
-          else
-            cp target/x86_64-apple-darwin/release/omnirec src-tauri/binaries/omnirec-x86_64-apple-darwin
-          fi
-
-      - name: Stage CLI binary for Tauri bundle (Windows)
-        if: matrix.platform == 'windows-latest'
-        run: |
-          mkdir -p src-tauri/binaries
-          cp target/release/omnirec.exe src-tauri/binaries/omnirec-x86_64-pc-windows-msvc.exe
-
-      - name: Build Tauri app (with release)
+      - name: Build Tauri package and create release
         if: github.event_name == 'push'
         uses: tauri-apps/tauri-action@v0.6.0
         env:
@@ -275,7 +242,7 @@ jobs:
           prerelease: false
           args: ${{ matrix.args }}
 
-      - name: Build Tauri app (local/manual - no release)
+      - name: Build Tauri package (local/manual - no release)
         if: github.event_name == 'workflow_dispatch'
         run: pnpm tauri build ${{ matrix.args }}
 
