@@ -1,6 +1,13 @@
 # OmniRec Makefile
 # Build all components for testing
 
+# Ensure bash shell for cross-platform targets (Windows CI uses Git Bash)
+ifeq ($(OS),Windows_NT)
+SHELL := bash
+else
+SHELL := /usr/bin/env bash
+endif
+
 .PHONY: all clean build build-debug build-release build-cuda \
         frontend client client-debug client-release cli cli-debug cli-release picker \
         package stage-cli stub-sidecar \
@@ -132,7 +139,9 @@ lint-rust-common:
 stub-sidecar:
 	@mkdir -p src-tauri/binaries
 	@TRIPLE=$$(rustc -vV | grep '^host:' | cut -d' ' -f2); \
-	STUB=src-tauri/binaries/omnirec-cli-$$TRIPLE; \
+	EXT=""; \
+	if echo "$$TRIPLE" | grep -q "windows"; then EXT=".exe"; fi; \
+	STUB=src-tauri/binaries/omnirec-cli-$$TRIPLE$$EXT; \
 	if [ ! -f "$$STUB" ]; then \
 		echo "==> Creating sidecar stub: $$STUB"; \
 		touch "$$STUB"; \
