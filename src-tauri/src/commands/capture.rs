@@ -1,8 +1,9 @@
 //! Capture and thumbnail commands.
 //!
 //! Commands for listing windows/monitors, capturing thumbnails, and showing highlights.
-//! These commands proxy requests to the omnirec-service via IPC.
+//! These commands interact directly with the capture backends.
 
+use crate::capture::{self, ThumbnailCapture};
 use crate::AppState;
 use omnirec_common::{MonitorInfo, WindowInfo};
 use tauri::State;
@@ -20,65 +21,46 @@ pub struct ThumbnailResponse {
 
 /// Get list of capturable windows.
 #[tauri::command]
-pub async fn get_windows(state: State<'_, AppState>) -> Result<Vec<WindowInfo>, String> {
-    state
-        .service_client
-        .list_windows()
-        .await
-        .map_err(|e| e.to_string())
+pub async fn get_windows(_state: State<'_, AppState>) -> Result<Vec<WindowInfo>, String> {
+    Ok(capture::list_windows())
 }
 
 /// Get list of available monitors.
 #[tauri::command]
-pub async fn get_monitors(state: State<'_, AppState>) -> Result<Vec<MonitorInfo>, String> {
-    state
-        .service_client
-        .list_monitors()
-        .await
-        .map_err(|e| e.to_string())
+pub async fn get_monitors(_state: State<'_, AppState>) -> Result<Vec<MonitorInfo>, String> {
+    Ok(capture::list_monitors())
 }
 
 /// Show a highlight border on the specified monitor.
 #[tauri::command]
 pub async fn show_display_highlight(
     monitor_id: String,
-    state: State<'_, AppState>,
+    _state: State<'_, AppState>,
 ) -> Result<(), String> {
-    // First get the monitor info to find its position/size
-    let monitors = state
-        .service_client
-        .list_monitors()
-        .await
-        .map_err(|e| e.to_string())?;
-
+    let monitors = capture::list_monitors();
     let monitor = monitors
         .iter()
         .find(|m| m.id == monitor_id)
         .ok_or_else(|| format!("Monitor not found: {}", monitor_id))?;
 
-    state
-        .service_client
-        .show_display_highlight(
-            monitor.x,
-            monitor.y,
-            monitor.width as i32,
-            monitor.height as i32,
-        )
-        .await
-        .map_err(|e| e.to_string())
+    capture::show_highlight(monitor.x, monitor.y, monitor.width as i32, monitor.height as i32);
+    Ok(())
 }
 
 /// Show a highlight border on the specified window.
 #[tauri::command]
 pub async fn show_window_highlight(
     window_handle: isize,
-    state: State<'_, AppState>,
+    _state: State<'_, AppState>,
 ) -> Result<(), String> {
-    state
-        .service_client
-        .show_window_highlight(window_handle)
-        .await
-        .map_err(|e| e.to_string())
+    let windows = capture::list_windows();
+    let window = windows
+        .iter()
+        .find(|w| w.handle == window_handle)
+        .ok_or_else(|| format!("Window not found: {}", window_handle))?;
+
+    capture::show_highlight(window.x, window.y, window.width as i32, window.height as i32);
+    Ok(())
 }
 
 /// Capture a thumbnail of a window.
@@ -87,21 +69,17 @@ pub async fn show_window_highlight(
 #[tauri::command]
 pub async fn get_window_thumbnail(
     window_handle: isize,
-    state: State<'_, AppState>,
+    _state: State<'_, AppState>,
 ) -> Result<Option<ThumbnailResponse>, String> {
-    match state
-        .service_client
-        .get_window_thumbnail(window_handle)
-        .await
-    {
-        Ok((data, width, height)) => Ok(Some(ThumbnailResponse {
-            data,
-            width,
-            height,
+    let backend = capture::get_backend();
+    match backend.capture_window_thumbnail(window_handle) {
+        Ok(result) => Ok(Some(ThumbnailResponse {
+            data: result.data,
+            width: result.width,
+            height: result.height,
         })),
         Err(e) => {
             tracing::warn!("Window thumbnail capture failed: {}", e);
-            // Fail gracefully - show placeholder for any error
             Ok(None)
         }
     }
@@ -113,17 +91,17 @@ pub async fn get_window_thumbnail(
 #[tauri::command]
 pub async fn get_display_thumbnail(
     monitor_id: String,
-    state: State<'_, AppState>,
+    _state: State<'_, AppState>,
 ) -> Result<Option<ThumbnailResponse>, String> {
-    match state.service_client.get_display_thumbnail(monitor_id).await {
-        Ok((data, width, height)) => Ok(Some(ThumbnailResponse {
-            data,
-            width,
-            height,
+    let backend = capture::get_backend();
+    match backend.capture_display_thumbnail(&monitor_id) {
+        Ok(result) => Ok(Some(ThumbnailResponse {
+            data: result.data,
+            width: result.width,
+            height: result.height,
         })),
         Err(e) => {
             tracing::warn!("Display thumbnail capture failed: {}", e);
-            // Fail gracefully - show placeholder for any error
             Ok(None)
         }
     }
@@ -139,21 +117,17 @@ pub async fn get_region_preview(
     y: i32,
     width: u32,
     height: u32,
-    state: State<'_, AppState>,
+    _state: State<'_, AppState>,
 ) -> Result<Option<ThumbnailResponse>, String> {
-    match state
-        .service_client
-        .get_region_preview(monitor_id, x, y, width, height)
-        .await
-    {
-        Ok((data, width, height)) => Ok(Some(ThumbnailResponse {
-            data,
-            width,
-            height,
+    let backend = capture::get_backend();
+    match backend.capture_region_preview(&monitor_id, x, y, width, height) {
+        Ok(result) => Ok(Some(ThumbnailResponse {
+            data: result.data,
+            width: result.width,
+            height: result.height,
         })),
         Err(e) => {
             tracing::warn!("Region preview capture failed: {}", e);
-            // Fail gracefully - show placeholder for any error
             Ok(None)
         }
     }

@@ -2,8 +2,7 @@
 # Build all components for testing
 
 .PHONY: all clean build build-debug build-release build-cuda \
-        frontend service service-cuda client cli picker \
-        run-service run-service-release run-service-cuda \
+        frontend client client-debug client-release cli cli-debug cli-release picker \
         run-cli run-cli-release \
         lint lint-rust lint-ts test \
         install-deps check-binaries help
@@ -15,13 +14,13 @@ all: build
 build: build-release
 
 # Build all components in debug mode (faster compilation)
-build-debug: frontend service-debug client-debug cli-debug picker
+build-debug: frontend client-debug cli-debug picker
 
 # Build all components in release mode
-build-release: frontend service-release client-release cli-release picker
+build-release: frontend client-release cli-release picker
 
 # Build all components with CUDA acceleration (Linux only - Windows always includes CUDA)
-build-cuda: frontend service-cuda client-release cli-release picker
+build-cuda: frontend client-cuda cli-release picker
 
 # =============================================================================
 # Individual Components
@@ -32,36 +31,23 @@ frontend:
 	@echo "==> Building frontend..."
 	pnpm build
 
-# Build omnirec-service (debug)
-service-debug:
-	@echo "==> Building omnirec-service (debug)..."
-	cd src-service && cargo build
-
-# Build omnirec-service (release)
-service-release:
-	@echo "==> Building omnirec-service (release)..."
-	cd src-service && cargo build --release
-
-# Build omnirec-service with CUDA acceleration (release, Linux only)
-# Requires: NVIDIA CUDA Toolkit (nvcc, cuBLAS) on Linux
-# Windows always includes CUDA binaries - use 'service-release' instead
-# macOS: No effect (Metal acceleration is always used)
-service-cuda:
-	@echo "==> Building omnirec-service with CUDA (release)..."
-	cd src-service && cargo build --release --features cuda
-
-# Alias for release
-service: service-release
-
-# Build omnirec client/Tauri app (debug)
+# Build omnirec Tauri app (debug)
 client-debug:
-	@echo "==> Building omnirec client (debug)..."
+	@echo "==> Building omnirec-app (debug)..."
 	cd src-tauri && cargo build
 
-# Build omnirec client/Tauri app (release)
+# Build omnirec Tauri app (release)
 client-release:
-	@echo "==> Building omnirec client (release)..."
+	@echo "==> Building omnirec-app (release)..."
 	cd src-tauri && cargo build --release
+
+# Build omnirec Tauri app with CUDA acceleration (release, Linux only)
+# Requires: NVIDIA CUDA Toolkit (nvcc, cuBLAS) on Linux
+# Windows always includes CUDA binaries - use 'client-release' instead
+# macOS: No effect (Metal acceleration is always used)
+client-cuda:
+	@echo "==> Building omnirec-app with CUDA (release)..."
+	cd src-tauri && cargo build --release --features cuda
 
 # Alias for release
 client: client-release
@@ -96,8 +82,6 @@ lint: lint-rust lint-ts
 lint-rust:
 	@echo "==> Linting src-common..."
 	cd src-common && cargo clippy --all-targets --all-features -- -D warnings
-	@echo "==> Linting src-service..."
-	cd src-service && cargo clippy --all-targets -- -D warnings
 	@echo "==> Linting src-tauri..."
 	cd src-tauri && cargo clippy --all-targets --all-features -- -D warnings
 	@echo "==> Linting src-cli..."
@@ -119,8 +103,6 @@ test: test-rust
 test-rust:
 	@echo "==> Testing src-common..."
 	cd src-common && cargo test --all-features
-	@echo "==> Testing src-service..."
-	cd src-service && cargo test
 	@echo "==> Testing src-tauri..."
 	cd src-tauri && cargo test --all-features
 	@echo "==> Testing src-cli..."
@@ -136,7 +118,6 @@ clean:
 	rm -rf dist
 	@echo "==> Cleaning Rust targets..."
 	cd src-common && cargo clean
-	cd src-service && cargo clean
 	cd src-tauri && cargo clean
 	cd src-cli && cargo clean
 	@echo "==> Cleaning picker..."
@@ -145,7 +126,6 @@ clean:
 # Clean only Rust debug builds (keeps release)
 clean-debug:
 	cd src-common && cargo clean --profile dev
-	cd src-service && cargo clean --profile dev
 	cd src-tauri && cargo clean --profile dev
 	cd src-cli && cargo clean --profile dev
 
@@ -167,21 +147,6 @@ install-deps:
 # Development Helpers
 # =============================================================================
 
-# Build and run service in foreground (debug)
-run-service: service-debug
-	@echo "==> Running omnirec-service (debug)..."
-	./target/debug/omnirec-service
-
-# Build and run service in foreground (release)
-run-service-release: service-release
-	@echo "==> Running omnirec-service (release)..."
-	./target/release/omnirec-service
-
-# Build and run service with CUDA in foreground (release, Linux only)
-run-service-cuda: service-cuda
-	@echo "==> Running omnirec-service with CUDA (release)..."
-	./target/release/omnirec-service
-
 # Build and run CLI (debug)
 run-cli: cli-debug
 	@echo "==> Running omnirec CLI (debug)..."
@@ -195,10 +160,9 @@ run-cli-release: cli-release
 # Check if all binaries exist (after build)
 check-binaries:
 	@echo "Checking built binaries..."
-	@test -f src-tauri/target/release/omnirec-app && echo "  [OK] omnirec-app" || echo "  [MISSING] omnirec-app"
-	@test -f src-cli/target/release/omnirec && echo "  [OK] omnirec" || echo "  [MISSING] omnirec"
-	@test -f src-service/target/release/omnirec-service && echo "  [OK] omnirec-service" || echo "  [MISSING] omnirec-service"
-	@test -f src-picker/build/omnirec-picker && echo "  [OK] omnirec-picker" || echo "  [MISSING] omnirec-picker"
+	@test -f src-tauri/target/release/omnirec && echo "  [OK] omnirec (Tauri app)" || echo "  [MISSING] omnirec (Tauri app)"
+	@test -f target/release/omnirec && echo "  [OK] omnirec (CLI)" || echo "  [MISSING] omnirec (CLI)"
+	@test -f src-picker/build/omnirec-picker && echo "  [OK] omnirec-picker" || echo "  [MISSING] omnirec-picker (Linux only)"
 
 # =============================================================================
 # Help
@@ -215,11 +179,9 @@ help:
 	@echo "  build-release    Build all components (release mode)"
 	@echo "  build-cuda       Build with CUDA GPU acceleration (Linux only)"
 	@echo "  frontend         Build frontend only"
-	@echo "  service          Build omnirec-service (release)"
-	@echo "  service-debug    Build omnirec-service (debug)"
-	@echo "  service-cuda     Build omnirec-service with CUDA (Linux only)"
 	@echo "  client           Build omnirec Tauri app (release)"
 	@echo "  client-debug     Build omnirec Tauri app (debug)"
+	@echo "  client-cuda      Build omnirec Tauri app with CUDA (Linux only)"
 	@echo "  cli              Build omnirec CLI (release)"
 	@echo "  cli-debug        Build omnirec CLI (debug)"
 	@echo "  picker           Build omnirec-picker (C++/Qt6)"
@@ -232,9 +194,6 @@ help:
 	@echo "  test-rust        Run Rust tests on all crates"
 	@echo ""
 	@echo "Run Targets:"
-	@echo "  run-service         Build and run service (debug)"
-	@echo "  run-service-release Build and run service (release)"
-	@echo "  run-service-cuda    Build and run service with CUDA (Linux only)"
 	@echo "  run-cli             Build and run CLI (debug)"
 	@echo "  run-cli-release     Build and run CLI (release)"
 	@echo ""

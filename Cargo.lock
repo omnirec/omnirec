@@ -1030,17 +1030,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ctrlc"
-version = "3.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "73736a89c4aff73035ba2ed2e565061954da00d4970fc9ac25dcc85a2a20d790"
-dependencies = [
- "dispatch2",
- "nix 0.30.1",
- "windows-sys 0.61.2",
-]
-
-[[package]]
 name = "darling"
 version = "0.21.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3452,60 +3441,6 @@ dependencies = [
 name = "omnirec"
 version = "0.1.4"
 dependencies = [
- "chrono",
- "cocoa",
- "directories",
- "futures-util",
- "hyprland",
- "libc",
- "omnirec-common",
- "reqwest",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-opener",
- "tokio",
- "tracing",
- "which",
- "windows 0.61.3",
-]
-
-[[package]]
-name = "omnirec-cli"
-version = "0.1.4"
-dependencies = [
- "clap",
- "directories",
- "is-terminal",
- "libc",
- "omnirec-common",
- "owo-colors",
- "serde",
- "serde_json",
- "tokio",
- "which",
-]
-
-[[package]]
-name = "omnirec-common"
-version = "0.1.4"
-dependencies = [
- "directories",
- "libc",
- "once_cell",
- "regex",
- "serde",
- "serde_json",
- "tokio",
- "windows 0.58.0",
-]
-
-[[package]]
-name = "omnirec-service"
-version = "0.1.4"
-dependencies = [
  "aec3",
  "ashpd 0.9.2",
  "base64 0.22.1",
@@ -3515,11 +3450,11 @@ dependencies = [
  "core-foundation 0.10.1",
  "core-graphics",
  "coreaudio-sys",
- "ctrlc",
  "directories",
  "dispatch",
  "ffmpeg-sidecar",
  "foreign-types 0.5.0",
+ "futures-util",
  "hyprland",
  "image",
  "libc",
@@ -3537,14 +3472,50 @@ dependencies = [
  "screencapturekit-sys",
  "serde",
  "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-opener",
  "tokio",
  "tracing",
  "tracing-subscriber",
  "wayland-client",
  "wayland-protocols-wlr",
- "windows 0.58.0",
+ "which",
+ "windows 0.61.3",
  "windows-capture",
  "zip 2.4.2",
+]
+
+[[package]]
+name = "omnirec-cli"
+version = "0.1.4"
+dependencies = [
+ "clap",
+ "directories",
+ "is-terminal",
+ "libc",
+ "omnirec-common",
+ "owo-colors",
+ "serde",
+ "serde_json",
+ "shellexpand",
+ "tokio",
+ "which",
+]
+
+[[package]]
+name = "omnirec-common"
+version = "0.1.4"
+dependencies = [
+ "directories",
+ "libc",
+ "once_cell",
+ "regex",
+ "serde",
+ "serde_json",
+ "tokio",
+ "windows 0.58.0",
 ]
 
 [[package]]
@@ -4894,6 +4865,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f40ca3c46823713e0d4209592e8d6e826aa57e928f09752619fc696c499637f6"
 dependencies = [
  "lazy_static",
+]
+
+[[package]]
+name = "shellexpand"
+version = "3.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b1fdf65dd6331831494dd616b30351c38e96e45921a27745cf98490458b90bb"
+dependencies = [
+ "dirs",
 ]
 
 [[package]]

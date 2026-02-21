@@ -152,8 +152,8 @@ Transcription uses [whisper.cpp](https://github.com/ggerganov/whisper.cpp) with 
 For faster transcription on NVIDIA GPUs, build with CUDA support:
 
 ```bash
-# Build with CUDA acceleration
-cargo build -p omnirec-service --features cuda --release
+# Build with CUDA acceleration (Linux only)
+cargo build -p omnirec --features cuda --release
 
 # Or use the Makefile target
 make build-cuda

@@ -1,21 +1,19 @@
 //! Audio configuration commands.
 //!
 //! Commands for managing audio sources and settings.
-//! These commands proxy requests to the omnirec-service via IPC.
+//! These commands interact directly with the capture backends and RecordingManager.
 
+use crate::capture;
 use crate::config::{save_config as save_config_to_disk, AudioConfig};
+use crate::state::get_recording_manager;
 use crate::AppState;
 use omnirec_common::AudioSource;
 use tauri::State;
 
 /// Get list of available audio sources.
 #[tauri::command]
-pub async fn get_audio_sources(state: State<'_, AppState>) -> Result<Vec<AudioSource>, String> {
-    state
-        .service_client
-        .list_audio_sources()
-        .await
-        .map_err(|e| e.to_string())
+pub async fn get_audio_sources(_state: State<'_, AppState>) -> Result<Vec<AudioSource>, String> {
+    Ok(capture::list_audio_sources())
 }
 
 /// Check if macOS system audio capture is available (requires macOS 13+).
@@ -42,7 +40,7 @@ pub async fn get_audio_config(state: State<'_, AppState>) -> Result<AudioConfig,
 }
 
 /// Save audio configuration.
-/// This updates both the local config and syncs to the service.
+/// This updates both the local config and syncs to the RecordingManager.
 #[tauri::command]
 pub async fn save_audio_config(
     enabled: bool,
@@ -64,25 +62,18 @@ pub async fn save_audio_config(
         save_config_to_disk(&config)?;
     }
 
-    // Sync to service
-    state
-        .service_client
-        .set_audio_config(
+    // Sync to RecordingManager
+    let manager = get_recording_manager();
+    let _ = manager
+        .set_audio_config(omnirec_common::AudioConfig {
             enabled,
-            source_id.clone(),
-            microphone_id.clone(),
+            source_id,
+            microphone_id,
             echo_cancellation,
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+        })
+        .await;
 
-    tracing::info!(
-        "Saved audio config: enabled={}, source_id={:?}, mic_id={:?}, aec={}",
-        enabled,
-        source_id,
-        microphone_id,
-        echo_cancellation
-    );
+    tracing::info!("Saved audio config: enabled={}, aec={}", enabled, echo_cancellation);
 
     Ok(())
 }

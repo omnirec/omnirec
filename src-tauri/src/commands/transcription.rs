@@ -1,9 +1,10 @@
 //! Transcription configuration commands.
 //!
 //! Commands for managing voice transcription settings.
-//! These commands proxy requests to the omnirec-service via IPC.
+//! These commands interact directly with the RecordingManager.
 
 use crate::config::{save_config as save_config_to_disk, TranscriptionConfig, WhisperModel};
+use crate::state::get_recording_manager;
 use crate::AppState;
 use futures_util::StreamExt;
 use omnirec_common::TranscriptionStatus;
@@ -11,64 +12,41 @@ use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{Emitter, State};
 
-/// Global download cancellation flag
 static DOWNLOAD_CANCEL: AtomicBool = AtomicBool::new(false);
-
-/// Global download in progress flag
 static DOWNLOAD_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
 
 /// Model status information returned by get_model_status
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelStatus {
-    /// Model identifier (e.g., "medium-en")
     pub model: String,
-    /// Display name (e.g., "medium.en")
     pub display_name: String,
-    /// Expected file path
     pub path: String,
-    /// Whether the file exists
     pub exists: bool,
-    /// File size on disk (if exists)
     pub file_size: Option<u64>,
-    /// Expected download size
     pub expected_size: u64,
-    /// Human-readable size
     pub size_display: String,
 }
 
 /// Model information for listing available models
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelInfo {
-    /// Model identifier for config (kebab-case, e.g., "medium-en")
     pub id: String,
-    /// Display name (e.g., "medium.en")
     pub display_name: String,
-    /// Download size in bytes
     pub size_bytes: u64,
-    /// Human-readable size (e.g., "1.5 GB")
     pub size_display: String,
-    /// Model description
     pub description: String,
-    /// Whether this is an English-only model
     pub english_only: bool,
-    /// Whether the model is downloaded
     pub downloaded: bool,
 }
 
 /// Download progress event payload
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DownloadProgress {
-    /// Model being downloaded
     pub model: String,
-    /// Bytes downloaded so far
     pub bytes_downloaded: u64,
-    /// Total bytes to download
     pub total_bytes: u64,
-    /// Progress percentage (0-100)
     pub percentage: u8,
-    /// Status: "downloading", "completed", "cancelled", "error"
     pub status: String,
-    /// Error message (if status is "error")
     pub error: Option<String>,
 }
 
@@ -83,7 +61,7 @@ pub async fn get_transcription_config(
 }
 
 /// Save transcription configuration.
-/// This updates both the local config and syncs to the service.
+/// This updates both the local config and syncs to the RecordingManager.
 #[tauri::command]
 pub async fn save_transcription_config(
     enabled: bool,
@@ -96,7 +74,6 @@ pub async fn save_transcription_config(
         let mut config = state.app_config.lock().await;
         config.transcription.enabled = enabled;
 
-        // Update model if provided
         if let Some(model_str) = &model {
             if let Some(m) = WhisperModel::from_str(model_str) {
                 config.transcription.model = m;
@@ -105,24 +82,21 @@ pub async fn save_transcription_config(
             }
         }
 
-        // Update show_transcript_window if provided
         if let Some(show) = show_transcript_window {
             config.transcription.show_transcript_window = show;
         }
 
-        // Save to disk
         save_config_to_disk(&config)?;
 
-        // Get model path for syncing to service
         config.transcription.model.model_path()
     };
 
-    // Sync to service
-    state
-        .service_client
-        .set_transcription_config(enabled, Some(model_path.to_string_lossy().to_string()))
-        .await
-        .map_err(|e| e.to_string())?;
+    // Sync to RecordingManager
+    let manager = get_recording_manager();
+    let _ = manager.set_transcription_config(omnirec_common::TranscriptionConfig {
+        enabled,
+        model_path: Some(model_path.to_string_lossy().to_string()),
+    }).await;
 
     tracing::info!(
         "Saved transcription config: enabled={}, model={:?}, show_transcript_window={:?}",
@@ -134,16 +108,13 @@ pub async fn save_transcription_config(
     Ok(())
 }
 
-/// Get current transcription status from the service.
+/// Get current transcription status from the RecordingManager.
 #[tauri::command]
 pub async fn get_transcription_status(
-    state: State<'_, AppState>,
+    _state: State<'_, AppState>,
 ) -> Result<TranscriptionStatus, String> {
-    state
-        .service_client
-        .get_transcription_status()
-        .await
-        .map_err(|e| e.to_string())
+    let manager = get_recording_manager();
+    Ok(manager.get_transcription_status().await)
 }
 
 /// Get status of a specific model (or the currently configured model if not specified)
@@ -202,12 +173,10 @@ pub async fn list_available_models() -> Result<Vec<ModelInfo>, String> {
 /// Download a whisper model with progress events
 #[tauri::command]
 pub async fn download_model(model: String, app_handle: tauri::AppHandle) -> Result<(), String> {
-    // Check if download is already in progress
     if DOWNLOAD_IN_PROGRESS.swap(true, Ordering::SeqCst) {
         return Err("A download is already in progress".to_string());
     }
 
-    // Reset cancel flag
     DOWNLOAD_CANCEL.store(false, Ordering::SeqCst);
 
     let whisper_model =
@@ -217,13 +186,11 @@ pub async fn download_model(model: String, app_handle: tauri::AppHandle) -> Resu
     let path = whisper_model.model_path();
     let model_name = model.clone();
 
-    // Ensure parent directory exists
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|e| format!("Failed to create directory: {}", e))?;
     }
 
-    // Spawn download task
     let result =
         tokio::spawn(
             async move { download_with_progress(&url, &path, &model_name, &app_handle).await },
@@ -231,7 +198,6 @@ pub async fn download_model(model: String, app_handle: tauri::AppHandle) -> Resu
         .await
         .map_err(|e| format!("Download task failed: {}", e))?;
 
-    // Reset in progress flag
     DOWNLOAD_IN_PROGRESS.store(false, Ordering::SeqCst);
 
     result
@@ -256,7 +222,6 @@ pub async fn is_download_in_progress() -> Result<bool, String> {
     Ok(DOWNLOAD_IN_PROGRESS.load(Ordering::SeqCst))
 }
 
-/// Internal function to download with progress reporting
 async fn download_with_progress(
     url: &str,
     path: &std::path::Path,
@@ -278,7 +243,6 @@ async fn download_with_progress(
 
     let total_bytes = response.content_length().unwrap_or(0);
 
-    // Create temp file for download
     let temp_path = path.with_extension("download");
     let mut file = tokio::fs::File::create(&temp_path)
         .await
@@ -288,7 +252,6 @@ async fn download_with_progress(
     let mut downloaded: u64 = 0;
     let mut last_percentage: u8 = 0;
 
-    // Emit initial progress
     let _ = app_handle.emit(
         "model-download-progress",
         DownloadProgress {
@@ -304,9 +267,7 @@ async fn download_with_progress(
     use tokio::io::AsyncWriteExt;
 
     while let Some(chunk_result) = stream.next().await {
-        // Check for cancellation
         if DOWNLOAD_CANCEL.load(Ordering::SeqCst) {
-            // Clean up temp file
             let _ = tokio::fs::remove_file(&temp_path).await;
 
             let _ = app_handle.emit(
@@ -332,7 +293,6 @@ async fn download_with_progress(
 
         downloaded += chunk.len() as u64;
 
-        // Calculate percentage and emit progress (at least every 1%)
         let percentage = if total_bytes > 0 {
             ((downloaded as f64 / total_bytes as f64) * 100.0) as u8
         } else {
@@ -356,18 +316,15 @@ async fn download_with_progress(
         }
     }
 
-    // Flush and close file
     file.flush()
         .await
         .map_err(|e| format!("Error flushing file: {}", e))?;
     drop(file);
 
-    // Rename temp file to final path
     tokio::fs::rename(&temp_path, path)
         .await
         .map_err(|e| format!("Failed to finalize download: {}", e))?;
 
-    // Emit completion
     let _ = app_handle.emit(
         "model-download-progress",
         DownloadProgress {
@@ -390,13 +347,10 @@ async fn download_with_progress(
 #[tauri::command]
 pub async fn get_transcription_segments(
     since_index: u32,
-    state: State<'_, AppState>,
+    _state: State<'_, AppState>,
 ) -> Result<TranscriptionSegmentsResponse, String> {
-    let (segments, total_count) = state
-        .service_client
-        .get_transcription_segments(since_index)
-        .await
-        .map_err(|e| e.to_string())?;
+    let manager = get_recording_manager();
+    let (segments, total_count) = manager.get_transcription_segments(since_index);
 
     Ok(TranscriptionSegmentsResponse {
         segments,
@@ -416,25 +370,21 @@ pub struct TranscriptionSegmentsResponse {
 pub async fn open_transcript_window(app: tauri::AppHandle) -> Result<(), String> {
     use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 
-    // Check if window already exists
     if let Some(window) = app.get_webview_window("transcript") {
         window.show().map_err(|e| e.to_string())?;
         window.set_focus().map_err(|e| e.to_string())?;
         return Ok(());
     }
 
-    // Get main window - required for positioning and visibility check
     let main_window = app
         .get_webview_window("main")
         .ok_or("Main window not found")?;
 
-    // Only open transcript window if main window is visible
     if !main_window.is_visible().unwrap_or(false) {
         tracing::info!("Main window not visible, skipping transcript window");
         return Ok(());
     }
 
-    // Determine the URL based on environment
     let url = if cfg!(debug_assertions) {
         WebviewUrl::External(
             "http://localhost:1420/src/transcript-view.html"
@@ -447,25 +397,20 @@ pub async fn open_transcript_window(app: tauri::AppHandle) -> Result<(), String>
 
     let gap = 12.0_f64;
 
-    // Get scale factor first
     let scale = main_window.scale_factor().map_err(|e| e.to_string())?;
 
-    // Get main window position and size (these return physical pixels)
     let main_pos = main_window.outer_position().unwrap_or_default();
     let main_size = main_window.outer_size().unwrap_or_default();
 
-    // Convert to logical pixels
     let main_left = main_pos.x as f64 / scale;
     let main_top = main_pos.y as f64 / scale;
     let main_width = main_size.width as f64 / scale;
     let main_height = main_size.height as f64 / scale;
     let main_right = main_left + main_width;
 
-    // Transcript window dimensions: same height as main, 20% wider than original 300px
     let transcript_width = 360.0_f64;
     let transcript_height = main_height;
 
-    // Get the monitor that the main window is on
     let monitor = main_window
         .current_monitor()
         .map_err(|e| e.to_string())?
@@ -474,32 +419,22 @@ pub async fn open_transcript_window(app: tauri::AppHandle) -> Result<(), String>
     let monitor_pos = monitor.position();
     let monitor_size = monitor.size();
 
-    // Calculate screen bounds (convert physical to logical)
     let screen_left = monitor_pos.x as f64 / scale;
     let screen_right = screen_left + (monitor_size.width as f64 / scale);
 
-    // Calculate space available on each side
     let space_right = screen_right - main_right;
     let space_left = main_left - screen_left;
 
-    // Determine position: prefer right side, fall back to left if not enough space
     let pos_x = if space_right >= transcript_width + gap {
-        // Place on the right
         main_right + gap
     } else if space_left >= transcript_width + gap {
-        // Place on the left
         main_left - transcript_width - gap
     } else {
-        // Not enough space on either side, place on right anyway (will be partially off-screen)
         main_right + gap
     };
 
-    // Vertical position: align with top of main window
     let pos_y = main_top;
 
-    // Create the transcript window with custom chrome (no OS decorations)
-    // Note: transparent windows require the "transcript" window to be listed
-    // in capabilities/default.json for drag permissions to work
     let transcript_window = WebviewWindowBuilder::new(&app, "transcript", url)
         .title("Transcript")
         .decorations(false)
@@ -513,8 +448,6 @@ pub async fn open_transcript_window(app: tauri::AppHandle) -> Result<(), String>
         .build()
         .map_err(|e| e.to_string())?;
 
-    // Bring transcript window to front, then restore focus to main window
-    // This ensures transcript is visible but main window remains interactive
     let _ = transcript_window.set_focus();
     let _ = main_window.set_focus();
 

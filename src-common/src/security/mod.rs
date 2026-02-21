@@ -5,7 +5,7 @@ pub mod peer_verify;
 pub mod validation;
 
 /// Executable names permitted to connect to the service.
-pub const TRUSTED_EXECUTABLES: &[&str] = &["omnirec", "omnirec-service", "omnirec-picker"];
+pub const TRUSTED_EXECUTABLES: &[&str] = &["omnirec", "omnirec-picker"];
 
 /// Trusted installation directories (Linux).
 #[cfg(target_os = "linux")]

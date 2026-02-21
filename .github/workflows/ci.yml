@@ -66,15 +66,11 @@ jobs:
         working-directory: src-common
         run: cargo clippy --all-targets --all-features -- -D warnings
 
-      - name: Rust lint (clippy) - service
-        working-directory: src-service
+      - name: Rust lint (clippy) - main app
+        working-directory: src-tauri
         # Note: --all-features omitted because 'cuda' feature requires NVIDIA CUDA Toolkit (Linux only)
         # Windows always uses CUDA-enabled prebuilt binaries regardless of features
         run: cargo clippy --all-targets -- -D warnings
-
-      - name: Rust lint (clippy) - main app
-        working-directory: src-tauri
-        run: cargo clippy --all-targets --all-features -- -D warnings
 
       - name: Rust lint (clippy) - CLI
         working-directory: src-cli
@@ -84,14 +80,10 @@ jobs:
         working-directory: src-common
         run: cargo test --all-features
 
-      - name: Rust tests - service
-        working-directory: src-service
-        # Note: --all-features omitted because 'cuda' feature requires NVIDIA CUDA Toolkit (Linux only)
-        run: cargo test
-
       - name: Rust tests - main app
         working-directory: src-tauri
-        run: cargo test --all-features
+        # Note: --all-features omitted because 'cuda' feature requires NVIDIA CUDA Toolkit (Linux only)
+        run: cargo test
 
       - name: Rust tests - CLI
         working-directory: src-cli

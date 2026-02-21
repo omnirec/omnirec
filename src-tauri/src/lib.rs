@@ -5,20 +5,51 @@
 //!
 //! - `commands` - Tauri command handlers organized by functionality
 //! - `config` - Application configuration persistence
-//! - `ipc` - IPC client for communicating with omnirec-service
+//! - `capture` - Platform-specific screen, window, region, and audio capture backends
+//! - `encoder` - FFmpeg-based video encoding and transcoding
+//! - `transcription` - Whisper.cpp voice transcription
+//! - `state` - Recording state management (RecordingManager singleton)
+//! - `ipc` - IPC socket server for CLI communication
 //! - `platform` - Minimal platform-specific functionality (e.g., macOS permission checks)
 //! - `tray` - Cross-platform system tray functionality
 
+mod capture;
 mod commands;
 mod config;
+mod encoder;
 pub mod ipc;
 mod platform;
+pub mod state;
 pub mod tray;
+mod transcription;
 
 use config::{load_config, AppConfig};
-use ipc::ServiceClient;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::OnceLock;
 use tokio::sync::Mutex;
+
+// =============================================================================
+// Shutdown Coordination
+// =============================================================================
+
+static SHUTDOWN_FLAG: OnceLock<Arc<AtomicBool>> = OnceLock::new();
+
+fn get_shutdown_flag() -> Arc<AtomicBool> {
+    SHUTDOWN_FLAG
+        .get_or_init(|| Arc::new(AtomicBool::new(false)))
+        .clone()
+}
+
+/// Request a graceful shutdown of the IPC server and recording subsystem.
+pub fn request_shutdown() {
+    get_shutdown_flag().store(true, Ordering::SeqCst);
+}
+
+/// Check whether a shutdown has been requested.
+pub fn is_shutdown_requested() -> bool {
+    get_shutdown_flag().load(Ordering::SeqCst)
+}
 
 // Re-export tray types for use in commands
 pub use tray::TrayState;
@@ -34,121 +65,37 @@ pub use tray::GnomeTrayState;
 /// Application state wrapper.
 ///
 /// This struct holds all the shared state for the application, including:
-/// - Service client for communicating with omnirec-service
 /// - Application configuration (persisted locally)
-/// - Service connection status
+/// - Recording subsystem readiness flag
+/// - Headless mode flag (started with --headless)
+///
+/// The RecordingManager is a `'static` singleton accessed via
+/// `state::get_recording_manager()` — it is not stored in AppState.
 pub struct AppState {
-    /// IPC client for communicating with the background service.
-    pub service_client: Arc<ServiceClient>,
     /// Application configuration (UI preferences, output directory, etc.).
     pub app_config: Arc<Mutex<AppConfig>>,
-    /// Whether the service is connected and ready.
-    pub service_ready: Arc<std::sync::atomic::AtomicBool>,
+    /// Whether the recording subsystem is initialized and ready.
+    pub service_ready: Arc<AtomicBool>,
+    /// Whether the app was launched in headless mode (--headless).
+    pub headless: bool,
 }
 
 impl AppState {
-    fn new() -> Self {
+    fn new(headless: bool) -> Self {
         // Load configuration
         let app_config = load_config();
         eprintln!("[AppState] Loaded config: {:?}", app_config);
 
-        // Create service client
-        let service_client = Arc::new(ServiceClient::new());
-
         Self {
-            service_client,
             app_config: Arc::new(Mutex::new(app_config)),
-            service_ready: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            service_ready: Arc::new(AtomicBool::new(false)),
+            headless,
         }
     }
 
-    /// Initialize the service connection.
-    /// This spawns the service process if needed and waits for it to be ready.
-    pub async fn init_service(&self) -> Result<(), String> {
-        use std::sync::atomic::Ordering;
-
-        eprintln!("[AppState] Initializing service connection...");
-
-        // Use the ServiceClient's reconnect_or_spawn method which handles everything
-        match self.service_client.reconnect_or_spawn().await {
-            Ok(()) => {
-                self.service_ready.store(true, Ordering::SeqCst);
-                eprintln!("[AppState] Service is ready");
-
-                // Sync local config to service
-                self.sync_config_to_service().await;
-
-                Ok(())
-            }
-            Err(e) => {
-                eprintln!("[AppState] Service failed to start: {}", e);
-                Err(format!("Service failed to start: {}", e))
-            }
-        }
-    }
-
-    /// Sync local configuration to the service.
-    /// Called after connecting to ensure service has latest settings.
-    async fn sync_config_to_service(&self) {
-        let config = self.app_config.lock().await;
-
-        // Sync audio config
-        eprintln!("[AppState] Syncing audio config to service: enabled={}, source_id={:?}, mic_id={:?}, aec={}",
-            config.audio.enabled,
-            config.audio.source_id,
-            config.audio.microphone_id,
-            config.audio.echo_cancellation
-        );
-        if let Err(e) = self
-            .service_client
-            .set_audio_config(
-                config.audio.enabled,
-                config.audio.source_id.clone(),
-                config.audio.microphone_id.clone(),
-                config.audio.echo_cancellation,
-            )
-            .await
-        {
-            eprintln!("[AppState] Failed to sync audio config: {}", e);
-        }
-
-        // Sync transcription config
-        let model_path = config.transcription.model.model_path();
-        eprintln!(
-            "[AppState] Syncing transcription config to service: enabled={}, model={:?}",
-            config.transcription.enabled, model_path
-        );
-        if let Err(e) = self
-            .service_client
-            .set_transcription_config(
-                config.transcription.enabled,
-                Some(model_path.to_string_lossy().to_string()),
-            )
-            .await
-        {
-            eprintln!("[AppState] Failed to sync transcription config: {}", e);
-        }
-    }
-
-    /// Check if the service is ready.
+    /// Check if the recording subsystem is ready.
     pub fn is_service_ready(&self) -> bool {
-        self.service_ready.load(std::sync::atomic::Ordering::SeqCst)
-    }
-
-    /// Ensure the service is connected, reconnecting if necessary.
-    pub async fn ensure_service_connected(&self) -> Result<(), String> {
-        use std::sync::atomic::Ordering;
-
-        match self.service_client.ensure_connected().await {
-            Ok(()) => {
-                self.service_ready.store(true, Ordering::SeqCst);
-                Ok(())
-            }
-            Err(e) => {
-                self.service_ready.store(false, Ordering::SeqCst);
-                Err(e.to_string())
-            }
-        }
+        self.service_ready.load(Ordering::SeqCst)
     }
 }
 
@@ -184,17 +131,23 @@ fn setup_macos_window(_app: &tauri::App) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Parse --headless flag from command-line arguments
+    let headless = std::env::args().any(|arg| arg == "--headless");
+    if headless {
+        eprintln!("[Startup] Running in headless mode (tray only, no main window)");
+    }
+
     #[cfg(target_os = "macos")]
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .manage(AppState::new());
+        .manage(AppState::new(headless));
 
     #[cfg(not(target_os = "macos"))]
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .manage(AppState::new());
+        .manage(AppState::new(headless));
 
     // On macOS, register menu event handler at the Builder level
     // This ensures menu events work even when the window is hidden
@@ -206,67 +159,99 @@ pub fn run() {
     }
 
     builder
-        .setup(|app| {
-            setup_macos_window(app);
+        .setup(move |app| {
+            // In headless mode, hide/destroy the main window immediately and set
+            // macOS activation policy to Accessory (no dock icon).
+            if headless {
+                use tauri::Manager;
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.hide();
+                    // Destroy the window to free resources — it will be recreated
+                    // from the tray "Show" action if the user wants it.
+                    let _ = window.destroy();
+                }
+                #[cfg(target_os = "macos")]
+                {
+                    let _ = app.handle().set_activation_policy(tauri::ActivationPolicy::Accessory);
+                    eprintln!("[Setup] Headless: activation policy set to Accessory");
+                }
+            } else {
+                setup_macos_window(app);
+            }
 
-            // Set up system tray (all platforms)
+            // Set up system tray (all platforms, regardless of headless mode)
             if let Err(e) = tray::setup_tray(app) {
                 eprintln!("[Setup] Failed to set up tray: {}", e);
             }
 
-            // Initialize service connection in background
-            // The service will be spawned if not already running
+            // ---- Initialize recording subsystem in-process ----
             use tauri::Manager;
             let app_state = app.state::<AppState>();
-            let service_client = app_state.service_client.clone();
             let service_ready = app_state.service_ready.clone();
-
             let app_config = app_state.app_config.clone();
-            
+
+            // Initialize FFmpeg in a background task (non-fatal, may download on first run)
             tauri::async_runtime::spawn(async move {
-                // Use reconnect_or_spawn which handles all cases:
-                // - Service already running: connects directly
-                // - Service not running: spawns it and waits
-                match service_client.reconnect_or_spawn().await {
-                    Ok(()) => {
-                        service_ready.store(true, std::sync::atomic::Ordering::SeqCst);
-                        eprintln!("[Setup] Service connected and ready");
-                        
-                        // Sync local config to service
-                        let config = app_config.lock().await;
-                        
-                        eprintln!("[Setup] Syncing audio config: enabled={}, source={:?}, mic={:?}, aec={}",
-                            config.audio.enabled,
-                            config.audio.source_id,
-                            config.audio.microphone_id,
-                            config.audio.echo_cancellation
-                        );
-                        if let Err(e) = service_client.set_audio_config(
-                            config.audio.enabled,
-                            config.audio.source_id.clone(),
-                            config.audio.microphone_id.clone(),
-                            config.audio.echo_cancellation,
-                        ).await {
-                            eprintln!("[Setup] Failed to sync audio config: {}", e);
-                        }
-                        
-                        let model_path = config.transcription.model.model_path();
-                        eprintln!("[Setup] Syncing transcription config: enabled={}, model={:?}",
-                            config.transcription.enabled,
-                            model_path
-                        );
-                        if let Err(e) = service_client.set_transcription_config(
-                            config.transcription.enabled,
-                            Some(model_path.to_string_lossy().to_string()),
-                        ).await {
-                            eprintln!("[Setup] Failed to sync transcription config: {}", e);
-                        }
-                        
-                        eprintln!("[Setup] Config sync complete");
-                    }
-                    Err(e) => {
-                        eprintln!("[Setup] Failed to connect to service: {}", e);
-                    }
+                eprintln!("[Setup] Ensuring FFmpeg is available...");
+                let _ = encoder::ensure_ffmpeg_blocking();
+                eprintln!("[Setup] FFmpeg check complete");
+            });
+
+            // Initialize platform-specific capture backends (Linux)
+            #[cfg(target_os = "linux")]
+            {
+                capture::linux::init_ipc_server();
+                capture::linux::init_screencopy();
+                capture::linux::init_audio();
+                eprintln!("[Setup] Linux capture backends initialized");
+            }
+
+            // Initialize RecordingManager singleton
+            let _manager = state::get_recording_manager();
+            eprintln!("[Setup] RecordingManager initialized");
+
+            // Sync local config to the RecordingManager
+            {
+                let config_clone = app_config.clone();
+                let service_ready_clone = service_ready.clone();
+                tauri::async_runtime::spawn(async move {
+                    let config = config_clone.lock().await;
+
+                    // Sync audio config
+                    let manager = state::get_recording_manager();
+                    eprintln!("[Setup] Syncing audio config: enabled={}, source={:?}, mic={:?}, aec={}",
+                        config.audio.enabled,
+                        config.audio.source_id,
+                        config.audio.microphone_id,
+                        config.audio.echo_cancellation
+                    );
+                    let _ = manager.set_audio_config(omnirec_common::AudioConfig {
+                        enabled: config.audio.enabled,
+                        source_id: config.audio.source_id.clone(),
+                        microphone_id: config.audio.microphone_id.clone(),
+                        echo_cancellation: config.audio.echo_cancellation,
+                    }).await;
+
+                    // Sync transcription config
+                    let model_path = config.transcription.model.model_path();
+                    eprintln!("[Setup] Syncing transcription config: enabled={}, model={:?}",
+                        config.transcription.enabled, model_path
+                    );
+                    let _ = manager.set_transcription_config(omnirec_common::TranscriptionConfig {
+                        enabled: config.transcription.enabled,
+                        model_path: Some(model_path.to_string_lossy().to_string()),
+                    }).await;
+
+                    service_ready_clone.store(true, Ordering::SeqCst);
+                    eprintln!("[Setup] Config sync complete, recording subsystem ready");
+                });
+            }
+
+            // Start the IPC socket server for CLI communication
+            tauri::async_runtime::spawn(async {
+                eprintln!("[Setup] Starting IPC socket server...");
+                if let Err(e) = ipc::server::run_server().await {
+                    eprintln!("[Setup] IPC server error: {}", e);
                 }
             });
 
@@ -381,14 +366,29 @@ pub fn run() {
                 // clicking the dock icon should show the main window
                 #[cfg(target_os = "macos")]
                 tauri::RunEvent::Reopen { .. } => {
-                    #[cfg(target_os = "macos")]
-                    {
-                        use tauri::Manager;
-                        if let Some(window) = _app_handle.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        }
+                    use tauri::Manager;
+                    if let Some(window) = _app_handle.get_webview_window("main") {
+                        let _ = window.show();
+                        let _ = window.set_focus();
                     }
+                }
+                // On exit, signal shutdown to the IPC server and RecordingManager
+                tauri::RunEvent::Exit => {
+                    eprintln!("[Exit] Application exiting, shutting down subsystems...");
+                    request_shutdown();
+
+                    // Stop active recording if any
+                    let manager = state::get_recording_manager();
+                    manager.shutdown();
+
+                    // Clean up socket file
+                    let socket_path = omnirec_common::ipc::get_socket_path();
+                    if socket_path.exists() {
+                        let _ = std::fs::remove_file(&socket_path);
+                        eprintln!("[Exit] Removed socket file: {:?}", socket_path);
+                    }
+
+                    eprintln!("[Exit] Shutdown complete");
                 }
                 _ => {}
             }

@@ -1,6 +1,7 @@
-//! IPC client for communicating with omnirec-service.
+//! IPC client for communicating with the OmniRec Tauri app.
 //!
-//! This is a simplified version of the Tauri client, adapted for CLI use.
+//! The CLI connects to the Tauri app via IPC socket. If the app is not running,
+//! it spawns the app in headless mode (--headless) which runs tray-only.
 
 use omnirec_common::ipc::{Request, Response, MAX_MESSAGE_SIZE};
 use std::io::{Read, Write};
@@ -88,7 +89,7 @@ impl ServiceClient {
         Self {
             connection: Mutex::new(ConnectionState::Disconnected),
             #[cfg(unix)]
-            socket_path: get_socket_path(),
+            socket_path: omnirec_common::ipc::get_socket_path(),
         }
     }
 
@@ -337,96 +338,220 @@ impl ServiceClient {
         }
     }
 
-    /// Connect to the service, spawning it if necessary.
+    /// Connect to the service, spawning the Tauri app if necessary.
     pub async fn connect_or_spawn(&self) -> Result<(), ServiceError> {
         // First try to just connect
         if self.connect().await.is_ok() {
             return Ok(());
         }
 
-        // Connection failed, try to spawn the service
-        let service_path = Self::find_service_binary().map_err(|e| {
-            ServiceError::ConnectionFailed(format!("Cannot find service binary: {}", e))
+        // Connection failed, try to spawn the app
+        Self::spawn_app().map_err(|e| {
+            ServiceError::ConnectionFailed(format!("Failed to spawn app: {}", e))
         })?;
-
-        std::process::Command::new(&service_path)
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn()
-            .map_err(|e| {
-                ServiceError::ConnectionFailed(format!("Failed to spawn service: {}", e))
-            })?;
 
         // Wait for service to be ready
         self.wait_for_service(Duration::from_secs(10)).await
     }
 
-    /// Find the service binary path.
-    fn find_service_binary() -> Result<std::path::PathBuf, String> {
-        #[cfg(windows)]
-        const SERVICE_BINARY: &str = "omnirec-service.exe";
-        #[cfg(not(windows))]
-        const SERVICE_BINARY: &str = "omnirec-service";
+    /// Spawn the OmniRec Tauri app in headless mode.
+    fn spawn_app() -> Result<(), String> {
+        #[cfg(target_os = "macos")]
+        {
+            // On macOS, prefer using `open -a OmniRec --args --headless`
+            // This uses Launch Services and finds the app bundle correctly
+            let result = std::process::Command::new("open")
+                .args(["-a", "OmniRec", "--args", "--headless"])
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status();
 
-        // 1. Sibling binary (development or bundled)
-        if let Ok(exe_path) = std::env::current_exe() {
-            if let Some(dir) = exe_path.parent() {
-                let path = dir.join(SERVICE_BINARY);
-                if path.exists() {
-                    return Ok(path);
+            if let Ok(status) = result {
+                if status.success() {
+                    return Ok(());
                 }
             }
-        }
 
-        // 2. In PATH
-        if let Ok(path) = which::which(SERVICE_BINARY) {
-            return Ok(path);
-        }
-
-        // 3. Common installation paths
-        #[cfg(windows)]
-        let common_paths = [
-            r"C:\Program Files\OmniRec\omnirec-service.exe",
-            r"C:\Program Files (x86)\OmniRec\omnirec-service.exe",
-        ];
-        #[cfg(not(windows))]
-        let common_paths = ["/usr/bin/omnirec-service", "/usr/local/bin/omnirec-service"];
-
-        for path in &common_paths {
-            let path = std::path::PathBuf::from(path);
-            if path.exists() {
-                return Ok(path);
+            // Fall back to binary search if `open` fails
+            if let Some(app_path) = Self::find_app_binary() {
+                std::process::Command::new(&app_path)
+                    .arg("--headless")
+                    .stdin(std::process::Stdio::null())
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .spawn()
+                    .map_err(|e| format!("Failed to spawn app: {}", e))?;
+                return Ok(());
             }
+
+            Err("OmniRec app not found".to_string())
         }
 
-        Err(format!("{} binary not found", SERVICE_BINARY))
+        #[cfg(target_os = "linux")]
+        {
+            if let Some(app_path) = Self::find_app_binary() {
+                std::process::Command::new(&app_path)
+                    .arg("--headless")
+                    .stdin(std::process::Stdio::null())
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .spawn()
+                    .map_err(|e| format!("Failed to spawn app: {}", e))?;
+                return Ok(());
+            }
+            Err("omnirec binary not found".to_string())
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            if let Some(app_path) = Self::find_app_binary() {
+                std::process::Command::new(&app_path)
+                    .arg("--headless")
+                    .stdin(std::process::Stdio::null())
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .spawn()
+                    .map_err(|e| format!("Failed to spawn app: {}", e))?;
+                return Ok(());
+            }
+            Err("omnirec.exe not found".to_string())
+        }
+    }
+
+    /// Find the OmniRec app binary path.
+    fn find_app_binary() -> Option<std::path::PathBuf> {
+        #[cfg(target_os = "macos")]
+        {
+            // The Tauri app binary is named "omnirec" (same as CLI, but in different locations)
+            // 1. macOS .app bundle paths (inside the bundle, the binary is named "omnirec")
+            let bundle_paths = [
+                "/Applications/OmniRec.app/Contents/MacOS/omnirec",
+                "~/Applications/OmniRec.app/Contents/MacOS/omnirec",
+            ];
+            for path in &bundle_paths {
+                let path = shellexpand::tilde(path).into_owned();
+                let path = std::path::PathBuf::from(path);
+                if path.exists() {
+                    return Some(path);
+                }
+            }
+
+            // 2. Development build - look in src-tauri/target/
+            if let Ok(exe_path) = std::env::current_exe() {
+                if let Some(workspace_root) = exe_path.parent().and_then(|p| p.parent()) {
+                    // Check src-tauri/target/release/omnirec or src-tauri/target/debug/omnirec
+                    for target_dir in ["release", "debug"] {
+                        let path = workspace_root.join("src-tauri").join("target").join(target_dir).join("omnirec");
+                        if path.exists() {
+                            return Some(path);
+                        }
+                    }
+                }
+            }
+
+            // 3. In PATH (but exclude ourselves - the CLI binary)
+            if let Ok(path) = which::which("omnirec") {
+                // Make sure it's not the CLI binary
+                if let Ok(current_exe) = std::env::current_exe() {
+                    if path != current_exe {
+                        return Some(path);
+                    }
+                }
+            }
+
+            None
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            // The Tauri app binary is named "omnirec" (same as CLI, but in different locations)
+            // 1. Development build - look in src-tauri/target/
+            if let Ok(exe_path) = std::env::current_exe() {
+                if let Some(workspace_root) = exe_path.parent().and_then(|p| p.parent()) {
+                    for target_dir in ["release", "debug"] {
+                        let path = workspace_root.join("src-tauri").join("target").join(target_dir).join("omnirec");
+                        if path.exists() {
+                            return Some(path);
+                        }
+                    }
+                }
+            }
+
+            // 2. In PATH (but exclude ourselves - the CLI binary)
+            if let Ok(path) = which::which("omnirec") {
+                if let Ok(current_exe) = std::env::current_exe() {
+                    if path != current_exe {
+                        return Some(path);
+                    }
+                }
+            }
+
+            // 3. Common installation paths
+            let common_paths = ["/usr/bin/omnirec", "/usr/local/bin/omnirec", "/opt/omnirec/bin/omnirec"];
+            for path in &common_paths {
+                let path = std::path::PathBuf::from(path);
+                if path.exists() {
+                    // Make sure it's not the CLI binary
+                    if let Ok(current_exe) = std::env::current_exe() {
+                        if path != current_exe {
+                            return Some(path);
+                        }
+                    }
+                }
+            }
+
+            None
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            // The Tauri app binary is named "omnirec.exe" (same as CLI, but in different locations)
+            // 1. Development build - look in src-tauri/target/
+            if let Ok(exe_path) = std::env::current_exe() {
+                if let Some(workspace_root) = exe_path.parent().and_then(|p| p.parent()) {
+                    for target_dir in ["release", "debug"] {
+                        let path = workspace_root.join("src-tauri").join("target").join(target_dir).join("omnirec.exe");
+                        if path.exists() {
+                            return Some(path);
+                        }
+                    }
+                }
+            }
+
+            // 2. In PATH (but exclude ourselves - the CLI binary)
+            if let Ok(path) = which::which("omnirec") {
+                if let Ok(current_exe) = std::env::current_exe() {
+                    if path != current_exe {
+                        return Some(path);
+                    }
+                }
+            }
+
+            // 3. Common installation paths
+            let common_paths = [
+                r"C:\Program Files\OmniRec\omnirec.exe",
+                r"C:\Program Files (x86)\OmniRec\omnirec.exe",
+            ];
+            for path in &common_paths {
+                let path = std::path::PathBuf::from(path);
+                if path.exists() {
+                    // Make sure it's not the CLI binary
+                    if let Ok(current_exe) = std::env::current_exe() {
+                        if path != current_exe {
+                            return Some(path);
+                        }
+                    }
+                }
+            }
+
+            None
+        }
     }
 }
 
 impl Default for ServiceClient {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-/// Get the platform-specific socket path for the service.
-#[cfg(unix)]
-fn get_socket_path() -> std::path::PathBuf {
-    #[cfg(target_os = "linux")]
-    {
-        let runtime_dir = std::env::var("XDG_RUNTIME_DIR")
-            .unwrap_or_else(|_| format!("/run/user/{}", unsafe { libc::getuid() }));
-        std::path::PathBuf::from(runtime_dir)
-            .join("omnirec")
-            .join("service.sock")
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        let tmpdir = std::env::var("TMPDIR").unwrap_or_else(|_| "/tmp".to_string());
-        std::path::PathBuf::from(tmpdir)
-            .join("omnirec")
-            .join("service.sock")
     }
 }

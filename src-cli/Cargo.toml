@@ -34,6 +34,9 @@ directories = "5"
 # Find executables in PATH
 which = "6"
 
+# Shell expansion for tilde paths (macOS)
+shellexpand = "3"
+
 # Platform-specific dependencies for peer verification
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

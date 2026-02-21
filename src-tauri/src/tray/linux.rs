@@ -11,8 +11,41 @@ use tauri::{
     image::Image,
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
+    webview::WebviewUrl,
     Emitter, Manager,
 };
+
+/// Show or recreate the main window.
+///
+/// If the window exists, show and focus it. If it was destroyed (e.g., headless
+/// mode), recreate it with the same configuration as the Tauri config.
+fn show_main_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.set_focus();
+    } else {
+        // Window was destroyed (e.g., headless mode) — recreate it
+        eprintln!("[Tray] Main window not found, recreating...");
+        match tauri::WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+            .title("OmniRec")
+            .inner_size(375.0, 488.0)
+            .resizable(false)
+            .maximizable(false)
+            .decorations(false)
+            .transparent(true)
+            .shadow(false)
+            .build()
+        {
+            Ok(window) => {
+                eprintln!("[Tray] Main window recreated successfully");
+                let _ = window.set_focus();
+            }
+            Err(e) => {
+                eprintln!("[Tray] Failed to recreate main window: {}", e);
+            }
+        }
+    }
+}
 
 // =============================================================================
 // Portal Mode Detection
@@ -244,18 +277,12 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             }
             id if id == menu_ids::CONFIGURATION => {
                 eprintln!("[Tray] Configuration clicked - opening config window");
-                if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.show();
-                    let _ = window.set_focus();
-                }
+                show_main_window(app);
                 let _ = app.emit("tray-show-config", ());
             }
             id if id == menu_ids::ABOUT => {
                 eprintln!("[Tray] About clicked - opening about window");
-                if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.show();
-                    let _ = window.set_focus();
-                }
+                show_main_window(app);
                 let _ = app.emit("tray-show-about", ());
             }
             id if id == menu_ids::EXIT => {

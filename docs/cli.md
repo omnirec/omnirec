@@ -1,10 +1,30 @@
 # OmniRec Command Line Interface
 
-OmniRec includes a command-line interface (`omnirec`) for headless recording and automation. The CLI communicates with the OmniRec service to control screen recording without requiring the GUI.
+OmniRec includes a command-line interface (`omnirec`) for headless recording and automation. The CLI communicates with the OmniRec Tauri application via IPC socket to control screen recording without requiring the GUI.
 
 ## Installation
 
 The CLI is included with OmniRec installations. After installing OmniRec, the `omnirec` command should be available in your system PATH.
+
+## How It Works
+
+When you run a CLI command, it attempts to connect to a running OmniRec app via IPC socket. If the app is not running, the CLI automatically launches it in headless mode (tray-only, no main window) and waits for it to become ready.
+
+### Headless Mode
+
+The OmniRec Tauri app supports a `--headless` flag that starts the app without a main window, running only in the system tray. This is useful for:
+
+- **CLI automation**: The CLI uses this automatically when spawning the app
+- **Background recording**: Start the app for recording without the GUI
+- **Server-like operation**: Run OmniRec as a background service
+
+```bash
+# Start OmniRec in headless mode (macOS)
+open -a OmniRec --args --headless
+
+# Start OmniRec in headless mode (Linux/Windows)
+omnirec-app --headless
+```
 
 ## Quick Start
 
@@ -284,7 +304,7 @@ omnirec record portal
 | 0 | Success | Operation completed successfully |
 | 1 | General Error | Unspecified error |
 | 2 | Invalid Arguments | Invalid command-line arguments |
-| 3 | Service Connection Failed | Failed to connect to the OmniRec service |
+| 3 | App Connection Failed | Failed to connect to the OmniRec app |
 | 4 | Recording Failed to Start | Recording could not be started |
 | 5 | Recording Failed During Capture | Recording failed while in progress |
 | 6 | Transcoding Failed | Output format conversion failed (original MP4 preserved) |

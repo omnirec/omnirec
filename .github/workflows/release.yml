@@ -131,15 +131,11 @@ jobs:
         working-directory: src-common
         run: cargo clippy --all-targets --all-features -- -D warnings
 
-      - name: Rust lint (clippy) - service
-        working-directory: src-service
+      - name: Rust lint (clippy) - main app
+        working-directory: src-tauri
         # Note: --all-features omitted because 'cuda' feature requires NVIDIA CUDA Toolkit (Linux only)
         # Windows always uses CUDA-enabled prebuilt binaries regardless of features
         run: cargo clippy --all-targets -- -D warnings
-
-      - name: Rust lint (clippy) - main app
-        working-directory: src-tauri
-        run: cargo clippy --all-targets --all-features -- -D warnings
 
       - name: Rust lint (clippy) - CLI
         working-directory: src-cli
@@ -149,14 +145,10 @@ jobs:
         working-directory: src-common
         run: cargo test --all-features
 
-      - name: Rust tests - service
-        working-directory: src-service
-        # Note: --all-features omitted because 'cuda' feature requires NVIDIA CUDA Toolkit (Linux only)
-        run: cargo test
-
       - name: Rust tests - main app
         working-directory: src-tauri
-        run: cargo test --all-features
+        # Note: --all-features omitted because 'cuda' feature requires NVIDIA CUDA Toolkit (Linux only)
+        run: cargo test
 
       - name: Rust tests - CLI
         working-directory: src-cli
@@ -234,20 +226,6 @@ jobs:
         with:
           workspaces: . -> target
 
-      - name: Build service binary (Linux)
-        if: matrix.platform == 'ubuntu-22.04'
-        run: cargo build --release -p omnirec-service
-
-      - name: Build service binary (macOS)
-        if: matrix.platform == 'macos-latest'
-        run: |
-          cargo build --release -p omnirec-service --target aarch64-apple-darwin
-          cargo build --release -p omnirec-service --target x86_64-apple-darwin
-
-      - name: Build service binary (Windows)
-        if: matrix.platform == 'windows-latest'
-        run: cargo build --release -p omnirec-service
-
       - name: Build CLI binary (Linux)
         if: matrix.platform == 'ubuntu-22.04'
         run: cargo build --release -p omnirec-cli
@@ -316,13 +294,10 @@ jobs:
           mkdir -p "$ARCHIVE_NAME/icons"
 
           # Copy GUI app binary
-          cp target/release/omnirec-app "$ARCHIVE_NAME/"
+          cp src-tauri/target/release/omnirec "$ARCHIVE_NAME/"
 
           # Copy CLI binary
           cp target/release/omnirec "$ARCHIVE_NAME/"
-
-          # Copy service binary
-          cp target/release/omnirec-service "$ARCHIVE_NAME/"
 
           # Copy picker binary (built with CMake)
           cp src-picker/build/omnirec-picker "$ARCHIVE_NAME/"
