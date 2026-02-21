@@ -124,19 +124,19 @@ lint-rust: lint-rust-common lint-rust-tauri lint-rust-cli
 # Rust linting - common library
 lint-rust-common:
 	@echo "==> Linting src-common..."
-	cd src-common && cargo clippy --all-targets --all-features -- -D warnings
+	cargo clippy -p omnirec-common --all-targets --all-features -- -D warnings
 
 # Rust linting - main app
 lint-rust-tauri:
 	@echo "==> Linting src-tauri..."
 	# Note: --all-features omitted because 'cuda' feature requires NVIDIA CUDA Toolkit (Linux only)
 	# Windows always uses CUDA-enabled prebuilt binaries regardless of features
-	cd src-tauri && cargo clippy --all-targets -- -D warnings
+	cargo clippy -p omnirec --all-targets -- -D warnings
 
 # Rust linting - CLI
 lint-rust-cli:
 	@echo "==> Linting src-cli..."
-	cd src-cli && cargo clippy --all-targets --all-features -- -D warnings
+	cargo clippy -p omnirec-cli --all-targets --all-features -- -D warnings
 
 # TypeScript linting
 lint-ts:

@@ -63,31 +63,25 @@ jobs:
         run: pnpm exec tsc --noEmit
 
       - name: Rust lint (clippy) - common library
-        working-directory: src-common
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy -p omnirec-common --all-targets --all-features -- -D warnings
 
       - name: Rust lint (clippy) - main app
-        working-directory: src-tauri
         # Note: --all-features omitted because 'cuda' feature requires NVIDIA CUDA Toolkit (Linux only)
         # Windows always uses CUDA-enabled prebuilt binaries regardless of features
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy -p omnirec --all-targets -- -D warnings
 
       - name: Rust lint (clippy) - CLI
-        working-directory: src-cli
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy -p omnirec-cli --all-targets --all-features -- -D warnings
 
       - name: Rust tests - common library
-        working-directory: src-common
-        run: cargo test --all-features
+        run: cargo test -p omnirec-common --all-features
 
       - name: Rust tests - main app
-        working-directory: src-tauri
         # Note: --all-features omitted because 'cuda' feature requires NVIDIA CUDA Toolkit (Linux only)
-        run: cargo test
+        run: cargo test -p omnirec
 
       - name: Rust tests - CLI
-        working-directory: src-cli
-        run: cargo test --all-features
+        run: cargo test -p omnirec-cli --all-features
 
       - name: Build picker (C++)
         if: matrix.platform == 'ubuntu-22.04'
