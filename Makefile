@@ -5,7 +5,7 @@
         frontend client client-debug client-release cli cli-debug cli-release picker \
         package stage-cli \
         run-cli run-cli-release \
-        lint lint-rust lint-ts test \
+        lint lint-rust lint-rust-common lint-rust-tauri lint-rust-cli lint-ts test \
         install-deps check-binaries help
 
 # Optional args to pass through to pnpm tauri build (e.g. ARGS="--target aarch64-apple-darwin")
@@ -75,15 +75,15 @@ stage-cli:
 	@echo "==> Staging CLI sidecar binary into src-tauri/binaries/..."
 	@mkdir -p src-tauri/binaries
 	@if echo "$(ARGS)" | grep -q "aarch64-apple-darwin"; then \
-		cp target/aarch64-apple-darwin/release/omnirec src-tauri/binaries/omnirec-aarch64-apple-darwin; \
+		cp target/aarch64-apple-darwin/release/omnirec src-tauri/binaries/omnirec-cli-aarch64-apple-darwin; \
 	elif echo "$(ARGS)" | grep -q "x86_64-apple-darwin"; then \
-		cp target/x86_64-apple-darwin/release/omnirec src-tauri/binaries/omnirec-x86_64-apple-darwin; \
+		cp target/x86_64-apple-darwin/release/omnirec src-tauri/binaries/omnirec-cli-x86_64-apple-darwin; \
 	elif [ "$$(uname -s)" = "Linux" ]; then \
-		cp target/release/omnirec src-tauri/binaries/omnirec-x86_64-unknown-linux-gnu; \
+		cp target/release/omnirec src-tauri/binaries/omnirec-cli-x86_64-unknown-linux-gnu; \
 	elif [ "$$(uname -s)" = "Darwin" ]; then \
-		cp target/release/omnirec src-tauri/binaries/omnirec-$$(rustc -vV | grep host | cut -d' ' -f2); \
+		cp target/release/omnirec src-tauri/binaries/omnirec-cli-$$(rustc -vV | grep host | cut -d' ' -f2); \
 	else \
-		cp target/release/omnirec.exe "src-tauri/binaries/omnirec-$$(rustc -vV | grep host | cut -d' ' -f2).exe"; \
+		cp target/release/omnirec.exe "src-tauri/binaries/omnirec-cli-$$(rustc -vV | grep host | cut -d' ' -f2).exe"; \
 	fi
 
 # Build the complete installer package (CLI sidecar + Tauri app).
@@ -116,14 +116,25 @@ picker:
 # =============================================================================
 
 # Run all linters
-lint: lint-rust lint-ts
+lint: lint-rust-common lint-rust-tauri lint-rust-cli lint-ts
 
 # Rust linting (all crates)
-lint-rust:
+lint-rust: lint-rust-common lint-rust-tauri lint-rust-cli
+
+# Rust linting - common library
+lint-rust-common:
 	@echo "==> Linting src-common..."
 	cd src-common && cargo clippy --all-targets --all-features -- -D warnings
+
+# Rust linting - main app
+lint-rust-tauri:
 	@echo "==> Linting src-tauri..."
-	cd src-tauri && cargo clippy --all-targets --all-features -- -D warnings
+	# Note: --all-features omitted because 'cuda' feature requires NVIDIA CUDA Toolkit (Linux only)
+	# Windows always uses CUDA-enabled prebuilt binaries regardless of features
+	cd src-tauri && cargo clippy --all-targets -- -D warnings
+
+# Rust linting - CLI
+lint-rust-cli:
 	@echo "==> Linting src-cli..."
 	cd src-cli && cargo clippy --all-targets --all-features -- -D warnings
 
@@ -236,6 +247,9 @@ help:
 	@echo "Quality Targets:"
 	@echo "  lint             Run all linters"
 	@echo "  lint-rust        Run Rust clippy on all crates"
+	@echo "  lint-rust-common Run Rust clippy on src-common"
+	@echo "  lint-rust-tauri  Run Rust clippy on src-tauri"
+	@echo "  lint-rust-cli    Run Rust clippy on src-cli"
 	@echo "  lint-ts          Run TypeScript type check"
 	@echo "  test             Run all tests"
 	@echo "  test-rust        Run Rust tests on all crates"
