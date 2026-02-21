@@ -3,7 +3,7 @@
 
 .PHONY: all clean build build-debug build-release build-cuda \
         frontend client client-debug client-release cli cli-debug cli-release picker \
-        package stage-cli \
+        package stage-cli stub-sidecar \
         run-cli run-cli-release \
         lint lint-rust lint-rust-common lint-rust-tauri lint-rust-cli lint-ts test \
         install-deps check-binaries help
@@ -126,8 +126,20 @@ lint-rust-common:
 	@echo "==> Linting src-common..."
 	cargo clippy -p omnirec-common --all-targets --all-features -- -D warnings
 
+# Create an empty stub sidecar binary for the current host triple so tauri-build
+# validation passes during lint/clippy without requiring a real pre-built CLI binary.
+# Only creates the stub if no binary (real or stub) already exists for this triple.
+stub-sidecar:
+	@mkdir -p src-tauri/binaries
+	@TRIPLE=$$(rustc -vV | grep '^host:' | cut -d' ' -f2); \
+	STUB=src-tauri/binaries/omnirec-cli-$$TRIPLE; \
+	if [ ! -f "$$STUB" ]; then \
+		echo "==> Creating sidecar stub: $$STUB"; \
+		touch "$$STUB"; \
+	fi
+
 # Rust linting - main app
-lint-rust-tauri:
+lint-rust-tauri: stub-sidecar
 	@echo "==> Linting src-tauri..."
 	# Note: --all-features omitted because 'cuda' feature requires NVIDIA CUDA Toolkit (Linux only)
 	# Windows always uses CUDA-enabled prebuilt binaries regardless of features
@@ -243,6 +255,7 @@ help:
 	@echo "                   make package ARGS=\"--target aarch64-apple-darwin\""
 	@echo "  stage-cli        Build CLI binary and stage into src-tauri/binaries/"
 	@echo "                   (run this before pnpm tauri build when using tauri-action)"
+	@echo "  stub-sidecar     Create empty sidecar stub for host triple (used by lint)"
 	@echo ""
 	@echo "Quality Targets:"
 	@echo "  lint             Run all linters"
