@@ -277,14 +277,10 @@ pub fn handle_menu_event(app: &tauri::AppHandle, event: &tauri::menu::MenuEvent)
         let _ = app.emit("tray-show-transcription", ());
     } else if id == menu_ids::CONFIGURATION {
         eprintln!("[Tray] Configuration clicked - opening config window");
-        show_main_window(app);
-        use tauri::Emitter;
-        let _ = app.emit("tray-show-config", ());
+        super::open_config_window(app);
     } else if id == menu_ids::ABOUT {
         eprintln!("[Tray] About clicked - opening about window");
-        show_main_window(app);
-        use tauri::Emitter;
-        let _ = app.emit("tray-show-about", ());
+        super::open_about_window(app);
     } else if id == menu_ids::EXIT {
         eprintln!("[Tray] Exit clicked, calling app.exit(0)...");
         app.exit(0);

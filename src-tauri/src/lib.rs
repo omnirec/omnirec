@@ -358,9 +358,13 @@ pub fn run() {
             match event {
                 // On macOS and Windows, prevent the app from exiting when all windows are closed.
                 // The app continues running in the system tray/menu bar.
+                // Only prevent exit when `code` is None (triggered by window close), not when
+                // app.exit(0) is called explicitly (code is Some), so tray Exit works correctly.
                 #[cfg(any(target_os = "macos", target_os = "windows"))]
-                tauri::RunEvent::ExitRequested { api, .. } => {
-                    api.prevent_exit();
+                tauri::RunEvent::ExitRequested { api, code, .. } => {
+                    if code.is_none() {
+                        api.prevent_exit();
+                    }
                 }
                 // On macOS, when all windows are closed but app is still running,
                 // clicking the dock icon should show the main window

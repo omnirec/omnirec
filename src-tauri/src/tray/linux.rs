@@ -277,13 +277,11 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             }
             id if id == menu_ids::CONFIGURATION => {
                 eprintln!("[Tray] Configuration clicked - opening config window");
-                show_main_window(app);
-                let _ = app.emit("tray-show-config", ());
+                super::open_config_window(app);
             }
             id if id == menu_ids::ABOUT => {
                 eprintln!("[Tray] About clicked - opening about window");
-                show_main_window(app);
-                let _ = app.emit("tray-show-about", ());
+                super::open_about_window(app);
             }
             id if id == menu_ids::EXIT => {
                 eprintln!("[Tray] Exit clicked");

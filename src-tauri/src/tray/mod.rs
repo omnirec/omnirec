@@ -78,6 +78,66 @@ use std::sync::Arc;
 
 use tauri::tray::TrayIcon;
 
+// =============================================================================
+// Shared Window Helpers
+// =============================================================================
+
+/// Open the config window directly from Rust, without relying on a frontend
+/// event listener that may not fire when the main window is hidden.
+///
+/// If the window already exists it is shown and focused; otherwise it is
+/// created with the same properties used by the TypeScript `openConfigWindow`.
+pub fn open_config_window(app: &tauri::AppHandle) {
+    use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+
+    if let Some(w) = app.get_webview_window("config") {
+        let _ = w.show();
+        let _ = w.set_focus();
+        return;
+    }
+
+    match WebviewWindowBuilder::new(app, "config", WebviewUrl::App("src/config.html".into()))
+        .title("OmniRec Settings")
+        .inner_size(450.0, 550.0)
+        .resizable(false)
+        .maximizable(false)
+        .decorations(false)
+        .shadow(true)
+        .build()
+    {
+        Ok(_) => eprintln!("[Tray] Config window created"),
+        Err(e) => eprintln!("[Tray] Failed to create config window: {:?}", e),
+    }
+}
+
+/// Open the about window directly from Rust, without relying on a frontend
+/// event listener that may not fire when the main window is hidden.
+///
+/// If the window already exists it is shown and focused; otherwise it is
+/// created with the same properties used by the TypeScript `openAboutWindow`.
+pub fn open_about_window(app: &tauri::AppHandle) {
+    use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+
+    if let Some(w) = app.get_webview_window("about") {
+        let _ = w.show();
+        let _ = w.set_focus();
+        return;
+    }
+
+    match WebviewWindowBuilder::new(app, "about", WebviewUrl::App("src/about.html".into()))
+        .title("About OmniRec")
+        .inner_size(350.0, 400.0)
+        .resizable(false)
+        .maximizable(false)
+        .decorations(false)
+        .shadow(true)
+        .build()
+    {
+        Ok(_) => eprintln!("[Tray] About window created"),
+        Err(e) => eprintln!("[Tray] Failed to create about window: {:?}", e),
+    }
+}
+
 /// System tray state.
 ///
 /// This struct holds the tray icon handle and recording state.
