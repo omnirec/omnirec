@@ -50,7 +50,8 @@
       "icons/128x128.png": "icons/128x128.png"
     },
     "macOS": {
-      "entitlements": "Entitlements.plist"
+      "entitlements": "Entitlements.plist",
+      "signingIdentity": "Developer ID Application: Keath Milligan (WMYVSJCH96)"
     },
     "linux": {
       "deb": {

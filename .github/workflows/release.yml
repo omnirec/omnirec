@@ -219,18 +219,179 @@ jobs:
       - name: Build and stage CLI sidecar binary
         run: make stage-cli ARGS="${{ matrix.args }}"
 
+      # ── macOS signing setup ────────────────────────────────────────────────
+      - name: Verify Apple signing secrets
+        if: matrix.platform == 'macos-latest'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_CONTENT }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+        run: |
+          MISSING=()
+          [ -z "$APPLE_CERTIFICATE" ]          && MISSING+=("APPLE_CERTIFICATE")
+          [ -z "$APPLE_CERTIFICATE_PASSWORD" ] && MISSING+=("APPLE_CERTIFICATE_PASSWORD")
+          [ -z "$APPLE_SIGNING_IDENTITY" ]     && MISSING+=("APPLE_SIGNING_IDENTITY")
+          [ -z "$APPLE_API_ISSUER" ]           && MISSING+=("APPLE_API_ISSUER")
+          [ -z "$APPLE_API_KEY_CONTENT" ]      && MISSING+=("APPLE_API_KEY_CONTENT")
+          [ -z "$APPLE_API_KEY_ID" ]           && MISSING+=("APPLE_API_KEY_ID")
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "ERROR: Missing required Apple signing secrets: ${MISSING[*]}"
+            exit 1
+          fi
+          echo "All Apple signing secrets present."
+
+      - name: Write Apple API key file
+        if: matrix.platform == 'macos-latest'
+        run: |
+          KEY_PATH="$RUNNER_TEMP/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8"
+          echo "${{ secrets.APPLE_API_KEY_CONTENT }}" > "$KEY_PATH"
+          echo "APPLE_API_KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
+          echo "APPLE_API_KEY=${{ secrets.APPLE_API_KEY_ID }}" >> "$GITHUB_ENV"
+
+      - name: Import Apple certificate to keychain
+        if: matrix.platform == 'macos-latest'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 20)"
+          CERT_PATH="$RUNNER_TEMP/certificate.p12"
+
+          # Decode base64 certificate
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$CERT_PATH"
+
+          # Create and configure temporary keychain
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # Import certificate
+          security import "$CERT_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+
+          # Allow codesign to access the key without prompts
+          security set-key-partition-list \
+            -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # Add to search list
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+
+      - name: Pre-sign macOS sidecar binary
+        if: matrix.platform == 'macos-latest'
+        run: |
+          # Determine the target triple from matrix args
+          TARGET=$(echo "${{ matrix.args }}" | sed 's/--target //')
+          SIDECAR="src-tauri/binaries/omnirec-cli-${TARGET}"
+          echo "Pre-signing sidecar: $SIDECAR"
+          codesign --force \
+            --sign "${{ secrets.APPLE_SIGNING_IDENTITY }}" \
+            --timestamp \
+            --options runtime \
+            "$SIDECAR"
+
+      - name: Pre-sign libwhisper.dylib
+        if: matrix.platform == 'macos-latest'
+        run: |
+          DYLIB="target/release/libwhisper.dylib"
+          echo "Pre-signing $DYLIB"
+          codesign --force \
+            --sign "${{ secrets.APPLE_SIGNING_IDENTITY }}" \
+            --timestamp \
+            "$DYLIB"
+          # Prevent build.rs from overwriting the signed copy during tauri-action build
+          chmod 444 "$DYLIB"
+
+      # ── Windows signing setup ──────────────────────────────────────────────
+      - name: Verify Azure signing secrets
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_SIGNING_ENDPOINT: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
+          AZURE_SIGNING_ACCOUNT: ${{ secrets.AZURE_SIGNING_ACCOUNT }}
+          AZURE_CERT_PROFILE: ${{ secrets.AZURE_CERT_PROFILE }}
+        run: |
+          $missing = @()
+          if (-not $env:AZURE_TENANT_ID)        { $missing += "AZURE_TENANT_ID" }
+          if (-not $env:AZURE_CLIENT_ID)        { $missing += "AZURE_CLIENT_ID" }
+          if (-not $env:AZURE_CLIENT_SECRET)    { $missing += "AZURE_CLIENT_SECRET" }
+          if (-not $env:AZURE_SIGNING_ENDPOINT) { $missing += "AZURE_SIGNING_ENDPOINT" }
+          if (-not $env:AZURE_SIGNING_ACCOUNT)  { $missing += "AZURE_SIGNING_ACCOUNT" }
+          if (-not $env:AZURE_CERT_PROFILE)     { $missing += "AZURE_CERT_PROFILE" }
+          if ($missing.Count -gt 0) {
+            Write-Error "Missing required Azure signing secrets: $($missing -join ', ')"
+            exit 1
+          }
+          Write-Output "All Azure signing secrets present."
+
+      - name: Install trusted-signing-cli
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          $version = "0.8.0"
+          $url = "https://github.com/Levminer/trusted-signing-cli/releases/download/$version/trusted-signing-cli.exe"
+          $dest = "$env:RUNNER_TEMP\trusted-signing-cli.exe"
+          Invoke-WebRequest -Uri $url -OutFile $dest
+          "$env:RUNNER_TEMP" | Out-File -FilePath $env:GITHUB_PATH -Append
+          Write-Output "Installed trusted-signing-cli v$version to $dest"
+
+      - name: Pre-sign Windows sidecar binary
+        if: matrix.platform == 'windows-latest'
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+        run: >-
+          trusted-signing-cli
+          -e ${{ secrets.AZURE_SIGNING_ENDPOINT }}
+          -a ${{ secrets.AZURE_SIGNING_ACCOUNT }}
+          -c ${{ secrets.AZURE_CERT_PROFILE }}
+          -d OmniRec
+          src-tauri/binaries/omnirec-cli-x86_64-pc-windows-msvc.exe
+
+      - name: Write Tauri signing config
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          $config = @{
+            bundle = @{
+              windows = @{
+                signCommand = "trusted-signing-cli -e ${{ secrets.AZURE_SIGNING_ENDPOINT }} -a ${{ secrets.AZURE_SIGNING_ACCOUNT }} -c ${{ secrets.AZURE_CERT_PROFILE }} -d OmniRec %1"
+              }
+            }
+          } | ConvertTo-Json -Depth 5
+          Set-Content -Path "src-tauri/tauri.signing.conf.json" -Value $config
+
+      # ── Build and release ──────────────────────────────────────────────────
       - name: Build Tauri package and create release
         if: github.event_name == 'push'
         uses: tauri-apps/tauri-action@v0.6.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # macOS signing
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ env.APPLE_API_KEY }}
+          APPLE_API_KEY_PATH: ${{ env.APPLE_API_KEY_PATH }}
+          # Windows signing
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
         with:
           tagName: v__VERSION__
           releaseName: "OmniRec v__VERSION__"
           releaseBody: "See the assets to download this version and install."
           releaseDraft: true
           prerelease: false
-          args: ${{ matrix.args }}
+          args: ${{ matrix.platform == 'macos-latest' && format('{0} --config src-tauri/tauri.macos.conf.json', matrix.args) || '--config src-tauri/tauri.signing.conf.json' }}
 
       - name: Build Tauri package (local/manual - no release)
         if: github.event_name == 'workflow_dispatch'
