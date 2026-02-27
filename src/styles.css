@@ -140,14 +140,14 @@ body {
   outline: none;
 }
 
-/* App container with gradient and rounded corners */
+/* App container — corner rounding and border provided by OS (DWM on Windows 11) */
 .app-container {
   height: 100%;
-  border-radius: 10px;
+  border-radius: 0;
   overflow: hidden;
   background: linear-gradient(145deg, var(--bg-gradient-start) 0%, var(--bg-gradient-mid) 50%, var(--bg-gradient-end) 100%);
-  /* macOS-style window border */
-  border: 0.5px solid rgba(128, 128, 128, 0.4);
+  border: none;
+  box-shadow: none;
   box-sizing: border-box;
 }
 
@@ -845,8 +845,8 @@ section {
 
 .window-item__thumbnail {
   flex-shrink: 0;
-  width: 160px;
-  height: 90px;
+  width: 136px;
+  height: 77px;
   border-radius: 6px;
   overflow: hidden;
   background: var(--bg-surface-elevated);
@@ -970,8 +970,8 @@ section {
 
 .display-item__thumbnail {
   flex-shrink: 0;
-  width: 160px;
-  height: 90px;
+  width: 136px;
+  height: 77px;
   border-radius: 6px;
   overflow: hidden;
   background: var(--bg-surface-elevated);

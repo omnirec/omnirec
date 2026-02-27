@@ -35,7 +35,7 @@
 
       <!-- Main capture UI (hidden when permission is not granted) -->
       <div id="capture-ui">
-      <section class="mode-selection">
+      <section class="mode-selection" data-tauri-drag-region>
         <nav class="mode-toggle" role="tablist">
           <button id="mode-window-btn" type="button" class="mode-btn active" role="tab" aria-selected="true">Window</button>
           <button id="mode-region-btn" type="button" class="mode-btn" role="tab" aria-selected="false">Region</button>
@@ -56,8 +56,8 @@
         </nav>
       </section>
 
-      <section id="window-selection" class="window-selection">
-        <div class="section-header">
+      <section id="window-selection" class="window-selection" data-tauri-drag-region>
+        <div class="section-header" data-tauri-drag-region>
           <h2>Select Window</h2>
         </div>
         <div id="window-list" class="window-list">
@@ -65,19 +65,19 @@
         </div>
       </section>
 
-      <section id="region-selection" class="region-selection hidden">
-        <div class="section-header">
+      <section id="region-selection" class="region-selection hidden" data-tauri-drag-region>
+        <div class="section-header" data-tauri-drag-region>
           <h2>Select Region</h2>
         </div>
-        <div class="region-info">
+        <div class="region-info" data-tauri-drag-region>
           <div id="region-display" class="region-display">
             <button id="select-region-btn" type="button">Select Region</button>
           </div>
         </div>
       </section>
 
-      <section id="display-selection" class="display-selection hidden">
-        <div class="section-header">
+      <section id="display-selection" class="display-selection hidden" data-tauri-drag-region>
+        <div class="section-header" data-tauri-drag-region>
           <h2>Select Display</h2>
         </div>
         <div id="display-list" class="display-list">
@@ -85,7 +85,7 @@
         </div>
       </section>
 
-      <section class="controls">
+      <section class="controls" data-tauri-drag-region>
         <div class="record-controls">
           <button id="record-btn" type="button" disabled>Record</button>
           <span id="timer" class="timer">00:00</span>
@@ -96,7 +96,7 @@
         </div>
       </section>
 
-      <section id="result" class="result hidden">
+      <section id="result" class="result hidden" data-tauri-drag-region>
         <h3>Recording Saved</h3>
         <p id="result-path"></p>
         <button id="open-folder-btn" type="button">Open Folder</button>

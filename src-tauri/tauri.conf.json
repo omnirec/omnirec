@@ -16,13 +16,13 @@
       {
         "label": "main",
         "title": "OmniRec",
-        "width": 375,
-        "height": 488,
+        "width": 469,
+        "height": 610,
         "resizable": false,
         "maximizable": false,
         "decorations": false,
-        "transparent": true,
-        "shadow": false,
+        "transparent": false,
+        "shadow": true,
         "acceptFirstMouse": true
       }
     ],

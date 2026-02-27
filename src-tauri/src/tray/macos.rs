@@ -237,12 +237,12 @@ fn show_main_window(app: &tauri::AppHandle) {
 
         match tauri::WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
             .title("OmniRec")
-            .inner_size(375.0, 488.0)
+            .inner_size(469.0, 610.0)
             .resizable(false)
             .maximizable(false)
             .decorations(false)
-            .transparent(true)
-            .shadow(false)
+            .transparent(false)
+            .shadow(true)
             .accept_first_mouse(true)
             .build()
         {
