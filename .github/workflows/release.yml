@@ -94,6 +94,19 @@ jobs:
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      # Cache the whisper.cpp zip by version so it is never re-downloaded across
+      # runs. The zip lives inside Cargo's OUT_DIR (which varies by hash), so we
+      # pull it out to a stable location and point build.rs at it via
+      # WHISPER_CACHE_DIR. See build.rs setup_whisper().
+      - name: Cache whisper.cpp binary
+        if: matrix.platform == 'macos-latest'
+        uses: actions/cache@v4
+        with:
+          path: ~/.whisper-cache
+          key: whisper-v1.8.2-${{ matrix.target }}
 
       - name: Build and stage CLI sidecar binary
         run: make stage-cli ARGS="${{ matrix.args }}"
@@ -102,13 +115,15 @@ jobs:
         if: matrix.platform != 'ubuntu-22.04'
         run: make stage-ffmpeg ARGS="${{ matrix.args }}"
 
-      # macOS: run the Tauri build script ahead of time to download libwhisper.dylib
-      # into src-tauri/lib/ so it exists when the pre-sign step runs. Without this
-      # the dylib doesn't exist yet, the pre-sign step skips it, and the Tauri build
-      # then places an unsigned copy into the bundle causing notarization to fail.
+      # macOS: build the Tauri crate (release profile, correct cross-compile target)
+      # to trigger build.rs, which downloads libwhisper.dylib into src-tauri/lib/.
+      # Must use --release so the OUT_DIR matches what the subsequent tauri-action
+      # build uses — avoiding a second download within the same job.
       - name: Trigger build script to download libwhisper.dylib
         if: matrix.platform == 'macos-latest'
-        run: cargo build -p omnirec --target ${{ matrix.target }}
+        env:
+          WHISPER_CACHE_DIR: ~/.whisper-cache
+        run: cargo build -p omnirec --release --target ${{ matrix.target }}
 
       # ── macOS signing setup ────────────────────────────────────────────────
       - name: Verify Apple signing secrets

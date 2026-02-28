@@ -90,9 +90,16 @@ fn setup_whisper() {
     };
     let primary_lib = lib_names[0];
 
-    // Cache directory for downloaded files
-    let cache_dir = out_dir.join("whisper-cache");
+    // Cache directory for downloaded zip files.
+    // If WHISPER_CACHE_DIR is set (e.g. by CI to a stable path preserved across
+    // runs by actions/cache), use it so the zip survives between Cargo profiles
+    // and between runs. Otherwise fall back to OUT_DIR/whisper-cache.
+    let cache_dir = match env::var("WHISPER_CACHE_DIR") {
+        Ok(dir) => PathBuf::from(dir),
+        Err(_) => out_dir.join("whisper-cache"),
+    };
     fs::create_dir_all(&cache_dir).expect("Failed to create cache directory");
+    println!("cargo:rerun-if-env-changed=WHISPER_CACHE_DIR");
 
     let zip_path = cache_dir.join(format!("whisper-{}-{}.zip", WHISPER_VERSION, target_arch));
     let lib_output_dir = out_dir.join("whisper-lib");
