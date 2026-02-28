@@ -147,11 +147,19 @@ fn setup_whisper() {
         let lib_dir = manifest_dir.join("lib");
         fs::create_dir_all(&lib_dir).expect("Failed to create src-tauri/lib directory");
         let dest = lib_dir.join(primary_lib);
-        // Only copy if the source actually exists (it may not in stub/offline scenarios)
-        if primary_lib_path.exists() {
+        // Only copy if the source exists and the destination does not already
+        // exist. In CI the pre-sign step signs the dylib in place and sets it
+        // read-only (chmod 444) to prevent this copy from overwriting the signed
+        // version. If dest already exists, assume it is the signed copy and skip.
+        if primary_lib_path.exists() && !dest.exists() {
             fs::copy(&primary_lib_path, &dest)
                 .expect("Failed to copy libwhisper.dylib to src-tauri/lib/");
             println!("cargo:warning=Copied {} to {}", primary_lib, dest.display());
+        } else if dest.exists() {
+            println!(
+                "cargo:warning={} already exists in src-tauri/lib/, skipping copy (pre-signed)",
+                primary_lib
+            );
         }
         println!("cargo:rerun-if-changed=lib/{}", primary_lib);
     }
