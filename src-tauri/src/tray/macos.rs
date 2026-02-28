@@ -214,16 +214,19 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 #[allow(deprecated)] // cocoa crate is deprecated in favor of objc2-app-kit, but still works
 fn show_main_window(app: &tauri::AppHandle) {
     use cocoa::appkit::{NSApp, NSApplication};
+    use cocoa::base::YES;
     use tauri::WebviewUrl;
 
     // Set activation policy to Regular so app appears in Dock and Cmd+Tab
     let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
     eprintln!("[Tray] Set activation policy to Regular");
 
-    // Activate the app - this is crucial for bringing the app to the foreground
+    // Activate the app - this is crucial for bringing the app to the foreground.
+    // Use YES (cocoa::base::BOOL) rather than `true` — BOOL is i8 on x86_64 and
+    // bool on aarch64, so the literal `true` only compiles for aarch64.
     unsafe {
         let ns_app = NSApp();
-        ns_app.activateIgnoringOtherApps_(true);
+        ns_app.activateIgnoringOtherApps_(YES);
     }
 
     if let Some(window) = app.get_webview_window("main") {
