@@ -29,82 +29,10 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  test-and-lint:
-    strategy:
-      fail-fast: true
-      matrix:
-        # TODO: Re-enable Linux support in a future version
-        # platform: [ubuntu-22.04, macos-latest, windows-latest]
-        platform: [macos-latest, windows-latest]
-
-    runs-on: ${{ matrix.platform }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install Linux dependencies
-        if: matrix.platform == 'ubuntu-22.04'
-        run: |
-          # Add PipeWire PPA for newer version (Ubuntu 22.04 ships 0.3.48, we need 0.3.65+)
-          sudo add-apt-repository -y ppa:pipewire-debian/pipewire-upstream
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libappindicator3-dev \
-            librsvg2-dev \
-            patchelf \
-            libpipewire-0.3-dev \
-            libspa-0.2-dev \
-            libclang-dev \
-            qt6-base-dev \
-            cmake
-
-      - name: Install make (Windows)
-        if: matrix.platform == 'windows-latest'
-        run: choco install make -y
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: lts/*
-
-      - name: Install pnpm
-        run: npm install -g pnpm
-
-      - name: Install frontend dependencies
-        run: pnpm install
-
-      - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-
-      - name: TypeScript type check
-        run: pnpm exec tsc --noEmit
-
-      - name: Rust lint - src-common
-        run: cargo clippy -p omnirec-common --all-targets --all-features -- -D warnings
-
-      - name: Rust lint - src-cli
-        run: cargo clippy -p omnirec-cli --all-targets --all-features -- -D warnings
-
-      - name: Rust lint - src-tauri
-        run: make lint-rust-tauri
-
-      - name: Rust tests
-        run: cargo test --workspace
-
-      - name: Build picker (C++)
-        if: matrix.platform == 'ubuntu-22.04'
-        run: |
-          cmake -B src-picker/build -S src-picker -DCMAKE_BUILD_TYPE=Release
-          cmake --build src-picker/build
+  # test-and-lint: disabled while debugging macOS notarization
 
   build-and-release:
-    needs: [test-and-lint]
+    # needs: [test-and-lint]  # disabled while debugging macOS notarization
     permissions:
       contents: write
     strategy:
@@ -114,15 +42,17 @@ jobs:
           - platform: macos-latest
             target: aarch64-apple-darwin
             args: --target aarch64-apple-darwin
-          - platform: macos-latest
-            target: x86_64-apple-darwin
-            args: --target x86_64-apple-darwin
+          # x86_64 macOS disabled while debugging notarization
+          # - platform: macos-latest
+          #   target: x86_64-apple-darwin
+          #   args: --target x86_64-apple-darwin
           # TODO: Re-enable Linux support in a future version
           # - platform: ubuntu-22.04
           #   args: ""
-          - platform: windows-latest
-            target: x86_64-pc-windows-msvc
-            args: ""
+          # Windows disabled while debugging macOS notarization
+          # - platform: windows-latest
+          #   target: x86_64-pc-windows-msvc
+          #   args: ""
 
     runs-on: ${{ matrix.platform }}
     steps:
