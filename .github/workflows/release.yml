@@ -272,7 +272,9 @@ jobs:
           # Verify signatures
           codesign --verify --verbose "$SIDECAR"
           codesign --verify --verbose "$FFMPEG"
-          [ -f "$DYLIB" ] && codesign --verify --verbose "$DYLIB"
+          if [ -f "$DYLIB" ]; then
+            codesign --verify --verbose "$DYLIB"
+          fi
 
       - name: Build Tauri app (macOS)
         if: matrix.platform == 'macos-latest'
