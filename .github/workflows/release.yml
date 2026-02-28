@@ -1,84 +1,40 @@
 name: Release
 
+# macOS code signing and notarization via Apple Developer ID.
+# Required repository secrets:
+#
+#   APPLE_CERTIFICATE          - Base64-encoded .p12 certificate file
+#   APPLE_CERTIFICATE_PASSWORD - Password for the exported .p12 certificate
+#   APPLE_SIGNING_IDENTITY     - Certificate name (e.g. "Developer ID Application: Name (TEAMID)")
+#   APPLE_API_ISSUER           - App Store Connect API key issuer UUID
+#   APPLE_API_KEY_CONTENT      - App Store Connect API key file content (.p8)
+#   APPLE_API_KEY_ID           - App Store Connect API key ID
+
+# Windows code signing via Azure Trusted Signing.
+# Required repository secrets:
+#
+#   AZURE_TENANT_ID        - Microsoft Entra ID (Azure AD) directory/tenant ID
+#   AZURE_CLIENT_ID        - App Registration application (client) ID
+#   AZURE_CLIENT_SECRET    - App Registration client secret value
+#   AZURE_SIGNING_ENDPOINT - Regional endpoint URL (e.g. https://eus.codesigning.azure.net)
+#   AZURE_SIGNING_ACCOUNT  - Artifact Signing account name
+#   AZURE_CERT_PROFILE     - Certificate profile name
+
 on:
   push:
     tags:
-      - "v*.*.*"
-  workflow_dispatch:
-    inputs:
-      version:
-        description: "Version to build (e.g., 0.1.0)"
-        required: true
-        default: "0.0.0-local"
-      skip_tests:
-        description: "Skip test-and-lint job"
-        type: boolean
-        default: true
-      build_cuda:
-        description: "Build CUDA-enabled Linux binary (requires self-hosted runner)"
-        type: boolean
-        default: false
+      - "v*"
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  validate-version:
-    # Skip validation for local/manual runs
-    if: github.event_name == 'push'
-    runs-on: macos-latest
-    outputs:
-      version: ${{ steps.get-version.outputs.version }}
-    steps:
-      - name: Get version from tag
-        id: get-version
-        run: |
-          VERSION=${GITHUB_REF#refs/tags/v}
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Tag version: $VERSION"
-
-      - name: Get latest release version
-        id: get-latest
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          LATEST=$(gh release view --repo ${{ github.repository }} --json tagName -q '.tagName' 2>/dev/null || echo "")
-          if [ -z "$LATEST" ]; then
-            echo "No previous release found. This will be the first release."
-            echo "latest=" >> $GITHUB_OUTPUT
-          else
-            LATEST_VERSION=${LATEST#v}
-            echo "Latest release version: $LATEST_VERSION"
-            echo "latest=$LATEST_VERSION" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Validate version increment
-        run: |
-          VERSION="${{ steps.get-version.outputs.version }}"
-          LATEST="${{ steps.get-latest.outputs.latest }}"
-
-          if [ -z "$LATEST" ]; then
-            echo "First release - no version comparison needed"
-            exit 0
-          fi
-
-          # Simple semver comparison using sort -V
-          HIGHER=$(printf '%s\n%s' "$LATEST" "$VERSION" | sort -V | tail -n1)
-
-          if [ "$HIGHER" = "$LATEST" ]; then
-            echo "Error: Version $VERSION is not greater than latest release $LATEST"
-            exit 1
-          fi
-
-          echo "Version $VERSION is greater than $LATEST - proceeding with release"
-
   test-and-lint:
-    # Skip for manual runs if skip_tests is true, always run for tag pushes
-    if: github.event_name == 'push' || !inputs.skip_tests
-    needs: validate-version
     strategy:
       fail-fast: true
       matrix:
+        # TODO: Re-enable Linux support in a future version
+        # platform: [ubuntu-22.04, macos-latest, windows-latest]
         platform: [macos-latest, windows-latest]
 
     runs-on: ${{ matrix.platform }}
@@ -103,6 +59,10 @@ jobs:
             qt6-base-dev \
             cmake
 
+      - name: Install make (Windows)
+        if: matrix.platform == 'windows-latest'
+        run: choco install make -y
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -121,30 +81,21 @@ jobs:
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: . -> target
 
       - name: TypeScript type check
         run: pnpm exec tsc --noEmit
 
-      - name: Rust lint (clippy) - common library
-        run: make lint-rust-common
+      - name: Rust lint - src-common
+        run: cargo clippy -p omnirec-common --all-targets --all-features -- -D warnings
 
-      - name: Rust lint (clippy) - main app
+      - name: Rust lint - src-cli
+        run: cargo clippy -p omnirec-cli --all-targets --all-features -- -D warnings
+
+      - name: Rust lint - src-tauri
         run: make lint-rust-tauri
 
-      - name: Rust lint (clippy) - CLI
-        run: make lint-rust-cli
-
-      - name: Rust tests - common library
-        run: cargo test -p omnirec-common --all-features
-
-      - name: Rust tests - main app
-        # Note: --all-features omitted because 'cuda' feature requires NVIDIA CUDA Toolkit (Linux only)
-        run: cargo test -p omnirec
-
-      - name: Rust tests - CLI
-        run: cargo test -p omnirec-cli --all-features
+      - name: Rust tests
+        run: cargo test --workspace
 
       - name: Build picker (C++)
         if: matrix.platform == 'ubuntu-22.04'
@@ -153,9 +104,7 @@ jobs:
           cmake --build src-picker/build
 
   build-and-release:
-    # For manual/local runs, don't require validate-version or test-and-lint
-    needs: [validate-version, test-and-lint]
-    if: always() && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    needs: [test-and-lint]
     permissions:
       contents: write
     strategy:
@@ -163,10 +112,16 @@ jobs:
       matrix:
         include:
           - platform: macos-latest
+            target: aarch64-apple-darwin
             args: --target aarch64-apple-darwin
           - platform: macos-latest
+            target: x86_64-apple-darwin
             args: --target x86_64-apple-darwin
+          # TODO: Re-enable Linux support in a future version
+          # - platform: ubuntu-22.04
+          #   args: ""
           - platform: windows-latest
+            target: x86_64-pc-windows-msvc
             args: ""
 
     runs-on: ${{ matrix.platform }}
@@ -177,7 +132,6 @@ jobs:
       - name: Install Linux dependencies
         if: matrix.platform == 'ubuntu-22.04'
         run: |
-          # Add PipeWire PPA for newer version (Ubuntu 22.04 ships 0.3.48, we need 0.3.65+)
           sudo add-apt-repository -y ppa:pipewire-debian/pipewire-upstream
           sudo apt-get update
           sudo apt-get install -y \
@@ -201,10 +155,7 @@ jobs:
         run: npm install -g pnpm
 
       - name: Install frontend dependencies
-        run: |
-          # Use store outside workspace to avoid symlink issues with act/tauri-action
-          pnpm config set store-dir /tmp/.pnpm-store
-          pnpm install
+        run: pnpm install
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -213,8 +164,6 @@ jobs:
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: . -> target
 
       - name: Build and stage CLI sidecar binary
         run: make stage-cli ARGS="${{ matrix.args }}"
@@ -226,6 +175,7 @@ jobs:
       # ── macOS signing setup ────────────────────────────────────────────────
       - name: Verify Apple signing secrets
         if: matrix.platform == 'macos-latest'
+        shell: bash
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -234,118 +184,138 @@ jobs:
           APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_CONTENT }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
         run: |
-          MISSING=()
-          [ -z "$APPLE_CERTIFICATE" ]          && MISSING+=("APPLE_CERTIFICATE")
-          [ -z "$APPLE_CERTIFICATE_PASSWORD" ] && MISSING+=("APPLE_CERTIFICATE_PASSWORD")
-          [ -z "$APPLE_SIGNING_IDENTITY" ]     && MISSING+=("APPLE_SIGNING_IDENTITY")
-          [ -z "$APPLE_API_ISSUER" ]           && MISSING+=("APPLE_API_ISSUER")
-          [ -z "$APPLE_API_KEY_CONTENT" ]      && MISSING+=("APPLE_API_KEY_CONTENT")
-          [ -z "$APPLE_API_KEY_ID" ]           && MISSING+=("APPLE_API_KEY_ID")
-          if [ ${#MISSING[@]} -gt 0 ]; then
-            echo "ERROR: Missing required Apple signing secrets: ${MISSING[*]}"
+          missing=()
+          [ -z "$APPLE_CERTIFICATE" ]          && missing+=(APPLE_CERTIFICATE)
+          [ -z "$APPLE_CERTIFICATE_PASSWORD" ] && missing+=(APPLE_CERTIFICATE_PASSWORD)
+          [ -z "$APPLE_SIGNING_IDENTITY" ]     && missing+=(APPLE_SIGNING_IDENTITY)
+          [ -z "$APPLE_API_ISSUER" ]           && missing+=(APPLE_API_ISSUER)
+          [ -z "$APPLE_API_KEY_CONTENT" ]      && missing+=(APPLE_API_KEY_CONTENT)
+          [ -z "$APPLE_API_KEY_ID" ]           && missing+=(APPLE_API_KEY_ID)
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "ERROR: Missing required Apple signing secrets: ${missing[*]}"
             exit 1
           fi
-          echo "All Apple signing secrets present."
 
       - name: Write Apple API key file
         if: matrix.platform == 'macos-latest'
+        shell: bash
         run: |
           KEY_PATH="$RUNNER_TEMP/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8"
           echo "${{ secrets.APPLE_API_KEY_CONTENT }}" > "$KEY_PATH"
           echo "APPLE_API_KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
           echo "APPLE_API_KEY=${{ secrets.APPLE_API_KEY_ID }}" >> "$GITHUB_ENV"
 
-      - name: Import Apple certificate to keychain
+      # macOS: pre-sign bundled resources (sidecar binaries + libwhisper.dylib).
+      # Tauri's bundler only signs frameworks and external binaries, NOT plain
+      # resources. Sign them before tauri-action copies them into the .app bundle.
+      - name: Pre-sign macOS bundled resources
         if: matrix.platform == 'macos-latest'
+        shell: bash
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
         run: |
-          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
-          KEYCHAIN_PASSWORD="$(openssl rand -base64 20)"
-          CERT_PATH="$RUNNER_TEMP/certificate.p12"
-
-          # Decode base64 certificate
-          echo "$APPLE_CERTIFICATE" | base64 --decode > "$CERT_PATH"
-
-          # Create and configure temporary keychain
+          # Create a temporary keychain and import the certificate
+          KEYCHAIN_PATH="$RUNNER_TEMP/presign.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 16)"
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
 
-          # Import certificate
-          security import "$CERT_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" \
-            -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          # Decode and import the certificate
+          CERT_PATH="$RUNNER_TEMP/certificate.p12"
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$CERT_PATH"
+          security import "$CERT_PATH" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k "$KEYCHAIN_PATH"
+          rm "$CERT_PATH"
 
-          # Allow codesign to access the key without prompts
-          security set-key-partition-list \
-            -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          # Add to keychain search list so codesign can find the identity
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
 
-          # Add to search list
-          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          IDENTITY="${{ secrets.APPLE_SIGNING_IDENTITY }}"
+          TARGET="${{ matrix.target }}"
 
-      - name: Pre-sign macOS sidecar binary
-        if: matrix.platform == 'macos-latest'
-        run: |
-          # Determine the target triple from matrix args
-          TARGET=$(echo "${{ matrix.args }}" | sed 's/--target //')
+          # Sign the CLI sidecar binary
           SIDECAR="src-tauri/binaries/omnirec-cli-${TARGET}"
-          echo "Pre-signing sidecar: $SIDECAR"
-          codesign --force \
-            --sign "${{ secrets.APPLE_SIGNING_IDENTITY }}" \
+          echo "Signing ${SIDECAR}..."
+          codesign --force --sign "$IDENTITY" \
             --timestamp \
             --options runtime \
             "$SIDECAR"
 
-      - name: Pre-sign macOS FFmpeg sidecar binary
-        if: matrix.platform == 'macos-latest'
-        run: |
-          TARGET=$(echo "${{ matrix.args }}" | sed 's/--target //')
+          # Sign the FFmpeg sidecar binary
           FFMPEG="src-tauri/binaries/ffmpeg-${TARGET}"
-          echo "Pre-signing FFmpeg: $FFMPEG"
-          codesign --force \
-            --sign "${{ secrets.APPLE_SIGNING_IDENTITY }}" \
+          echo "Signing ${FFMPEG}..."
+          codesign --force --sign "$IDENTITY" \
             --timestamp \
             --options runtime \
             "$FFMPEG"
 
-      - name: Pre-sign libwhisper.dylib
-        if: matrix.platform == 'macos-latest'
-        run: |
+          # Sign libwhisper.dylib if it exists
           DYLIB="target/release/libwhisper.dylib"
-          echo "Pre-signing $DYLIB"
-          codesign --force \
-            --sign "${{ secrets.APPLE_SIGNING_IDENTITY }}" \
-            --timestamp \
-            "$DYLIB"
-          # Prevent build.rs from overwriting the signed copy during tauri-action build
-          chmod 444 "$DYLIB"
+          if [ -f "$DYLIB" ]; then
+            echo "Signing ${DYLIB}..."
+            codesign --force --sign "$IDENTITY" \
+              --timestamp \
+              "$DYLIB"
+            # Prevent build.rs from overwriting the signed copy
+            chmod 444 "$DYLIB"
+          fi
+
+          # Verify signatures
+          codesign --verify --verbose "$SIDECAR"
+          codesign --verify --verbose "$FFMPEG"
+          [ -f "$DYLIB" ] && codesign --verify --verbose "$DYLIB"
+
+      - name: Build Tauri app (macOS)
+        if: matrix.platform == 'macos-latest'
+        uses: tauri-apps/tauri-action@v0.6.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          # APPLE_API_KEY and APPLE_API_KEY_PATH set via $GITHUB_ENV above
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "OmniRec ${{ github.ref_name }}"
+          releaseBody: "See the assets to download this version and install."
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }} --config src-tauri/tauri.macos.conf.json
 
       # ── Windows signing setup ──────────────────────────────────────────────
       - name: Verify Azure signing secrets
         if: matrix.platform == 'windows-latest'
-        shell: pwsh
+        shell: bash
         env:
-          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_SIGNING_ENDPOINT: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
           AZURE_SIGNING_ACCOUNT: ${{ secrets.AZURE_SIGNING_ACCOUNT }}
           AZURE_CERT_PROFILE: ${{ secrets.AZURE_CERT_PROFILE }}
         run: |
-          $missing = @()
-          if (-not $env:AZURE_TENANT_ID)        { $missing += "AZURE_TENANT_ID" }
-          if (-not $env:AZURE_CLIENT_ID)        { $missing += "AZURE_CLIENT_ID" }
-          if (-not $env:AZURE_CLIENT_SECRET)    { $missing += "AZURE_CLIENT_SECRET" }
-          if (-not $env:AZURE_SIGNING_ENDPOINT) { $missing += "AZURE_SIGNING_ENDPOINT" }
-          if (-not $env:AZURE_SIGNING_ACCOUNT)  { $missing += "AZURE_SIGNING_ACCOUNT" }
-          if (-not $env:AZURE_CERT_PROFILE)     { $missing += "AZURE_CERT_PROFILE" }
-          if ($missing.Count -gt 0) {
-            Write-Error "Missing required Azure signing secrets: $($missing -join ', ')"
+          missing=()
+          [ -z "$AZURE_CLIENT_ID" ]        && missing+=(AZURE_CLIENT_ID)
+          [ -z "$AZURE_CLIENT_SECRET" ]    && missing+=(AZURE_CLIENT_SECRET)
+          [ -z "$AZURE_TENANT_ID" ]        && missing+=(AZURE_TENANT_ID)
+          [ -z "$AZURE_SIGNING_ENDPOINT" ] && missing+=(AZURE_SIGNING_ENDPOINT)
+          [ -z "$AZURE_SIGNING_ACCOUNT" ]  && missing+=(AZURE_SIGNING_ACCOUNT)
+          [ -z "$AZURE_CERT_PROFILE" ]     && missing+=(AZURE_CERT_PROFILE)
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "ERROR: Missing required Azure signing secrets: ${missing[*]}"
             exit 1
-          }
-          Write-Output "All Azure signing secrets present."
+          fi
 
+      # Windows: download trusted-signing-cli and sign sidecar binaries before
+      # Tauri bundles them. Pin version deliberately -- update only when tested.
       - name: Install trusted-signing-cli
         if: matrix.platform == 'windows-latest'
         shell: pwsh
@@ -354,131 +324,101 @@ jobs:
           $url = "https://github.com/Levminer/trusted-signing-cli/releases/download/$version/trusted-signing-cli.exe"
           $dest = "$env:RUNNER_TEMP\trusted-signing-cli.exe"
           Invoke-WebRequest -Uri $url -OutFile $dest
-          "$env:RUNNER_TEMP" | Out-File -FilePath $env:GITHUB_PATH -Append
-          Write-Output "Installed trusted-signing-cli v$version to $dest"
+          echo "$env:RUNNER_TEMP" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
-      - name: Pre-sign Windows sidecar binary
+      - name: Sign Windows sidecar binaries
         if: matrix.platform == 'windows-latest'
+        shell: bash
         env:
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-        run: >-
-          trusted-signing-cli
-          -e ${{ secrets.AZURE_SIGNING_ENDPOINT }}
-          -a ${{ secrets.AZURE_SIGNING_ACCOUNT }}
-          -c ${{ secrets.AZURE_CERT_PROFILE }}
-          -d OmniRec
-          src-tauri/binaries/omnirec-cli-x86_64-pc-windows-msvc.exe
+        run: |
+          trusted-signing-cli \
+            -e ${{ secrets.AZURE_SIGNING_ENDPOINT }} \
+            -a ${{ secrets.AZURE_SIGNING_ACCOUNT }} \
+            -c ${{ secrets.AZURE_CERT_PROFILE }} \
+            -d OmniRec \
+            src-tauri/binaries/omnirec-cli-x86_64-pc-windows-msvc.exe
 
-      - name: Pre-sign Windows FFmpeg sidecar binary
-        if: matrix.platform == 'windows-latest'
-        env:
-          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
-          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-        run: >-
-          trusted-signing-cli
-          -e ${{ secrets.AZURE_SIGNING_ENDPOINT }}
-          -a ${{ secrets.AZURE_SIGNING_ACCOUNT }}
-          -c ${{ secrets.AZURE_CERT_PROFILE }}
-          -d OmniRec
-          src-tauri/binaries/ffmpeg-x86_64-pc-windows-msvc.exe
+          trusted-signing-cli \
+            -e ${{ secrets.AZURE_SIGNING_ENDPOINT }} \
+            -a ${{ secrets.AZURE_SIGNING_ACCOUNT }} \
+            -c ${{ secrets.AZURE_CERT_PROFILE }} \
+            -d OmniRec \
+            src-tauri/binaries/ffmpeg-x86_64-pc-windows-msvc.exe
 
+      # Windows: write Tauri signing overlay config with literal secret values
+      # so Tauri's sign command subprocess does not need to expand env vars.
       - name: Write Tauri signing config
         if: matrix.platform == 'windows-latest'
-        shell: pwsh
+        shell: bash
         run: |
-          $config = @{
-            bundle = @{
-              windows = @{
-                signCommand = "trusted-signing-cli -e ${{ secrets.AZURE_SIGNING_ENDPOINT }} -a ${{ secrets.AZURE_SIGNING_ACCOUNT }} -c ${{ secrets.AZURE_CERT_PROFILE }} -d OmniRec %1"
-              }
-            }
-          } | ConvertTo-Json -Depth 5
-          Set-Content -Path "src-tauri/tauri.signing.conf.json" -Value $config
+          printf '%s\n' \
+            '{' \
+            '  "bundle": {' \
+            '    "windows": {' \
+            '      "signCommand": "trusted-signing-cli -e ${{ secrets.AZURE_SIGNING_ENDPOINT }} -a ${{ secrets.AZURE_SIGNING_ACCOUNT }} -c ${{ secrets.AZURE_CERT_PROFILE }} -d OmniRec %1"' \
+            '    }' \
+            '  }' \
+            '}' \
+            > src-tauri/tauri.signing.conf.json
 
-      # ── Build and release ──────────────────────────────────────────────────
-      - name: Build Tauri package and create release
-        if: github.event_name == 'push'
+      - name: Build Tauri app (Windows)
+        if: matrix.platform == 'windows-latest'
         uses: tauri-apps/tauri-action@v0.6.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # macOS signing
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_API_KEY: ${{ env.APPLE_API_KEY }}
-          APPLE_API_KEY_PATH: ${{ env.APPLE_API_KEY_PATH }}
-          # Windows signing
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
         with:
-          tagName: v__VERSION__
-          releaseName: "OmniRec v__VERSION__"
+          tagName: ${{ github.ref_name }}
+          releaseName: "OmniRec ${{ github.ref_name }}"
           releaseBody: "See the assets to download this version and install."
           releaseDraft: true
           prerelease: false
-          args: ${{ matrix.platform == 'macos-latest' && format('{0} --config src-tauri/tauri.macos.conf.json', matrix.args) || '--config src-tauri/tauri.signing.conf.json' }}
+          args: --config src-tauri/tauri.signing.conf.json
 
-      - name: Build Tauri package (local/manual - no release)
-        if: github.event_name == 'workflow_dispatch'
-        run: pnpm tauri build ${{ matrix.args }}
+  generate-update-json:
+    needs: [build-and-release]
+    permissions:
+      contents: write
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Build Linux picker binary (C++)
-        if: matrix.platform == 'ubuntu-22.04'
-        run: |
-          cmake -B src-picker/build -S src-picker -DCMAKE_BUILD_TYPE=Release
-          cmake --build src-picker/build
-
-      - name: Create Linux tar.gz for AUR
-        if: matrix.platform == 'ubuntu-22.04'
-        run: |
-          VERSION="${{ needs.validate-version.outputs.version || inputs.version || '0.0.0-local' }}"
-          ARCHIVE_NAME="omnirec-${VERSION}-linux-x86_64"
-
-          mkdir -p "$ARCHIVE_NAME/icons"
-
-          # Copy GUI app binary
-          cp src-tauri/target/release/omnirec "$ARCHIVE_NAME/"
-
-          # Copy CLI binary
-          cp target/release/omnirec "$ARCHIVE_NAME/"
-
-          # Copy picker binary (built with CMake)
-          cp src-picker/build/omnirec-picker "$ARCHIVE_NAME/"
-
-          # Copy icons
-          cp src-tauri/icons/128x128.png "$ARCHIVE_NAME/icons/"
-          cp src-tauri/icons/64x64.png "$ARCHIVE_NAME/icons/" 2>/dev/null || cp src-tauri/icons/128x128.png "$ARCHIVE_NAME/icons/64x64.png"
-          cp src-tauri/icons/32x32.png "$ARCHIVE_NAME/icons/"
-
-          # Copy LICENSE if it exists
-          [ -f LICENSE ] && cp LICENSE "$ARCHIVE_NAME/"
-
-          # Create tar.gz
-          tar -czvf "${ARCHIVE_NAME}.tar.gz" "$ARCHIVE_NAME"
-
-          echo "Created ${ARCHIVE_NAME}.tar.gz"
-
-      - name: Upload Linux tar.gz to release
-        if: matrix.platform == 'ubuntu-22.04' && github.event_name == 'push'
+      - name: Generate latest.json for Tauri updater
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          VERSION="${{ needs.validate-version.outputs.version }}"
-          ARCHIVE_NAME="omnirec-${VERSION}-linux-x86_64.tar.gz"
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
 
-          # Wait for release to be created by tauri-action
-          sleep 10
+          cat > latest.json << EOF
+          {
+            "version": "${VERSION}",
+            "notes": "",
+            "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "platforms": {
+              "darwin-aarch64": {
+                "url": "https://github.com/${{ github.repository }}/releases/download/v${VERSION}/OmniRec_aarch64.dmg"
+              },
+              "darwin-x86_64": {
+                "url": "https://github.com/${{ github.repository }}/releases/download/v${VERSION}/OmniRec_x64.dmg"
+              },
+              "windows-x86_64": {
+                "url": "https://github.com/${{ github.repository }}/releases/download/v${VERSION}/OmniRec_${VERSION}_x64-setup.exe"
+              }
+            }
+          }
+          EOF
 
-          gh release upload "v${VERSION}" "$ARCHIVE_NAME" --clobber || echo "Upload will be retried by tauri-action"
+          cat latest.json
 
-      - name: List build artifacts (local/manual)
-        if: github.event_name == 'workflow_dispatch'
+      - name: Upload latest.json to release
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          echo "=== Build artifacts ==="
-          find target/release/bundle -type f 2>/dev/null || echo "No bundle artifacts found"
-          ls -la omnirec-*-linux-x86_64.tar.gz 2>/dev/null || true
+          gh release upload "${{ github.ref_name }}" latest.json --clobber

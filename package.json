@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "icons:generate": "bash scripts/generate-icons.sh",
-    "version:set": "bash scripts/set-version.sh"
+    "release": "node scripts/release.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

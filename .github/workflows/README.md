@@ -1,133 +1,90 @@
-# GitHub Workflows
+# GitHub Actions Workflows
 
-This directory contains GitHub Actions workflows for CI and releases.
+OmniRec uses GitHub Actions for CI/CD. Workflows run automatically on push to `master` and pull requests.
 
 ## Workflows
 
-- **ci.yml** - Runs on push/PR to master. Performs linting and tests on all platforms.
-- **release.yml** - Runs on version tags (`v*.*.*`). Builds and publishes releases.
+| Workflow | Trigger | Purpose |
+|----------|---------|---------|
+| `ci.yml` | Push to `master`, PRs | Lint, type-check, and test |
+| `release.yml` | Tag push (`v*`) | Build and publish releases |
 
-## Local Testing with Act
+## Releasing
 
-[Act](https://github.com/nektos/act) allows you to run GitHub Actions locally using Docker.
-
-### Installation
+Releases are driven by the `scripts/release.mjs` script:
 
 ```bash
-# Arch Linux
-paru -S act
+node scripts/release.mjs v0.2.0
+```
 
-# macOS
+This validates the version increment, updates all versioned files, commits, pushes, creates the git tag, and pushes the tag. The tag push triggers the release workflow.
+
+Use `--dry-run` to apply file updates without any git commands:
+
+```bash
+node scripts/release.mjs v0.2.0 --dry-run
+```
+
+## Local CI Testing with `act`
+
+You can run GitHub Actions workflows locally using [act](https://github.com/nektos/act):
+
+```bash
+# Install act (macOS)
 brew install act
 
-# Other platforms
-# See: https://nektosact.com/installation/
+# Install act (Linux)
+curl -s https://raw.githubusercontent.com/nektos/act/master/install.sh | sudo bash
 ```
 
-### Running Workflows
-
-**Run CI workflow (Linux job only):**
-
 ```bash
+# Run CI workflow (Linux job only - requires Docker)
 act push -j lint-and-test --matrix platform:ubuntu-22.04
-```
 
-**Dry run (list jobs without executing):**
-
-```bash
+# Dry run (list jobs without executing)
 act push -l
 ```
 
-**Run with specific event:**
-
-```bash
-act pull_request -j lint-and-test --matrix platform:ubuntu-22.04
-```
-
-### Platform Limitations
-
-Act runs workflows in Docker containers, which means:
-
-- **Linux jobs** work well and are the primary use case
-- **macOS/Windows jobs** cannot run locally (use `--matrix platform:ubuntu-22.04` to filter)
-
-### Common Options
-
-| Option | Description |
-|--------|-------------|
-| `-j <job>` | Run specific job |
-| `-l` | List available jobs |
-| `-n` | Dry run (don't execute) |
-| `--matrix key:value` | Filter matrix to specific values |
-| `-v` | Verbose output |
-| `--container-architecture linux/amd64` | Force architecture (useful on ARM) |
-
-### Example: Test CI Before Pushing
-
-```bash
-# Run the full CI lint-and-test job for Linux
-act push -j lint-and-test --matrix platform:ubuntu-22.04
-
-# Or just list what would run
-act push -l
-```
-
-### Testing the Release Workflow
-
-The release workflow supports `workflow_dispatch` for local testing without creating actual GitHub releases:
-
-```bash
-# Build packages locally (skips tests, version validation, and GitHub release)
-act workflow_dispatch -j build-and-release \
-  --matrix platform:ubuntu-22.04 \
-  --input version=0.0.0-local \
-  --input skip_tests=true
-
-# Run with tests included
-act workflow_dispatch -j build-and-release \
-  --matrix platform:ubuntu-22.04 \
-  --input version=0.0.0-local \
-  --input skip_tests=false
-```
-
-When run via `workflow_dispatch`:
-- Version validation is skipped
-- Tests can be skipped with `skip_tests=true`
-- Builds packages using `pnpm tauri build` instead of tauri-action
-- Does not create or upload to GitHub releases
-- Lists build artifacts at the end
+> **Note:** Local CI testing requires Docker. Some platform-specific steps (macOS, Windows) cannot be tested locally with `act`.
 
 ## CUDA Builds
 
-The release workflow includes a `build-linux-cuda` job for GPU-accelerated transcription. This requires a self-hosted runner with:
+CUDA-accelerated builds are **not** run in CI because GitHub-hosted runners lack NVIDIA GPUs. The `cuda` feature is excluded from clippy and test runs:
 
-- NVIDIA GPU
-- CUDA Toolkit installed (`nvcc` available in PATH)
-- Runner labels: `self-hosted`, `linux`, `cuda`
-
-**Setting up a self-hosted runner:**
-
-1. On your CUDA-capable machine, follow [GitHub's self-hosted runner setup](https://docs.github.com/en/actions/hosting-your-own-runners/adding-self-hosted-runners)
-2. Add the labels `linux` and `cuda` to the runner
-3. Ensure CUDA toolkit is installed: `nvcc --version`
-
-**Triggering CUDA builds:**
-
-```bash
-# Via GitHub CLI
-gh workflow run release.yml \
-  --field version=0.1.0 \
-  --field skip_tests=true \
-  --field build_cuda=true
-
-# Or use the GitHub Actions UI with workflow_dispatch
+```yaml
+# src-tauri is linted/tested without --all-features
+cargo clippy -p omnirec --all-targets -- -D warnings  # No cuda feature
+cargo test -p omnirec                                   # No cuda feature
 ```
 
-For tag-triggered releases, the CUDA job runs automatically if a matching self-hosted runner is available. If no runner is available, the job will queue and wait (or fail after timeout).
+To test CUDA builds locally:
 
-**Output:** Creates `omnirec-VERSION-linux-x86_64-cuda.tar.gz` with GPU-accelerated whisper.cpp.
+```bash
+# Build with CUDA (requires NVIDIA CUDA Toolkit on Linux)
+make build-cuda
 
-### Troubleshooting
+# Or directly:
+cargo build -p omnirec --release --features cuda
+```
+
+## Platform Matrix
+
+### CI (`ci.yml`)
+
+| Platform | Runner | Notes |
+|----------|--------|-------|
+| macOS | `macos-latest` | - |
+| Windows | `windows-latest` | - |
+
+### Release (`release.yml`)
+
+| Platform | Runner | Target | Notes |
+|----------|--------|--------|-------|
+| macOS | `macos-latest` | `aarch64-apple-darwin` | Apple Silicon |
+| macOS | `macos-latest` | `x86_64-apple-darwin` | Intel |
+| Windows | `windows-latest` | `x86_64-pc-windows-msvc` | - |
+
+## Troubleshooting
 
 **Missing secrets:** Some workflows require secrets. Use `-s SECRET_NAME=value` or create a `.secrets` file.
 
