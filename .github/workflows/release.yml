@@ -256,14 +256,16 @@ jobs:
             --options runtime \
             "$FFMPEG"
 
-          # Sign libwhisper.dylib if it exists
-          DYLIB="target/release/libwhisper.dylib"
+          # Sign libwhisper.dylib if it exists.
+          # build.rs copies it to src-tauri/lib/ (profile-agnostic) so it is
+          # available for both debug/clippy and release builds.
+          DYLIB="src-tauri/lib/libwhisper.dylib"
           if [ -f "$DYLIB" ]; then
             echo "Signing ${DYLIB}..."
             codesign --force --sign "$IDENTITY" \
               --timestamp \
               "$DYLIB"
-            # Prevent build.rs from overwriting the signed copy
+            # Prevent build.rs from overwriting the signed copy during bundling
             chmod 444 "$DYLIB"
           fi
 

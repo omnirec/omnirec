@@ -130,6 +130,25 @@ fn setup_whisper() {
     // Copy all libraries to target directory for runtime
     copy_libraries_to_runtime(&lib_output_dir, &lib_names, &out_dir);
 
+    // On macOS, also copy libwhisper.dylib to src-tauri/lib/ so that
+    // tauri.macos.conf.json can reference a stable, profile-agnostic path.
+    // This avoids the lint failure caused by the resource declaration pointing
+    // at target/release/libwhisper.dylib which doesn't exist in debug/clippy builds.
+    if target_os == "macos" {
+        let manifest_dir =
+            PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set"));
+        let lib_dir = manifest_dir.join("lib");
+        fs::create_dir_all(&lib_dir).expect("Failed to create src-tauri/lib directory");
+        let dest = lib_dir.join(primary_lib);
+        // Only copy if the source actually exists (it may not in stub/offline scenarios)
+        if primary_lib_path.exists() {
+            fs::copy(&primary_lib_path, &dest)
+                .expect("Failed to copy libwhisper.dylib to src-tauri/lib/");
+            println!("cargo:warning=Copied {} to {}", primary_lib, dest.display());
+        }
+        println!("cargo:rerun-if-changed=lib/{}", primary_lib);
+    }
+
     // Also write the primary library path to a file for runtime discovery
     let lib_path_file = out_dir.join("whisper_lib_path.txt");
     fs::write(

@@ -1,7 +1,7 @@
 {
   "bundle": {
     "resources": {
-      "../target/release/libwhisper.dylib": "Frameworks/libwhisper.dylib"
+      "lib/libwhisper.dylib": "Frameworks/libwhisper.dylib"
     }
   }
 }
