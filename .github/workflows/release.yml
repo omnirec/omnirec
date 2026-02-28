@@ -102,6 +102,14 @@ jobs:
         if: matrix.platform != 'ubuntu-22.04'
         run: make stage-ffmpeg ARGS="${{ matrix.args }}"
 
+      # macOS: run the Tauri build script ahead of time to download libwhisper.dylib
+      # into src-tauri/lib/ so it exists when the pre-sign step runs. Without this
+      # the dylib doesn't exist yet, the pre-sign step skips it, and the Tauri build
+      # then places an unsigned copy into the bundle causing notarization to fail.
+      - name: Trigger build script to download libwhisper.dylib
+        if: matrix.platform == 'macos-latest'
+        run: cargo build -p omnirec --target ${{ matrix.target }}
+
       # ── macOS signing setup ────────────────────────────────────────────────
       - name: Verify Apple signing secrets
         if: matrix.platform == 'macos-latest'
