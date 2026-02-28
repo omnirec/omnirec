@@ -18,6 +18,7 @@ export default defineConfig(async () => ({
         "selection-overlay": resolve(__dirname, "src/selection-overlay.html"),
         about: resolve(__dirname, "src/about.html"),
         config: resolve(__dirname, "src/config.html"),
+        "transcript-view": resolve(__dirname, "src/transcript-view.html"),
       },
     },
   },

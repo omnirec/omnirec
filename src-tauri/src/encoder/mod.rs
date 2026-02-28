@@ -1,4 +1,7 @@
 //! Video encoding module using FFmpeg via ffmpeg-sidecar.
+//!
+//! On Windows and macOS, FFmpeg is bundled as a Tauri sidecar binary alongside
+//! the application. On Linux, the system-installed FFmpeg is used instead.
 
 #![allow(dead_code)]
 
@@ -13,11 +16,42 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
+/// Resolve the path to the FFmpeg binary.
+///
+/// On Windows and macOS, FFmpeg is bundled as a Tauri sidecar binary
+/// (configured in `tauri.conf.json` under `externalBin`). The sidecar is
+/// placed adjacent to the application executable with a platform-triple suffix
+/// that Tauri strips at install time, making it available as `ffmpeg` (or
+/// `ffmpeg.exe`) next to the main binary.
+///
+/// On Linux, FFmpeg is declared as a system package dependency in the
+/// deb/rpm/AUR packaging, so we use the system-installed binary from PATH.
+fn resolve_ffmpeg_path() -> PathBuf {
+    #[cfg(target_os = "linux")]
+    {
+        // Linux: use system FFmpeg from PATH
+        PathBuf::from("ffmpeg")
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        // Windows/macOS: use the bundled sidecar binary adjacent to our executable.
+        // ffmpeg-sidecar's built-in path resolution does exactly this: it looks
+        // for an "ffmpeg" (or "ffmpeg.exe") binary next to current_exe(), which
+        // is where Tauri places externalBin sidecars after installation.
+        ffmpeg_sidecar::paths::ffmpeg_path()
+    }
+}
+
+/// Create a new FfmpegCommand using the resolved FFmpeg path.
+fn new_ffmpeg_command() -> FfmpegCommand {
+    FfmpegCommand::new_with_path(resolve_ffmpeg_path())
+}
+
 /// Detect the best available H.264 encoder.
 /// Returns the encoder name to use with FFmpeg.
 fn detect_h264_encoder() -> &'static str {
     // Check which encoders are available by running ffmpeg -encoders
-    let output = Command::new("ffmpeg")
+    let output = Command::new(resolve_ffmpeg_path())
         .args(["-encoders", "-hide_banner"])
         .output();
 
@@ -153,7 +187,7 @@ impl VideoEncoder {
         let encoder = detect_h264_encoder();
 
         // Build the FFmpeg command using std::process for better stdin control
-        let mut command = FfmpegCommand::new();
+        let mut command = new_ffmpeg_command();
         command
             // Input: raw video frames from stdin
             .args(["-f", "rawvideo"])
@@ -451,7 +485,7 @@ pub fn mux_audio_video(
         video_path, audio_path, audio_delay_ms
     );
 
-    let mut command = FfmpegCommand::new();
+    let mut command = new_ffmpeg_command();
     command
         // Video input
         .args(["-i", video_path.to_string_lossy().as_ref()]);
@@ -1054,10 +1088,54 @@ pub async fn encode_frames_with_audio_and_transcription(
     Ok(video_path)
 }
 
-/// Initialize FFmpeg (download if needed). Should be called once at app startup.
+/// Ensure FFmpeg is available. Should be called once at app startup.
+///
+/// On Windows and macOS, verifies that the bundled sidecar binary exists and is
+/// executable. On Linux, falls back to runtime auto-download if the system
+/// FFmpeg is not available (though it should be installed as a package dependency).
 pub fn ensure_ffmpeg_blocking() -> Result<(), String> {
-    ffmpeg_sidecar::download::auto_download()
-        .map_err(|e| format!("Failed to download FFmpeg: {}", e))
+    let ffmpeg = resolve_ffmpeg_path();
+    eprintln!("[FFmpeg] Resolved path: {}", ffmpeg.display());
+
+    // Verify the binary is accessible by running `ffmpeg -version`
+    match Command::new(&ffmpeg)
+        .arg("-version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+    {
+        Ok(status) if status.success() => {
+            eprintln!("[FFmpeg] Binary verified OK");
+            Ok(())
+        }
+        Ok(status) => Err(format!(
+            "FFmpeg binary at {} exited with status: {}",
+            ffmpeg.display(),
+            status
+        )),
+        Err(e) => {
+            eprintln!(
+                "[FFmpeg] Binary not found at {}: {}",
+                ffmpeg.display(),
+                e
+            );
+            // On Linux, try auto-download as a last resort (system package may
+            // not be installed in development environments)
+            #[cfg(target_os = "linux")]
+            {
+                eprintln!("[FFmpeg] Attempting auto-download as fallback...");
+                ffmpeg_sidecar::download::auto_download()
+                    .map_err(|e| format!("FFmpeg not found and auto-download failed: {}", e))
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                Err(format!(
+                    "Bundled FFmpeg not found at {}. The application may not be installed correctly.",
+                    ffmpeg.display()
+                ))
+            }
+        }
+    }
 }
 
 use omnirec_common::OutputFormat;
@@ -1076,7 +1154,7 @@ pub fn transcode_video(source_path: &Path, format: OutputFormat) -> Result<PathB
     );
     eprintln!("[Transcode] Output: {}", output_path.display());
 
-    let mut command = FfmpegCommand::new();
+    let mut command = new_ffmpeg_command();
 
     // Input file
     command.args(["-i", source_path.to_string_lossy().as_ref()]);

@@ -219,6 +219,10 @@ jobs:
       - name: Build and stage CLI sidecar binary
         run: make stage-cli ARGS="${{ matrix.args }}"
 
+      - name: Download and stage FFmpeg sidecar binary
+        if: matrix.platform != 'ubuntu-22.04'
+        run: make stage-ffmpeg ARGS="${{ matrix.args }}"
+
       # ── macOS signing setup ────────────────────────────────────────────────
       - name: Verify Apple signing secrets
         if: matrix.platform == 'macos-latest'
@@ -293,6 +297,18 @@ jobs:
             --options runtime \
             "$SIDECAR"
 
+      - name: Pre-sign macOS FFmpeg sidecar binary
+        if: matrix.platform == 'macos-latest'
+        run: |
+          TARGET=$(echo "${{ matrix.args }}" | sed 's/--target //')
+          FFMPEG="src-tauri/binaries/ffmpeg-${TARGET}"
+          echo "Pre-signing FFmpeg: $FFMPEG"
+          codesign --force \
+            --sign "${{ secrets.APPLE_SIGNING_IDENTITY }}" \
+            --timestamp \
+            --options runtime \
+            "$FFMPEG"
+
       - name: Pre-sign libwhisper.dylib
         if: matrix.platform == 'macos-latest'
         run: |
@@ -354,6 +370,20 @@ jobs:
           -c ${{ secrets.AZURE_CERT_PROFILE }}
           -d OmniRec
           src-tauri/binaries/omnirec-cli-x86_64-pc-windows-msvc.exe
+
+      - name: Pre-sign Windows FFmpeg sidecar binary
+        if: matrix.platform == 'windows-latest'
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+        run: >-
+          trusted-signing-cli
+          -e ${{ secrets.AZURE_SIGNING_ENDPOINT }}
+          -a ${{ secrets.AZURE_SIGNING_ACCOUNT }}
+          -c ${{ secrets.AZURE_CERT_PROFILE }}
+          -d OmniRec
+          src-tauri/binaries/ffmpeg-x86_64-pc-windows-msvc.exe
 
       - name: Write Tauri signing config
         if: matrix.platform == 'windows-latest'

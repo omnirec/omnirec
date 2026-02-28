@@ -10,7 +10,7 @@ endif
 
 .PHONY: all clean build build-debug build-release build-cuda \
         frontend client client-debug client-release cli cli-debug cli-release picker \
-        package stage-cli stub-sidecar \
+        package stage-cli stage-ffmpeg stub-sidecar \
         run-cli run-cli-release \
         lint lint-rust lint-rust-common lint-rust-tauri lint-rust-cli lint-ts test \
         install-deps check-binaries help
@@ -93,9 +93,51 @@ stage-cli:
 		cp target/release/omnirec.exe "src-tauri/binaries/omnirec-cli-$$(rustc -vV | grep host | cut -d' ' -f2).exe"; \
 	fi
 
-# Build the complete installer package (CLI sidecar + Tauri app).
+# Download and stage the FFmpeg binary into src-tauri/binaries/ for Tauri bundling.
+# On Windows/macOS, FFmpeg is bundled with the app. On Linux, it's a system dependency.
+# Supports optional ARGS for cross-compilation (e.g. make stage-ffmpeg ARGS="--target aarch64-apple-darwin")
+FFMPEG_WIN_URL := https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip
+FFMPEG_MAC_X64_URL := https://evermeet.cx/ffmpeg/getrelease/zip
+FFMPEG_MAC_ARM_URL := https://www.osxexperts.net/ffmpeg80arm.zip
+
+stage-ffmpeg:
+	@mkdir -p src-tauri/binaries
+	@if echo "$(ARGS)" | grep -q "aarch64-apple-darwin"; then \
+		echo "==> Downloading FFmpeg for macOS ARM64..."; \
+		curl -L -o /tmp/ffmpeg-mac-arm.zip "$(FFMPEG_MAC_ARM_URL)"; \
+		unzip -o /tmp/ffmpeg-mac-arm.zip -d /tmp/ffmpeg-mac-arm; \
+		cp /tmp/ffmpeg-mac-arm/ffmpeg src-tauri/binaries/ffmpeg-aarch64-apple-darwin; \
+		chmod +x src-tauri/binaries/ffmpeg-aarch64-apple-darwin; \
+		rm -rf /tmp/ffmpeg-mac-arm /tmp/ffmpeg-mac-arm.zip; \
+	elif echo "$(ARGS)" | grep -q "x86_64-apple-darwin"; then \
+		echo "==> Downloading FFmpeg for macOS x86_64..."; \
+		curl -L -o /tmp/ffmpeg-mac-x64.zip "$(FFMPEG_MAC_X64_URL)"; \
+		unzip -o /tmp/ffmpeg-mac-x64.zip -d /tmp/ffmpeg-mac-x64; \
+		cp /tmp/ffmpeg-mac-x64/ffmpeg src-tauri/binaries/ffmpeg-x86_64-apple-darwin; \
+		chmod +x src-tauri/binaries/ffmpeg-x86_64-apple-darwin; \
+		rm -rf /tmp/ffmpeg-mac-x64 /tmp/ffmpeg-mac-x64.zip; \
+	elif [ "$$(uname -s)" = "Darwin" ]; then \
+		echo "==> Downloading FFmpeg for macOS (host)..."; \
+		TRIPLE=$$(rustc -vV | grep host | cut -d' ' -f2); \
+		curl -L -o /tmp/ffmpeg-mac.zip "$(FFMPEG_MAC_X64_URL)"; \
+		unzip -o /tmp/ffmpeg-mac.zip -d /tmp/ffmpeg-mac; \
+		cp /tmp/ffmpeg-mac/ffmpeg "src-tauri/binaries/ffmpeg-$$TRIPLE"; \
+		chmod +x "src-tauri/binaries/ffmpeg-$$TRIPLE"; \
+		rm -rf /tmp/ffmpeg-mac /tmp/ffmpeg-mac.zip; \
+	elif [ "$$(uname -s)" = "Linux" ]; then \
+		echo "==> Skipping FFmpeg staging on Linux (uses system package)"; \
+	else \
+		echo "==> Downloading FFmpeg for Windows..."; \
+		TRIPLE=$$(rustc -vV | grep host | cut -d' ' -f2); \
+		curl -L -o /tmp/ffmpeg-win.zip "$(FFMPEG_WIN_URL)"; \
+		unzip -o /tmp/ffmpeg-win.zip "*/bin/ffmpeg.exe" -d /tmp/ffmpeg-win; \
+		cp /tmp/ffmpeg-win/*/bin/ffmpeg.exe "src-tauri/binaries/ffmpeg-$$TRIPLE.exe"; \
+		rm -rf /tmp/ffmpeg-win /tmp/ffmpeg-win.zip; \
+	fi
+
+# Build the complete installer package (CLI sidecar + FFmpeg + Tauri app).
 # Supports optional ARGS for cross-compilation (e.g. make package ARGS="--target aarch64-apple-darwin")
-package: stage-cli
+package: stage-cli stage-ffmpeg
 	@echo "==> Building Tauri installer package..."
 	pnpm tauri build $(ARGS)
 
@@ -133,9 +175,9 @@ lint-rust-common:
 	@echo "==> Linting src-common..."
 	cargo clippy -p omnirec-common --all-targets --all-features -- -D warnings
 
-# Create an empty stub sidecar binary for the current host triple so tauri-build
-# validation passes during lint/clippy without requiring a real pre-built CLI binary.
-# Only creates the stub if no binary (real or stub) already exists for this triple.
+# Create empty stub sidecar binaries for the current host triple so tauri-build
+# validation passes during lint/clippy without requiring real pre-built binaries.
+# Only creates stubs if no binary (real or stub) already exists for this triple.
 stub-sidecar:
 	@mkdir -p src-tauri/binaries
 	@TRIPLE=$$(rustc -vV | grep '^host:' | cut -d' ' -f2); \
@@ -145,6 +187,11 @@ stub-sidecar:
 	if [ ! -f "$$STUB" ]; then \
 		echo "==> Creating sidecar stub: $$STUB"; \
 		touch "$$STUB"; \
+	fi; \
+	FFMPEG_STUB=src-tauri/binaries/ffmpeg-$$TRIPLE$$EXT; \
+	if [ ! -f "$$FFMPEG_STUB" ]; then \
+		echo "==> Creating FFmpeg stub: $$FFMPEG_STUB"; \
+		touch "$$FFMPEG_STUB"; \
 	fi
 
 # Rust linting - main app
@@ -259,12 +306,14 @@ help:
 	@echo "  picker           Build omnirec-picker (C++/Qt6)"
 	@echo ""
 	@echo "Package Targets:"
-	@echo "  package          Build complete installer with CLI sidecar (uses pnpm tauri build)"
+	@echo "  package          Build complete installer with CLI + FFmpeg sidecars (uses pnpm tauri build)"
 	@echo "                   Supports ARGS for cross-compilation:"
 	@echo "                   make package ARGS=\"--target aarch64-apple-darwin\""
 	@echo "  stage-cli        Build CLI binary and stage into src-tauri/binaries/"
 	@echo "                   (run this before pnpm tauri build when using tauri-action)"
-	@echo "  stub-sidecar     Create empty sidecar stub for host triple (used by lint)"
+	@echo "  stage-ffmpeg     Download FFmpeg binary and stage into src-tauri/binaries/"
+	@echo "                   (Windows/macOS only; Linux uses system FFmpeg)"
+	@echo "  stub-sidecar     Create empty sidecar stubs for host triple (used by lint)"
 	@echo ""
 	@echo "Quality Targets:"
 	@echo "  lint             Run all linters"

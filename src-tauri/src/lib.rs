@@ -190,11 +190,14 @@ pub fn run() {
             let service_ready = app_state.service_ready.clone();
             let app_config = app_state.app_config.clone();
 
-            // Initialize FFmpeg in a background task (non-fatal, may download on first run)
+            // Verify FFmpeg is available (bundled sidecar on Windows/macOS,
+            // system package on Linux)
             tauri::async_runtime::spawn(async move {
                 eprintln!("[Setup] Ensuring FFmpeg is available...");
-                let _ = encoder::ensure_ffmpeg_blocking();
-                eprintln!("[Setup] FFmpeg check complete");
+                match encoder::ensure_ffmpeg_blocking() {
+                    Ok(()) => eprintln!("[Setup] FFmpeg check complete"),
+                    Err(e) => eprintln!("[Setup] FFmpeg check failed: {}", e),
+                }
             });
 
             // Initialize platform-specific capture backends (Linux)

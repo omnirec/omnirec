@@ -1,0 +1,44 @@
+#!/bin/bash
+
+pkill -x omnirec-app 2>/dev/null || true
+pkill -x omnirec 2>/dev/null || true
+pkill -x omnirec-cli 2>/dev/null || true
+pkill -x omnirec-service 2>/dev/null || true
+pkill -x omnirec-picker 2>/dev/null || true
+
+sudo rm -rf /Applications/OmniRec.app
+
+# App data
+rm -rf ~/Library/Application\ Support/omnirec
+rm -rf ~/Library/Application\ Support/omnirec-app
+rm -rf ~/Library/Application\ Support/com.omnirec.omnirec
+
+rm -rf ~/Library/Logs/omnirec
+rm -rf ~/Library/Logs/omnirec-app
+
+rm -rf ~/Library/Caches/omnirec
+rm -rf ~/Library/Caches/omnirec-app
+rm -rf ~/Library/Caches/com.omnirec.omnirec
+
+rm -rf ~/Library/WebKit/omnirec
+rm -rf ~/Library/WebKit/omnirec-app
+rm -rf ~/Library/WebKit/com.omnirec.omnirec
+
+rm -rf ~/Library/Saved\ Application\ State/com.omnirec.omnirec
+rm -rf ~/Library/Saved\ Application\ State/omnirec
+rm -rf ~/Library/Saved\ Application\ State/omnirec-app
+
+rm -f ~/Library/Preferences/omnirec-app.plist
+rm -f ~/Library/Preferences/com.omnirec.omnirec.plist
+
+if [ "$1" = "-a" ]; then
+  # Reset microphone permission
+  sudo tccutil reset Microphone com.omnirec.omnirec 2>/dev/null || true
+  sudo tccutil reset Microphone
+
+  # Reset screen recording permission
+  tccutil reset ScreenCapture com.omnirec.omnirec 2>/dev/null || true
+fi
+
+# Reset accessibility permission
+tccutil reset Accessibility com.omnirec.omnirec 2>/dev/null || true

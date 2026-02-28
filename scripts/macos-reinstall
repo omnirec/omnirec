@@ -1,0 +1,4 @@
+#!/bin/bash
+
+scripts/macos-clean
+sudo ditto "target/release/bundle/macos/OmniRec.app/" "/Applications/OmniRec.app"
