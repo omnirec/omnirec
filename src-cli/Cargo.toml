@@ -1,6 +1,6 @@
 [package]
 name = "omnirec-cli"
-version = "0.1.11"
+version = "0.1.12"
 edition = "2021"
 description = "Command-line interface for OmniRec screen recording"
 
