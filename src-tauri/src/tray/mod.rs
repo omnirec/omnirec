@@ -28,6 +28,7 @@ pub mod menu_ids {
     pub const RECORD: &str = "record";
     pub const STOP: &str = "stop";
     pub const TRANSCRIPTION: &str = "transcription";
+    pub const ALWAYS_ON_TOP: &str = "always_on_top";
     pub const CONFIGURATION: &str = "configuration";
     pub const ABOUT: &str = "about";
     pub const EXIT: &str = "exit";
@@ -38,6 +39,7 @@ pub mod menu_labels {
     pub const RECORD: &str = "Record Screen/Window";
     pub const STOP: &str = "Stop Recording";
     pub const TRANSCRIPTION: &str = "Transcription";
+    pub const ALWAYS_ON_TOP: &str = "Always on Top";
     pub const CONFIGURATION: &str = "Configuration";
     pub const ABOUT: &str = "About";
     pub const EXIT: &str = "Exit";
@@ -76,6 +78,7 @@ pub mod icon_names {
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
+use tauri::menu::CheckMenuItem;
 use tauri::tray::TrayIcon;
 
 // =============================================================================
@@ -147,6 +150,56 @@ pub struct TrayState {
 
     /// Whether a recording is currently in progress.
     pub is_recording: Arc<AtomicBool>,
+
+    /// The "Always on Top" check menu item handle (for toggling the checkmark).
+    pub always_on_top_item: std::sync::Mutex<Option<CheckMenuItem<tauri::Wry>>>,
+}
+
+/// Toggle the always-on-top window property and persist the new state.
+///
+/// Reads the current state from config, flips it, applies it to the main
+/// window, updates the tray menu checkmark, and writes the new value to disk.
+pub fn toggle_always_on_top(app: &tauri::AppHandle) {
+    use tauri::Manager;
+
+    // Load current config, flip the flag, save
+    let mut config = crate::config::load_config();
+    config.always_on_top = !config.always_on_top;
+    let new_state = config.always_on_top;
+
+    if let Err(e) = crate::config::save_config(&config) {
+        eprintln!("[Tray] Failed to save always-on-top config: {}", e);
+    }
+
+    // Apply to the main window
+    if let Some(window) = app.get_webview_window("main") {
+        if let Err(e) = window.set_always_on_top(new_state) {
+            eprintln!("[Tray] Failed to set always-on-top: {:?}", e);
+        }
+    }
+
+    // Sync the in-memory AppState config so other code sees the update
+    if let Some(state) = app.try_state::<crate::AppState>() {
+        let config_clone = config.clone();
+        let state_config = state.app_config.clone();
+        tauri::async_runtime::spawn(async move {
+            let mut guard = state_config.lock().await;
+            *guard = config_clone;
+        });
+    }
+
+    // Update the checkmark on the tray menu item
+    if let Some(tray_state) = app.try_state::<TrayState>() {
+        if let Ok(guard) = tray_state.always_on_top_item.lock() {
+            if let Some(item) = guard.as_ref() {
+                if let Err(e) = item.set_checked(new_state) {
+                    eprintln!("[Tray] Failed to update always-on-top checkmark: {:?}", e);
+                }
+            }
+        }
+    }
+
+    eprintln!("[Tray] Always on Top toggled to: {}", new_state);
 }
 
 // =============================================================================

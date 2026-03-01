@@ -334,6 +334,9 @@ pub struct AppConfig {
     /// Appearance settings group.
     #[serde(default)]
     pub appearance: AppearanceConfig,
+    /// Whether the main window should always appear on top of other windows.
+    #[serde(default)]
+    pub always_on_top: bool,
 }
 
 impl AppConfig {

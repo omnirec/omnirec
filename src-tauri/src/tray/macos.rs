@@ -12,7 +12,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tauri::{
     image::Image,
-    menu::{Menu, MenuItem},
+    menu::{CheckMenuItem, Menu, MenuItem},
     tray::TrayIconBuilder,
     Manager,
 };
@@ -141,6 +141,12 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     // Track recording state
     let is_recording = Arc::new(AtomicBool::new(false));
 
+    // Load current always-on-top state from config
+    let initial_always_on_top = {
+        use crate::config::load_config;
+        load_config().always_on_top
+    };
+
     // Create menu items
     // Note: macOS "Record Screen/Window" shows the main window (unlike Linux which starts portal)
     let record_item = MenuItem::with_id(
@@ -164,6 +170,14 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         true,
         None::<&str>,
     )?;
+    let always_on_top_item = CheckMenuItem::with_id(
+        app,
+        menu_ids::ALWAYS_ON_TOP,
+        menu_labels::ALWAYS_ON_TOP,
+        true,
+        initial_always_on_top,
+        None::<&str>,
+    )?;
     let configuration = MenuItem::with_id(
         app,
         menu_ids::CONFIGURATION,
@@ -174,13 +188,14 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let about = MenuItem::with_id(app, menu_ids::ABOUT, menu_labels::ABOUT, true, None::<&str>)?;
     let exit = MenuItem::with_id(app, menu_ids::EXIT, menu_labels::EXIT, true, None::<&str>)?;
 
-    // Build menu with all items
+    // Build menu with all items (Always on Top placed after Transcription, before Configuration)
     let menu = Menu::with_items(
         app,
         &[
             &record_item,
             &stop_item,
             &transcription_item,
+            &always_on_top_item,
             &configuration,
             &about,
             &exit,
@@ -202,6 +217,7 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     app.manage(TrayState {
         tray: std::sync::Mutex::new(tray),
         is_recording,
+        always_on_top_item: std::sync::Mutex::new(Some(always_on_top_item)),
     });
 
     eprintln!("[Tray] macOS menu bar setup complete");
@@ -278,6 +294,9 @@ pub fn handle_menu_event(app: &tauri::AppHandle, event: &tauri::menu::MenuEvent)
         eprintln!("[Tray] Transcription clicked");
         use tauri::Emitter;
         let _ = app.emit("tray-show-transcription", ());
+    } else if id == menu_ids::ALWAYS_ON_TOP {
+        eprintln!("[Tray] Always on Top clicked");
+        super::toggle_always_on_top(app);
     } else if id == menu_ids::CONFIGURATION {
         eprintln!("[Tray] Configuration clicked - opening config window");
         super::open_config_window(app);

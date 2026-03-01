@@ -184,6 +184,29 @@ pub fn run() {
                 eprintln!("[Setup] Failed to set up tray: {}", e);
             }
 
+            // Restore always-on-top window property from config
+            {
+                use tauri::Manager;
+                let app_state = app.state::<AppState>();
+                // Use a blocking read here since we're still in the synchronous setup closure.
+                // We call load_config() directly (same as setup_tray does) to avoid
+                // blocking on the async mutex during synchronous setup.
+                let always_on_top = {
+                    let cfg = config::load_config();
+                    cfg.always_on_top
+                };
+                if always_on_top {
+                    if let Some(window) = app.get_webview_window("main") {
+                        if let Err(e) = window.set_always_on_top(true) {
+                            eprintln!("[Setup] Failed to set always-on-top: {:?}", e);
+                        } else {
+                            eprintln!("[Setup] Always-on-top enabled from config");
+                        }
+                    }
+                }
+                let _ = app_state; // suppress unused warning
+            }
+
             // ---- Initialize recording subsystem in-process ----
             use tauri::Manager;
             let app_state = app.state::<AppState>();
