@@ -30,6 +30,7 @@ pub mod menu_ids {
     pub const TRANSCRIPTION: &str = "transcription";
     pub const ALWAYS_ON_TOP: &str = "always_on_top";
     pub const CONFIGURATION: &str = "configuration";
+    pub const LOGS: &str = "logs";
     pub const ABOUT: &str = "about";
     pub const EXIT: &str = "exit";
 }
@@ -41,6 +42,7 @@ pub mod menu_labels {
     pub const TRANSCRIPTION: &str = "Transcription";
     pub const ALWAYS_ON_TOP: &str = "Always on Top";
     pub const CONFIGURATION: &str = "Configuration";
+    pub const LOGS: &str = "Logs";
     pub const ABOUT: &str = "About";
     pub const EXIT: &str = "Exit";
 }
@@ -138,6 +140,32 @@ pub fn open_about_window(app: &tauri::AppHandle) {
     {
         Ok(_) => eprintln!("[Tray] About window created"),
         Err(e) => eprintln!("[Tray] Failed to create about window: {:?}", e),
+    }
+}
+
+/// Open the log viewer window, or focus it if already open.
+pub fn open_log_viewer_window(app: &tauri::AppHandle) {
+    use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+
+    if let Some(w) = app.get_webview_window("logs") {
+        let _ = w.show();
+        let _ = w.set_focus();
+        return;
+    }
+
+    match WebviewWindowBuilder::new(app, "logs", WebviewUrl::App("logs.html".into()))
+        .title("OmniRec Logs")
+        .inner_size(900.0, 600.0)
+        .min_inner_size(600.0, 400.0)
+        .resizable(true)
+        .decorations(false)
+        .shadow(true)
+        .skip_taskbar(true)
+        .center()
+        .build()
+    {
+        Ok(_) => eprintln!("[Tray] Logs window created"),
+        Err(e) => eprintln!("[Tray] Failed to create logs window: {:?}", e),
     }
 }
 

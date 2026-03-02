@@ -238,6 +238,7 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         true,
         None::<&str>,
     )?;
+    let logs = MenuItem::with_id(app, menu_ids::LOGS, menu_labels::LOGS, true, None::<&str>)?;
     let about = MenuItem::with_id(app, menu_ids::ABOUT, menu_labels::ABOUT, true, None::<&str>)?;
     let exit = MenuItem::with_id(app, menu_ids::EXIT, menu_labels::EXIT, true, None::<&str>)?;
 
@@ -250,6 +251,7 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             &transcription_item,
             &always_on_top_item,
             &configuration,
+            &logs,
             &about,
             &exit,
         ],
@@ -288,6 +290,10 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             id if id == menu_ids::CONFIGURATION => {
                 eprintln!("[Tray] Configuration clicked - opening config window");
                 super::open_config_window(app);
+            }
+            id if id == menu_ids::LOGS => {
+                eprintln!("[Tray] Logs clicked - opening log viewer");
+                super::open_log_viewer_window(app);
             }
             id if id == menu_ids::ABOUT => {
                 eprintln!("[Tray] About clicked - opening about window");

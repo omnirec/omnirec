@@ -13,6 +13,31 @@ use std::fmt;
 use std::fs;
 use std::path::PathBuf;
 
+/// Minimum log level for the tracing subscriber.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum LogLevel {
+    Error,
+    Warn,
+    #[default]
+    Info,
+    Debug,
+    Trace,
+}
+
+impl LogLevel {
+    /// Returns the `EnvFilter`-compatible string for this level.
+    pub fn as_filter_str(&self) -> &'static str {
+        match self {
+            Self::Error => "error",
+            Self::Warn => "warn",
+            Self::Info => "info",
+            Self::Debug => "debug",
+            Self::Trace => "trace",
+        }
+    }
+}
+
 /// Theme mode for the application appearance.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "lowercase")]
@@ -337,6 +362,9 @@ pub struct AppConfig {
     /// Whether the main window should always appear on top of other windows.
     #[serde(default)]
     pub always_on_top: bool,
+    /// Minimum log level persisted to disk (can be changed at runtime).
+    #[serde(default)]
+    pub log_level: LogLevel,
 }
 
 impl AppConfig {
