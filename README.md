@@ -8,12 +8,9 @@
 
 <p align="center"><i>The universal screen recorder for every desktop</i></p>
 
-<p align="center">
-  <a href="https://github.com/omnirec/omnirec/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/omnirec/omnirec/ci.yml?branch=master&label=build" alt="Build Status"></a>
-  <a href="https://github.com/omnirec/omnirec/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/omnirec/omnirec/ci.yml?branch=master&label=tests" alt="Test Status"></a>
-  <a href="https://github.com/omnirec/omnirec/releases"><img src="https://img.shields.io/github/v/release/omnirec/omnirec" alt="Release"></a>
-  <!-- <a href="https://aur.archlinux.org/packages/omnirec-bin"><img src="https://img.shields.io/aur/version/omnirec-bin" alt="AUR Version"></a> -->
-</p>
+[![CI](https://github.com/omnirec/omnirec/actions/workflows/ci.yml/badge.svg)](https://github.com/omnirec/omnirec/actions/workflows/ci.yml)
+[![Release](https://github.com/omnirec/omnirec/actions/workflows/release.yml/badge.svg)](https://github.com/omnirec/omnirec/actions/workflows/release.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/omnirec/omnirec/blob/master/LICENSE)
 
 <picture><img src="images/omnirec-screenshots.gif"></picture>
 
@@ -56,6 +53,16 @@
 > [!WARNING]
 >
 > OmniRec is in active development and is not yet available for general use. If you would like to help test OmniRec or contribute to its development, please download one of the available pre-release installation packages or build from source (see below).
+
+<!-- release-links:start -->
+**Current release:** v0.1.15
+
+**Download packages**
+- Windows: [OmniRec_0.1.15_x64-setup.exe](https://github.com/omnirec/omnirec/releases/download/v0.1.15/OmniRec_0.1.15_x64-setup.exe)
+- macOS (Apple Silicon M-Series): [OmniRec_aarch64.dmg](https://github.com/omnirec/omnirec/releases/download/v0.1.15/OmniRec_aarch64.dmg)
+- macOS (Legacy Intel x64): [OmniRec_x64.dmg](https://github.com/omnirec/omnirec/releases/download/v0.1.15/OmniRec_x64.dmg)
+- Linux: See the [Releases page](https://github.com/omnirec/omnirec/releases) for `.deb`, `.rpm`, and other packages
+<!-- release-links:end -->
 
 ### Windows
 
