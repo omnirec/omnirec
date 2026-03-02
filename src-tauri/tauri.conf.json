@@ -63,6 +63,12 @@
       "entitlements": "Entitlements.plist",
       "signingIdentity": "Developer ID Application: Keath Milligan (WMYVSJCH96)"
     },
+    "windows": {
+      "wix": {
+        "bannerPath": "wix-banner.bmp",
+        "dialogImagePath": "wix-dialog.bmp"
+      }
+    },
     "linux": {
       "deb": {
         "depends": [
