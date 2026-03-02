@@ -55,10 +55,10 @@ pub mod icon_names {
     pub const SYMBOLIC_32: &str = "omnirec-symbolic-32.png";
     pub const SYMBOLIC: &str = "omnirec-symbolic.png";
 
-    /// Full-color icons for COSMIC and other platforms.
-    pub const COLOR_128: &str = "128x128.png";
-    pub const COLOR_64: &str = "64x64.png";
-    pub const COLOR_32: &str = "32x32.png";
+    /// Full-color icons for COSMIC and other platforms (original app icon, preserved for tray use).
+    pub const COLOR_128: &str = "omnirec-tray-128.png";
+    pub const COLOR_64: &str = "omnirec-tray-64.png";
+    pub const COLOR_32: &str = "omnirec-tray-32.png";
 
     /// Recording indicator icons.
     pub const RECORDING_22: &str = "omnirec-recording-22.png";
