@@ -8,6 +8,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  WHISPER_VERSION: "1.8.2"
 
 jobs:
   lint-and-test:
@@ -65,6 +66,15 @@ jobs:
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
+
+      - name: Cache whisper.cpp binaries
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/whisper-cache
+          key: whisper-${{ env.WHISPER_VERSION }}-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Set whisper cache dir
+        run: echo "WHISPER_CACHE_DIR=${{ runner.temp }}/whisper-cache" >> "$GITHUB_ENV"
 
       - name: Lint (Makefile)
         run: make lint
