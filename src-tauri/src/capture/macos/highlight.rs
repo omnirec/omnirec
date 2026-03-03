@@ -42,7 +42,7 @@ fn create_highlight_window(x: i32, y: i32, width: i32, height: i32) {
     let mtm = match MainThreadMarker::new() {
         Some(m) => m,
         None => {
-            eprintln!("[macOS] Highlight: not on main thread");
+            tracing::debug!("[macOS] Highlight: not on main thread");
             return;
         }
     };

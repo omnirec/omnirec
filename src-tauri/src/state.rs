@@ -316,11 +316,11 @@ impl RecordingManager {
         // Transcription requires system audio (can't transcribe mic-only reliably)
         let transcription_enabled = transcription_cfg.enabled && has_system_audio;
 
-        eprintln!(
+        tracing::debug!(
             "[Recording] Audio config: enabled={}, source_id={:?}, mic_id={:?}, has_system_audio={}, has_mic={}, audio_enabled={}",
             audio_cfg.enabled, audio_cfg.source_id, audio_cfg.microphone_id, has_system_audio, has_microphone, audio_enabled
         );
-        eprintln!(
+        tracing::debug!(
             "[Recording] Transcription config: enabled={}, transcription_enabled={}",
             transcription_cfg.enabled, transcription_enabled
         );
@@ -356,7 +356,7 @@ impl RecordingManager {
                     let audio_encoder_config = AudioEncoderConfig::default();
 
                     if transcription_enabled {
-                        eprintln!("[Transcription] Transcription is ENABLED - creating channel and starting task");
+                        tracing::debug!("[Transcription] Transcription is ENABLED - creating channel and starting task");
 
                         // Generate output path upfront so transcription can use the same base name
                         let video_output_path = match crate::encoder::generate_output_path() {
@@ -366,11 +366,11 @@ impl RecordingManager {
                                 return Err(e);
                             }
                         };
-                        eprintln!("[Transcription] Video output path: {:?}", video_output_path);
+                        tracing::debug!("[Transcription] Video output path: {:?}", video_output_path);
 
                         // Get model path from config
                         let model_path = transcription_cfg.model_path.as_ref().map(PathBuf::from);
-                        eprintln!("[Transcription] Model path from config: {:?}", model_path);
+                        tracing::debug!("[Transcription] Model path from config: {:?}", model_path);
 
                         // Create transcription channel
                         let (transcription_tx, transcription_rx) = mpsc::channel::<Vec<f32>>(256);
@@ -395,7 +395,7 @@ impl RecordingManager {
                             Some(video_output_path),
                         ))
                     } else {
-                        eprintln!("[Transcription] Transcription is DISABLED (config.enabled={}, has_system_audio={})", 
+                        tracing::debug!("[Transcription] Transcription is DISABLED (config.enabled={}, has_system_audio={})", 
                             transcription_cfg.enabled, has_system_audio);
                         // Standard audio encoding without transcription
                         tokio::spawn(encode_frames_with_audio(
@@ -497,7 +497,7 @@ impl RecordingManager {
         let model_path_for_thread = model_path.clone();
         let on_segment_clone = on_segment.clone();
         let transcription_thread = std::thread::spawn(move || {
-            eprintln!("[Transcription] Worker thread started");
+            tracing::debug!("[Transcription] Worker thread started");
             let mut transcribe_state = TranscribeState::new();
 
             // Start the transcription state with the video output path, model path, and callback
@@ -508,13 +508,13 @@ impl RecordingManager {
                 model_path_for_thread,
                 Some(on_segment_clone),
             ) {
-                eprintln!(
+                tracing::debug!(
                     "[Transcription] Failed to start transcription in thread: {}",
                     e
                 );
                 return;
             }
-            eprintln!("[Transcription] TranscribeState initialized in worker thread");
+            tracing::debug!("[Transcription] TranscribeState initialized in worker thread");
 
             let mut total_samples_received: u64 = 0;
             let mut last_stats_time = std::time::Instant::now();
@@ -532,7 +532,7 @@ impl RecordingManager {
                         // Log stats every 5 seconds
                         if last_stats_time.elapsed().as_secs() >= 5 {
                             let duration_secs = total_samples_received as f64 / 48000.0 / 2.0; // stereo
-                            eprintln!(
+                            tracing::debug!(
                                 "[Transcription] Received {:.1}s of audio ({} samples), queue depth: {}",
                                 duration_secs,
                                 total_samples_received,
@@ -545,7 +545,7 @@ impl RecordingManager {
                         continue;
                     }
                     Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                        eprintln!("[Transcription] Channel disconnected, exiting loop");
+                        tracing::debug!("[Transcription] Channel disconnected, exiting loop");
                         break;
                     }
                 }
@@ -553,7 +553,7 @@ impl RecordingManager {
 
             // Finalize transcription
             transcribe_state.stop();
-            eprintln!(
+            tracing::debug!(
                 "[Transcription] Thread finished - total {:.1}s of audio, {} segments processed",
                 total_samples_received as f64 / 48000.0 / 2.0,
                 queue_clone.segments_processed()
@@ -581,7 +581,7 @@ impl RecordingManager {
                     }
                     None => {
                         // Channel closed - encoder has finished
-                        eprintln!(
+                        tracing::debug!(
                             "[Transcription] Forwarder: channel closed after {} batches",
                             forwarded_count
                         );

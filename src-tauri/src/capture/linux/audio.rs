@@ -96,7 +96,7 @@ impl AudioMixer {
                 .build()
             {
                 Ok(aec) => {
-                    eprintln!(
+                    tracing::debug!(
                         "[AudioMixer] AEC3 initialized: 48kHz, {} channels, {}ms frames",
                         self.channels,
                         AEC_FRAME_SAMPLES * 1000 / 48000
@@ -104,7 +104,7 @@ impl AudioMixer {
                     self.aec = Some(aec);
                 }
                 Err(e) => {
-                    eprintln!("[AudioMixer] Failed to initialize AEC3: {:?}", e);
+                    tracing::error!("[AudioMixer] Failed to initialize AEC3: {:?}", e);
                     self.aec = None;
                 }
             }
@@ -190,7 +190,7 @@ impl AudioMixer {
                     match aec.process(&mic_samples, Some(&sys_samples), false, &mut out) {
                         Ok(_metrics) => out,
                         Err(e) => {
-                            eprintln!("[AudioMixer] AEC3 process error: {:?}", e);
+                            tracing::debug!("[AudioMixer] AEC3 process error: {:?}", e);
                             mic_samples
                         }
                     }
@@ -263,7 +263,7 @@ impl PipeWireAudioBackend {
                 audio_tx_clone,
                 aec_enabled_clone,
             ) {
-                eprintln!("[Audio] PipeWire thread error: {}", e);
+                tracing::error!("[Audio] PipeWire thread error: {}", e);
             }
         });
 
@@ -307,7 +307,7 @@ impl PipeWireAudioBackend {
     /// Set AEC enabled state.
     pub fn set_aec_enabled(&self, enabled: bool) {
         *self.aec_enabled.lock().unwrap() = enabled;
-        eprintln!("[Audio] AEC enabled: {}", enabled);
+        tracing::debug!("[Audio] AEC enabled: {}", enabled);
     }
 
     /// Start audio capture from up to two sources.
@@ -473,7 +473,7 @@ fn run_pipewire_audio_thread(
                             name: node_desc.to_string(),
                             source_type: AudioSourceType::Input,
                         };
-                        eprintln!(
+                        tracing::debug!(
                             "[Audio] Found input device: {} (ID: {})",
                             source.name, source.id
                         );
@@ -488,7 +488,7 @@ fn run_pipewire_audio_thread(
                             name: format!("{} (Monitor)", node_desc),
                             source_type: AudioSourceType::Output,
                         };
-                        eprintln!(
+                        tracing::debug!(
                             "[Audio] Found output device: {} (ID: {})",
                             source.name, source.id
                         );
@@ -507,12 +507,12 @@ fn run_pipewire_audio_thread(
             let output_devices = Arc::clone(&output_devices);
             move |id| {
                 if input_map.borrow_mut().remove(&id).is_some() {
-                    eprintln!("[Audio] Input device removed: {}", id);
+                    tracing::debug!("[Audio] Input device removed: {}", id);
                     let devices: Vec<_> = input_map.borrow().values().cloned().collect();
                     *input_devices.lock().unwrap() = devices;
                 }
                 if output_map.borrow_mut().remove(&id).is_some() {
-                    eprintln!("[Audio] Output device removed: {}", id);
+                    tracing::debug!("[Audio] Output device removed: {}", id);
                     let devices: Vec<_> = output_map.borrow().values().cloned().collect();
                     *output_devices.lock().unwrap() = devices;
                 }
@@ -584,7 +584,7 @@ fn run_pipewire_audio_thread(
                         system_source_id,
                         mic_source_id,
                     } => {
-                        eprintln!(
+                        tracing::debug!(
                             "[Audio] Starting capture: system={:?}, mic={:?}",
                             system_source_id, mic_source_id
                         );
@@ -614,7 +614,7 @@ fn run_pipewire_audio_thread(
                                 Arc::clone(&state.sample_rate),
                             ) {
                                 Ok(stream) => state.streams.push(stream),
-                                Err(e) => eprintln!("[Audio] Failed to create mic stream: {}", e),
+                                Err(e) => tracing::debug!("[Audio] Failed to create mic stream: {}", e),
                             }
                         }
 
@@ -631,12 +631,12 @@ fn run_pipewire_audio_thread(
                                 Arc::clone(&state.sample_rate),
                             ) {
                                 Ok(stream) => state.streams.push(stream),
-                                Err(e) => eprintln!("[Audio] Failed to create sys stream: {}", e),
+                                Err(e) => tracing::debug!("[Audio] Failed to create sys stream: {}", e),
                             }
                         }
                     }
                     AudioCommand::StopCapture => {
-                        eprintln!("[Audio] Stopping capture");
+                        tracing::debug!("[Audio] Stopping capture");
                         state_for_timer.borrow_mut().streams.clear();
                         mixer_for_timer.borrow_mut().set_num_streams(0);
                     }
@@ -753,7 +753,7 @@ fn create_capture_stream(
                 if format_info_for_param.borrow_mut().parse(param).is_ok() {
                     let rate = format_info_for_param.borrow().rate();
                     let ch = format_info_for_param.borrow().channels();
-                    eprintln!(
+                    tracing::debug!(
                         "[Audio] {:?} stream format: rate={}, channels={}",
                         stream_type, rate, ch
                     );
@@ -764,7 +764,7 @@ fn create_capture_stream(
             }
         })
         .state_changed(move |_stream, _user_data, old, new| {
-            eprintln!(
+            tracing::debug!(
                 "[Audio] {:?} stream state: {:?} -> {:?}",
                 stream_type, old, new
             );
@@ -840,16 +840,16 @@ static AUDIO_BACKEND: once_cell::sync::OnceCell<PipeWireAudioBackend> =
 /// Initialize the global audio backend (call once at app startup).
 pub fn init_audio_backend() -> Result<(), String> {
     if AUDIO_BACKEND.get().is_some() {
-        eprintln!("[Audio] Backend already initialized");
+        tracing::debug!("[Audio] Backend already initialized");
         return Ok(());
     }
 
-    eprintln!("[Audio] Initializing PipeWire audio backend...");
+    tracing::debug!("[Audio] Initializing PipeWire audio backend...");
     let backend = PipeWireAudioBackend::new()?;
     AUDIO_BACKEND
         .set(backend)
         .map_err(|_| "Audio backend already set")?;
-    eprintln!("[Audio] PipeWire audio backend initialized");
+    tracing::debug!("[Audio] PipeWire audio backend initialized");
     Ok(())
 }
 

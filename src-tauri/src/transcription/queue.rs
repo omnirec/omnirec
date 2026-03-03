@@ -121,7 +121,7 @@ impl TranscriptionQueue {
         let segments_processed = Arc::clone(&self.segments_processed);
 
         thread::spawn(move || {
-            eprintln!(
+            tracing::debug!(
                 "[TranscriptionQueue] Worker thread starting, transcript: {:?}",
                 transcript_path
             );
@@ -135,11 +135,11 @@ impl TranscriptionQueue {
             // Initialize transcript writer
             let mut writer = match TranscriptWriter::new(&transcript_path) {
                 Ok(w) => {
-                    eprintln!("[TranscriptionQueue] Transcript writer created successfully");
+                    tracing::debug!("[TranscriptionQueue] Transcript writer created successfully");
                     w
                 }
                 Err(e) => {
-                    eprintln!(
+                    tracing::debug!(
                         "[TranscriptionQueue] Failed to create transcript writer: {}",
                         e
                     );
@@ -150,17 +150,17 @@ impl TranscriptionQueue {
 
             // Try to pre-load model
             if transcriber.is_model_available() {
-                eprintln!("[TranscriptionQueue] Model available, pre-loading...");
+                tracing::debug!("[TranscriptionQueue] Model available, pre-loading...");
                 if let Err(e) = transcriber.load_model() {
-                    eprintln!(
+                    tracing::debug!(
                         "[TranscriptionQueue] Failed to pre-load whisper model: {}",
                         e
                     );
                 } else {
-                    eprintln!("[TranscriptionQueue] Model loaded successfully");
+                    tracing::debug!("[TranscriptionQueue] Model loaded successfully");
                 }
             } else {
-                eprintln!("[TranscriptionQueue] Whisper model not available");
+                tracing::warn!("[TranscriptionQueue] Whisper model not available");
             }
 
             loop {
@@ -188,7 +188,7 @@ impl TranscriptionQueue {
                 match segment {
                     Some(seg) => {
                         let duration_secs = seg.samples.len() as f64 / 16000.0;
-                        eprintln!(
+                        tracing::debug!(
                             "[TranscriptionQueue] Processing segment: {:.2}s ({} samples) at {:.1}s",
                             duration_secs,
                             seg.samples.len(),
@@ -199,14 +199,14 @@ impl TranscriptionQueue {
                         match transcriber.transcribe(&seg.samples) {
                             Ok(text) => {
                                 if !text.is_empty() {
-                                    eprintln!(
+                                    tracing::debug!(
                                         "[TranscriptionQueue] Transcribed: \"{}\"",
                                         text.chars().take(80).collect::<String>()
                                     );
                                     // Write to transcript file
                                     if let Err(e) = writer.write_segment(seg.timestamp_secs, &text)
                                     {
-                                        eprintln!(
+                                        tracing::debug!(
                                             "[TranscriptionQueue] Failed to write transcript: {}",
                                             e
                                         );
@@ -216,13 +216,13 @@ impl TranscriptionQueue {
                                         callback(seg.timestamp_secs, text);
                                     }
                                 } else {
-                                    eprintln!(
+                                    tracing::debug!(
                                         "[TranscriptionQueue] Transcription returned empty text"
                                     );
                                 }
                             }
                             Err(e) => {
-                                eprintln!("[TranscriptionQueue] Transcription failed: {}", e);
+                                tracing::debug!("[TranscriptionQueue] Transcription failed: {}", e);
                             }
                         }
 

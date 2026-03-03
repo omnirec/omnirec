@@ -155,18 +155,18 @@ impl CaptureBackend for MacOSBackend {
         // Create a new channel for cropped frames
         let (tx, rx) = mpsc::channel(3);
 
-        eprintln!("[macOS] === REGION CAPTURE DEBUG ===");
-        eprintln!("[macOS] Input region from frontend (logical coords):");
-        eprintln!(
+        tracing::debug!("[macOS] === REGION CAPTURE DEBUG ===");
+        tracing::debug!("[macOS] Input region from frontend (logical coords):");
+        tracing::debug!(
             "[macOS]   x={}, y={}, width={}, height={}",
             region.x, region.y, region.width, region.height
         );
-        eprintln!("[macOS] Monitor info:");
-        eprintln!(
+        tracing::debug!("[macOS] Monitor info:");
+        tracing::debug!(
             "[macOS]   id={}, logical_origin=({}, {}), logical_size={}x{}, scale={}",
             monitor.id, monitor.x, monitor.y, monitor.width, monitor.height, scale
         );
-        eprintln!(
+        tracing::debug!(
             "[macOS]   physical_size={}x{}",
             physical_monitor_width, physical_monitor_height
         );
@@ -195,23 +195,23 @@ impl CaptureBackend for MacOSBackend {
             )));
         }
 
-        eprintln!("[macOS] Final crop region (physical pixels):");
-        eprintln!(
+        tracing::debug!("[macOS] Final crop region (physical pixels):");
+        tracing::debug!(
             "[macOS]   x={}, y={}, width={}, height={}",
             region_x, region_y, region_width, region_height
         );
-        eprintln!("[macOS] =============================");
+        tracing::debug!("[macOS] =============================");
 
         let stop_flag = stop_handle.clone();
 
         // Spawn a task to crop frames
         tokio::spawn(async move {
-            eprintln!("[macOS] Cropping task started");
+            tracing::debug!("[macOS] Cropping task started");
             let mut frame_count = 0u32;
             loop {
                 // Check stop flag before waiting for frame
                 if stop_flag.load(Ordering::Relaxed) {
-                    eprintln!("[macOS] Cropping task: stop flag set, exiting");
+                    tracing::debug!("[macOS] Cropping task: stop flag set, exiting");
                     break;
                 }
 
@@ -222,11 +222,11 @@ impl CaptureBackend for MacOSBackend {
                     Ok(Some(frame)) => {
                         // Log first frame info
                         if frame_count == 0 {
-                            eprintln!(
+                            tracing::debug!(
                                 "[macOS] First frame received: {}x{}",
                                 frame.width, frame.height
                             );
-                            eprintln!(
+                            tracing::debug!(
                                 "[macOS] Cropping to: {}x{} at ({},{})",
                                 region_width, region_height, region_x, region_y
                             );
@@ -238,14 +238,14 @@ impl CaptureBackend for MacOSBackend {
                             crop_frame(&frame, region_x, region_y, region_width, region_height)
                         {
                             if tx.send(cropped).await.is_err() {
-                                eprintln!("[macOS] Cropping task: send failed, exiting");
+                                tracing::debug!("[macOS] Cropping task: send failed, exiting");
                                 break;
                             }
                         }
                     }
                     Ok(None) => {
                         // Channel closed
-                        eprintln!("[macOS] Cropping task: channel closed, exiting");
+                        tracing::debug!("[macOS] Cropping task: channel closed, exiting");
                         break;
                     }
                     Err(_) => {
@@ -254,7 +254,7 @@ impl CaptureBackend for MacOSBackend {
                     }
                 }
             }
-            eprintln!("[macOS] Cropping task finished");
+            tracing::debug!("[macOS] Cropping task finished");
         });
 
         Ok((rx, stop_handle))
@@ -364,7 +364,7 @@ fn crop_frame(
 ) -> Option<CapturedFrame> {
     // Validate crop region fits within frame
     if x + width > frame.width || y + height > frame.height {
-        eprintln!(
+        tracing::debug!(
             "[macOS] Crop region {}x{} at ({},{}) exceeds frame size {}x{}",
             width, height, x, y, frame.width, frame.height
         );

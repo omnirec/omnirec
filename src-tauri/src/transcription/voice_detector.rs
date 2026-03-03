@@ -253,7 +253,7 @@ impl VoiceDetector {
         if self.total_samples_processed - self.last_debug_log_samples >= log_interval_samples {
             self.last_debug_log_samples = self.total_samples_processed;
             let total_secs = self.total_samples_processed as f64 / self.sample_rate as f64;
-            eprintln!(
+            tracing::debug!(
                 "[VoiceDetector] {:.1}s processed: dB={:.1}, zcr={:.3}, centroid={:.0}Hz, speaking={}, pending_voiced={}, pending_whisper={}",
                 total_secs,
                 db,

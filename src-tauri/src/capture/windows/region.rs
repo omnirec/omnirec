@@ -78,13 +78,13 @@ impl GraphicsCaptureApiHandler for RegionCaptureHandler {
 
         // Debug: log frame dimensions on first frame
         if self.frame_count == 0 {
-            eprintln!("[Windows] First frame received:");
-            eprintln!(
+            tracing::debug!("[Windows] First frame received:");
+            tracing::debug!(
                 "[Windows]   Frame dimensions: {}x{}",
                 full_width, full_height
             );
-            eprintln!("[Windows]   Buffer stride: {} bytes/row", buffer_stride);
-            eprintln!(
+            tracing::debug!("[Windows]   Buffer stride: {} bytes/row", buffer_stride);
+            tracing::debug!(
                 "[Windows]   Region (physical): x={}, y={}, {}x{}",
                 region_x, region_y, region_width, region_height
             );
@@ -187,21 +187,21 @@ fn find_monitor_by_id(monitor_id: &str) -> Result<Monitor, String> {
     let monitors =
         Monitor::enumerate().map_err(|e| format!("Failed to enumerate monitors: {}", e))?;
 
-    eprintln!("[Windows] Looking for monitor with id: {}", monitor_id);
-    eprintln!("[Windows] Available monitors from windows-capture:");
+    tracing::debug!("[Windows] Looking for monitor with id: {}", monitor_id);
+    tracing::debug!("[Windows] Available monitors from windows-capture:");
 
     for (i, monitor) in monitors.iter().enumerate() {
         let name = monitor
             .device_name()
             .unwrap_or_else(|_| "unknown".to_string());
-        eprintln!("[Windows]   [{}] device_name={}", i, name);
+        tracing::debug!("[Windows]   [{}] device_name={}", i, name);
     }
 
     for monitor in monitors {
         // Get device name from monitor
         if let Ok(name) = monitor.device_name() {
             if name == monitor_id {
-                eprintln!("[Windows] Found matching monitor: {}", name);
+                tracing::debug!("[Windows] Found matching monitor: {}", name);
                 return Ok(monitor);
             }
         }
@@ -232,12 +232,12 @@ pub fn start_region_capture(
         .find(|m| m.id == region.monitor_id)
         .ok_or_else(|| format!("Monitor not found: {}", region.monitor_id))?;
 
-    eprintln!("[Windows] === REGION CAPTURE DEBUG ===");
-    eprintln!(
+    tracing::debug!("[Windows] === REGION CAPTURE DEBUG ===");
+    tracing::debug!(
         "[Windows] Input region (physical coords): monitor_id={}, x={}, y={}, {}x{}",
         region.monitor_id, region.x, region.y, region.width, region.height
     );
-    eprintln!(
+    tracing::debug!(
         "[Windows] Target monitor: pos=({}, {}), size={}x{}, scale={}",
         monitor_info.x,
         monitor_info.y,
@@ -245,14 +245,14 @@ pub fn start_region_capture(
         monitor_info.height,
         monitor_info.scale_factor
     );
-    eprintln!("[Windows] All monitors (physical coords):");
+    tracing::debug!("[Windows] All monitors (physical coords):");
     for m in &monitors {
-        eprintln!(
+        tracing::debug!(
             "[Windows]   {} at ({}, {}) {}x{} scale={}",
             m.id, m.x, m.y, m.width, m.height, m.scale_factor
         );
     }
-    eprintln!("[Windows] =============================");
+    tracing::debug!("[Windows] =============================");
 
     // Find the monitor for capture
     let monitor = find_monitor_by_id(&region.monitor_id)?;
@@ -286,7 +286,7 @@ pub fn start_region_capture(
     // Start capture in a separate thread
     std::thread::spawn(move || {
         if let Err(e) = RegionCaptureHandler::start(settings) {
-            eprintln!("Region capture error: {}", e);
+            tracing::debug!("Region capture error: {}", e);
         }
     });
 

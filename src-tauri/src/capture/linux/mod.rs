@@ -39,17 +39,17 @@ static IPC_STATE: once_cell::sync::OnceCell<Arc<RwLock<IpcServerState>>> =
 /// Initialize the global IPC server (call once at app startup).
 pub async fn init_ipc_server() -> Result<(), String> {
     if IPC_STATE.get().is_some() {
-        eprintln!("[Linux] IPC server already initialized");
+        tracing::debug!("[Linux] IPC server already initialized");
         return Ok(());
     }
 
-    eprintln!("[Linux] Starting IPC server...");
+    tracing::debug!("[Linux] Starting IPC server...");
     let state = ipc_server::start_ipc_server()
         .await
         .map_err(|e| format!("Failed to start IPC server: {}", e))?;
 
     IPC_STATE.set(state).map_err(|_| "IPC state already set")?;
-    eprintln!(
+    tracing::debug!(
         "[Linux] IPC server started at {:?}",
         ipc_server::get_socket_path()
     );
@@ -230,7 +230,7 @@ impl MonitorEnumerator for LinuxBackend {
 
             let mut result = Vec::new();
             for monitor in monitors {
-                eprintln!(
+                tracing::debug!(
                     "[Linux] Monitor {}: {}x{} at ({},{}) scale={}",
                     monitor.name,
                     monitor.width,
@@ -264,7 +264,7 @@ impl MonitorEnumerator for LinuxBackend {
         // Fallback for GNOME and other desktops: use xrandr or provide a default
         // For now, return a single "default" monitor that covers the primary display
         // The portal will handle the actual display selection
-        eprintln!("[Linux] Non-Hyprland: using fallback monitor enumeration");
+        tracing::debug!("[Linux] Non-Hyprland: using fallback monitor enumeration");
 
         // Try to get display info from environment or use sensible defaults
         // On Wayland/GNOME, we can't easily enumerate monitors without compositor-specific APIs
@@ -306,7 +306,7 @@ impl CaptureBackend for LinuxBackend {
         // The window handle is the address converted to isize, convert back to hex string
         let window_address = format!("0x{:x}", window_handle as usize);
 
-        eprintln!(
+        tracing::debug!(
             "[Linux] Starting window capture for {} ({})",
             window.title, window_address
         );
@@ -323,7 +323,7 @@ impl CaptureBackend for LinuxBackend {
         })
         .map_err(CaptureError::PlatformError)?;
 
-        eprintln!(
+        tracing::debug!(
             "[Linux] Portal returned node ID {} for window capture",
             stream.node_id
         );
@@ -343,7 +343,7 @@ impl CaptureBackend for LinuxBackend {
         &self,
         region: CaptureRegion,
     ) -> Result<(FrameReceiver, StopHandle), CaptureError> {
-        eprintln!(
+        tracing::debug!(
             "[Linux] Starting region capture for {} ({}x{} at {},{})",
             region.monitor_id, region.width, region.height, region.x, region.y
         );
@@ -417,7 +417,7 @@ impl CaptureBackend for LinuxBackend {
         })
         .map_err(CaptureError::PlatformError)?;
 
-        eprintln!(
+        tracing::debug!(
             "[Linux] Portal returned node ID {} for region capture",
             stream.node_id
         );
@@ -428,15 +428,15 @@ impl CaptureBackend for LinuxBackend {
             .map(|(w, h)| (w as u32, h as u32))
             .unwrap_or((monitor.width, monitor.height));
 
-        eprintln!(
+        tracing::debug!(
             "[Linux] Capture stream size: {}x{}",
             capture_width, capture_height
         );
-        eprintln!(
+        tracing::debug!(
             "[Linux] Monitor reported size: {}x{}",
             monitor.width, monitor.height
         );
-        eprintln!(
+        tracing::debug!(
             "[Linux] Region from UI: {}x{} at {},{}",
             region.width, region.height, region.x, region.y
         );
@@ -446,7 +446,7 @@ impl CaptureBackend for LinuxBackend {
         let is_precropped = capture_width < monitor.width || capture_height < monitor.height;
 
         if is_precropped {
-            eprintln!(
+            tracing::debug!(
                 "[Linux] Portal provided pre-cropped stream - using as-is (no app-level cropping)"
             );
 
@@ -454,7 +454,7 @@ impl CaptureBackend for LinuxBackend {
             pipewire_capture::start_pipewire_capture(stream.node_id, capture_width, capture_height)
                 .map_err(CaptureError::PlatformError)
         } else {
-            eprintln!("[Linux] Portal provided full monitor stream - will crop in app");
+            tracing::debug!("[Linux] Portal provided full monitor stream - will crop in app");
 
             // We got the full monitor, need to crop ourselves
             // This shouldn't happen with XDPH region format, but handle it just in case
@@ -466,7 +466,7 @@ impl CaptureBackend for LinuxBackend {
             let scaled_width = (region.width as f64 * scale_x).round() as u32;
             let scaled_height = (region.height as f64 * scale_y).round() as u32;
 
-            eprintln!(
+            tracing::debug!(
                 "[Linux] App-level crop region: {}x{} at {},{}",
                 scaled_width, scaled_height, scaled_x, scaled_y
             );
@@ -494,7 +494,7 @@ impl CaptureBackend for LinuxBackend {
         width: u32,
         height: u32,
     ) -> Result<(FrameReceiver, StopHandle), CaptureError> {
-        eprintln!(
+        tracing::debug!(
             "[Linux] Starting display capture for {} ({}x{})",
             monitor_id, width, height
         );
@@ -512,7 +512,7 @@ impl CaptureBackend for LinuxBackend {
         })
         .map_err(CaptureError::PlatformError)?;
 
-        eprintln!(
+        tracing::debug!(
             "[Linux] Portal returned node ID {} for display capture",
             stream.node_id
         );
@@ -603,7 +603,7 @@ impl LinuxBackend {
     ///
     /// Returns a frame receiver and stop handle.
     pub fn start_portal_capture(&self) -> Result<(FrameReceiver, StopHandle), CaptureError> {
-        eprintln!("[Linux] Starting portal capture with native picker...");
+        tracing::debug!("[Linux] Starting portal capture with native picker...");
 
         // Get IPC state
         let ipc_state = get_ipc_state()
@@ -618,7 +618,7 @@ impl LinuxBackend {
         })
         .map_err(CaptureError::PlatformError)?;
 
-        eprintln!(
+        tracing::debug!(
             "[Linux] Portal returned node ID {} from native picker",
             stream.node_id
         );
@@ -629,14 +629,14 @@ impl LinuxBackend {
             .map(|(w, h)| (w as u32, h as u32))
             .unwrap_or((1920, 1080));
 
-        eprintln!(
+        tracing::debug!(
             "[Linux] Content dimensions: {}x{}",
             content_width, content_height
         );
 
         // Check if we need to crop (window capture provides position)
         if let Some((x, y)) = stream.position {
-            eprintln!(
+            tracing::debug!(
                 "[Linux] Window position: ({}, {}), will crop to content",
                 x, y
             );
@@ -666,7 +666,7 @@ impl LinuxBackend {
         } else {
             // No position info - use auto-crop detection for window captures
             // This handles GNOME's portal which doesn't provide window position
-            eprintln!(
+            tracing::debug!(
                 "[Linux] No position info, using auto-crop detection, dimensions: {}x{}",
                 content_width, content_height
             );

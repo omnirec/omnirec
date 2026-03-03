@@ -133,7 +133,7 @@ pub fn start_capture(
     // Start capture in a separate thread
     std::thread::spawn(move || {
         if let Err(e) = CaptureHandler::start(settings) {
-            eprintln!("Capture error: {}", e);
+            tracing::error!("Capture error: {}", e);
         }
     });
 

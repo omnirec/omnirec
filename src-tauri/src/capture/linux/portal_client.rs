@@ -65,7 +65,7 @@ impl PortalClient {
         &self,
         monitor_id: &str,
     ) -> Result<ScreencastStream, String> {
-        eprintln!("[PortalClient] request_monitor_capture: {}", monitor_id);
+        tracing::debug!("[PortalClient] request_monitor_capture: {}", monitor_id);
 
         // Set selection for picker to query
         let selection = CaptureSelection {
@@ -75,14 +75,14 @@ impl PortalClient {
         };
 
         {
-            eprintln!("[PortalClient] Setting IPC selection...");
+            tracing::debug!("[PortalClient] Setting IPC selection...");
             let mut state = self.ipc_state.write().await;
             state.selection = Some(selection);
-            eprintln!("[PortalClient] IPC selection set");
+            tracing::debug!("[PortalClient] IPC selection set");
         }
 
         // Initiate portal request
-        eprintln!("[PortalClient] Initiating portal request...");
+        tracing::debug!("[PortalClient] Initiating portal request...");
         self.request_screencast(SourceType::Monitor).await
     }
 
@@ -91,7 +91,7 @@ impl PortalClient {
         &self,
         window_address: &str,
     ) -> Result<ScreencastStream, String> {
-        eprintln!("[PortalClient] request_window_capture: {}", window_address);
+        tracing::debug!("[PortalClient] request_window_capture: {}", window_address);
 
         let selection = CaptureSelection {
             source_type: CaptureSourceType::Window.as_str().to_string(),
@@ -100,13 +100,13 @@ impl PortalClient {
         };
 
         {
-            eprintln!("[PortalClient] Setting IPC selection...");
+            tracing::debug!("[PortalClient] Setting IPC selection...");
             let mut state = self.ipc_state.write().await;
             state.selection = Some(selection);
-            eprintln!("[PortalClient] IPC selection set");
+            tracing::debug!("[PortalClient] IPC selection set");
         }
 
-        eprintln!("[PortalClient] Initiating portal request...");
+        tracing::debug!("[PortalClient] Initiating portal request...");
         self.request_screencast(SourceType::Window).await
     }
 
@@ -147,7 +147,7 @@ impl PortalClient {
     /// native picker (e.g., GNOME's dialog) to handle source selection.
     /// Use this for GNOME mode where we want the standard portal UX.
     pub async fn request_screencast_with_picker(&self) -> Result<ScreencastStream, String> {
-        eprintln!("[PortalClient] request_screencast_with_picker: using native picker");
+        tracing::debug!("[PortalClient] request_screencast_with_picker: using native picker");
 
         // Clear any existing IPC selection so our custom picker doesn't interfere
         {
@@ -174,14 +174,14 @@ impl PortalClient {
         &self,
         source_types: BitFlags<SourceType>,
     ) -> Result<ScreencastStream, String> {
-        eprintln!("[Portal] request_screencast_multi: connecting to portal...");
+        tracing::debug!("[Portal] request_screencast_multi: connecting to portal...");
 
         // Get the screencast portal proxy
         let screencast = Screencast::new()
             .await
             .map_err(|e| format!("Failed to connect to screencast portal: {}", e))?;
 
-        eprintln!("[Portal] Connected to screencast portal, creating session...");
+        tracing::debug!("[Portal] Connected to screencast portal, creating session...");
 
         // Create a session
         let session = screencast
@@ -189,7 +189,7 @@ impl PortalClient {
             .await
             .map_err(|e| format!("Failed to create portal session: {}", e))?;
 
-        eprintln!(
+        tracing::debug!(
             "[Portal] Session created, selecting sources (types: {:?})...",
             source_types
         );
@@ -207,8 +207,8 @@ impl PortalClient {
             .await
             .map_err(|e| format!("Failed to select sources: {}", e))?;
 
-        eprintln!("[Portal] Sources selected, starting screencast (picker should appear now)...");
-        eprintln!("[Portal] NOTE: On KDE, check if the dialog appeared behind other windows or in the system tray");
+        tracing::debug!("[Portal] Sources selected, starting screencast (picker should appear now)...");
+        tracing::debug!("[Portal] NOTE: On KDE, check if the dialog appeared behind other windows or in the system tray");
 
         // Start the screencast - picker will handle source selection
         // Use None for parent window - this tells the portal we don't have a parent window
@@ -218,7 +218,7 @@ impl PortalClient {
             .await
             .map_err(|e| format!("Failed to start screencast: {}", e))?;
 
-        eprintln!("[Portal] Screencast start returned, waiting for response...");
+        tracing::debug!("[Portal] Screencast start returned, waiting for response...");
 
         // Wait for the response
         let streams = response
@@ -227,7 +227,7 @@ impl PortalClient {
 
         // Get the first stream
         let all_streams = streams.streams();
-        eprintln!("[Portal] Got {} streams from portal", all_streams.len());
+        tracing::debug!("[Portal] Got {} streams from portal", all_streams.len());
 
         let stream = all_streams
             .first()
@@ -238,7 +238,7 @@ impl PortalClient {
         let size = stream.size();
         let position = stream.position();
 
-        eprintln!(
+        tracing::debug!(
             "[Portal] Stream info: node_id={}, source_type={:?}, size={:?}, position={:?}",
             node_id, source_type, size, position
         );

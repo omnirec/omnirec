@@ -40,7 +40,12 @@ let downloadBtn: HTMLButtonElement;
 // two spaces; target is followed by ": ".
 
 // Regex: (timestamp)(whitespace)(LEVEL)(whitespace)(target): (message)
-const LOG_LINE_RE = /^(\S+)\s{2}(\w+)\s+(.+?):\s(.*)$/;
+//
+// tracing_subscriber::fmt left-pads short levels with a space (" INFO", " WARN")
+// but 5-char levels have no padding ("DEBUG", "ERROR", "TRACE"), producing one
+// or two spaces between the timestamp and the level keyword depending on the
+// level. Using \s+ (one or more) handles both cases.
+const LOG_LINE_RE = /^(\S+)\s+(\w+)\s+(.+?):\s(.*)$/;
 
 function levelClass(level: string): string {
   switch (level.toUpperCase()) {

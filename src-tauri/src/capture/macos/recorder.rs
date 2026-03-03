@@ -36,7 +36,7 @@ struct CaptureErrorHandler;
 
 impl StreamErrorHandler for CaptureErrorHandler {
     fn on_error(&self) {
-        eprintln!("[macOS] ScreenCaptureKit stream error");
+        tracing::debug!("[macOS] ScreenCaptureKit stream error");
     }
 }
 
@@ -68,7 +68,7 @@ impl StreamOutput for FrameOutputHandler {
 
         // Lock the buffer for reading
         if !pixel_buffer.lock() {
-            eprintln!("[macOS] Failed to lock pixel buffer");
+            tracing::debug!("[macOS] Failed to lock pixel buffer");
             return;
         }
 
@@ -122,7 +122,7 @@ impl StreamOutput for FrameOutputHandler {
         // Log first frame info for debugging
         static LOGGED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
         if !LOGGED.swap(true, Ordering::Relaxed) {
-            eprintln!(
+            tracing::debug!(
                 "[macOS] Frame info: {}x{}, bytes_per_row={}, expected={}",
                 width, height, bytes_per_row, expected_bytes_per_row
             );
@@ -170,7 +170,7 @@ pub fn start_display_capture(
     width: u32,
     height: u32,
 ) -> Result<(FrameReceiver, StopHandle), String> {
-    eprintln!(
+    tracing::debug!(
         "[macOS] Starting display capture for display {} ({}x{})",
         display_id, width, height
     );
@@ -234,7 +234,7 @@ pub fn start_display_capture(
         .start_capture()
         .map_err(|e| format!("Failed to start capture: {}", e))?;
 
-    eprintln!("[macOS] Display capture started");
+    tracing::debug!("[macOS] Display capture started");
 
     // Keep stream alive by storing it
     // The stream will be stopped when stop_flag is set
@@ -242,7 +242,7 @@ pub fn start_display_capture(
         while !stop_flag.load(Ordering::Relaxed) {
             std::thread::sleep(std::time::Duration::from_millis(100));
         }
-        eprintln!("[macOS] Stopping display capture");
+        tracing::debug!("[macOS] Stopping display capture");
         let _ = stream.stop_capture();
     });
 
@@ -253,7 +253,7 @@ pub fn start_display_capture(
 ///
 /// Returns a frame receiver and stop handle.
 pub fn start_window_capture(window_id: u32) -> Result<(FrameReceiver, StopHandle), String> {
-    eprintln!("[macOS] Starting window capture for window {}", window_id);
+    tracing::debug!("[macOS] Starting window capture for window {}", window_id);
 
     // Get shareable content
     let content = SCShareableContent::try_current()
@@ -278,7 +278,7 @@ pub fn start_window_capture(window_id: u32) -> Result<(FrameReceiver, StopHandle
         return Err("Window has zero dimensions".to_string());
     }
 
-    eprintln!("[macOS] Window size: {}x{}", width, height);
+    tracing::debug!("[macOS] Window size: {}x{}", width, height);
 
     // Create content filter for the window (desktop-independent)
     let filter = SCContentFilter::new(InitParams::DesktopIndependentWindow(window));
@@ -323,14 +323,14 @@ pub fn start_window_capture(window_id: u32) -> Result<(FrameReceiver, StopHandle
         .start_capture()
         .map_err(|e| format!("Failed to start capture: {}", e))?;
 
-    eprintln!("[macOS] Window capture started");
+    tracing::debug!("[macOS] Window capture started");
 
     // Keep stream alive
     std::thread::spawn(move || {
         while !stop_flag.load(Ordering::Relaxed) {
             std::thread::sleep(std::time::Duration::from_millis(100));
         }
-        eprintln!("[macOS] Stopping window capture");
+        tracing::debug!("[macOS] Stopping window capture");
         let _ = stream.stop_capture();
     });
 

@@ -118,15 +118,26 @@ where
 
         // Format identically to tracing_subscriber::fmt's default output so that
         // live events and file-read history look the same in the log viewer.
+        //
+        // tracing_subscriber::fmt left-pads short level names with a space so all
+        // levels occupy 5 chars:  " INFO", " WARN" vs "DEBUG", "ERROR", "TRACE".
+        // Followed by one space before the target, the full prefix is always 8
+        // chars after the timestamp ("  " + 5-char-level + " ").
         // File format: "2026-03-02T00:27:33.464210Z  INFO omnirec_lib: message"
+        //              "2026-03-02T00:27:33.464210Z DEBUG omnirec_lib: message"
         let now = chrono::Utc::now();
-        let level = event.metadata().level().to_string().to_uppercase();
+        let level_str = match *event.metadata().level() {
+            tracing::Level::ERROR => "ERROR",
+            tracing::Level::WARN  => " WARN",
+            tracing::Level::INFO  => " INFO",
+            tracing::Level::DEBUG => "DEBUG",
+            tracing::Level::TRACE => "TRACE",
+        };
         let target = event.metadata().target();
-        // Pad level to 5 chars (matching tracing_subscriber's default alignment)
         let line = format!(
-            "{}  {:5} {}: {}",
+            "{} {} {}: {}",
             now.format("%Y-%m-%dT%H:%M:%S%.6fZ"),
-            level,
+            level_str,
             target,
             visitor.0,
         );

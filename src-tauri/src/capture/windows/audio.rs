@@ -124,7 +124,7 @@ fn enumerate_audio_devices() -> Result<Vec<AudioSource>, EnumerationError> {
     // Create the device enumerator
     let enumerator: IMMDeviceEnumerator = unsafe {
         CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).map_err(|e| {
-            eprintln!("[Audio] Failed to create device enumerator: {:?}", e);
+            tracing::error!("[Audio] Failed to create device enumerator: {:?}", e);
             EnumerationError::PlatformError(format!("Failed to create device enumerator: {}", e))
         })?
     };
@@ -151,7 +151,7 @@ fn enumerate_audio_devices() -> Result<Vec<AudioSource>, EnumerationError> {
         }
     }
 
-    eprintln!("[Audio] Enumerated {} audio devices", sources.len());
+    tracing::debug!("[Audio] Enumerated {} audio devices", sources.len());
     Ok(sources)
 }
 
@@ -282,7 +282,7 @@ pub fn start_audio_capture(source_id: &str) -> Result<(AudioReceiver, StopHandle
     let is_loopback = source.source_type == AudioSourceType::Output;
     let source_id_owned = source_id.to_string();
 
-    eprintln!(
+    tracing::debug!(
         "[Audio] Starting {} capture for device: {}",
         if is_loopback { "loopback" } else { "direct" },
         source.name
@@ -298,9 +298,9 @@ pub fn start_audio_capture(source_id: &str) -> Result<(AudioReceiver, StopHandle
     // Spawn capture thread
     thread::spawn(move || {
         if let Err(e) = run_capture_thread(&source_id_owned, is_loopback, tx, stop_flag_clone) {
-            eprintln!("[Audio] Capture thread error: {}", e);
+            tracing::error!("[Audio] Capture thread error: {}", e);
         }
-        eprintln!("[Audio] Capture thread exited");
+        tracing::debug!("[Audio] Capture thread exited");
     });
 
     Ok((rx, stop_flag))
@@ -314,7 +314,7 @@ fn run_capture_thread(
     stop_flag: Arc<AtomicBool>,
 ) -> Result<(), String> {
     // Initialize COM for this thread
-    eprintln!("[Audio] Initializing COM for capture thread");
+    tracing::debug!("[Audio] Initializing COM for capture thread");
     unsafe {
         let hr = CoInitializeEx(None, COINIT_MULTITHREADED);
         // S_OK (0) or S_FALSE (1) are both acceptable
@@ -363,7 +363,7 @@ fn run_capture_loop(
             .map_err(|e| format!("Failed to get mix format: {}", e))?;
 
         let device_format = AudioFormat::from_waveformatex(mix_format_ptr);
-        eprintln!(
+        tracing::debug!(
             "[Audio] Device native format: {}Hz, {} channels, {} bits, float={}",
             device_format.sample_rate,
             device_format.channels,
@@ -419,7 +419,7 @@ fn run_capture_loop(
             .Start()
             .map_err(|e| format!("Failed to start audio capture: {}", e))?;
 
-        eprintln!("[Audio] Capture started successfully");
+        tracing::debug!("[Audio] Capture started successfully");
 
         // Capture loop
         let mut total_frames_captured: u64 = 0;
@@ -428,7 +428,7 @@ fn run_capture_loop(
         loop {
             // Check stop flag
             if stop_flag.load(Ordering::Relaxed) {
-                eprintln!(
+                tracing::debug!(
                     "[Audio] Stop flag set, exiting capture loop (captured {} frames total)",
                     total_frames_captured
                 );
@@ -446,7 +446,7 @@ fn run_capture_loop(
             let packet_length = match capture_client.GetNextPacketSize() {
                 Ok(len) => len,
                 Err(e) => {
-                    eprintln!(
+                    tracing::debug!(
                         "[Audio] GetNextPacketSize failed: {:?}, device may be disconnected",
                         e
                     );
@@ -469,7 +469,7 @@ fn run_capture_loop(
                 );
 
                 if result.is_err() {
-                    eprintln!("[Audio] GetBuffer failed, device may be disconnected");
+                    tracing::warn!("[Audio] GetBuffer failed, device may be disconnected");
                     break;
                 }
 
@@ -481,7 +481,7 @@ fn run_capture_loop(
 
                     // Log progress periodically
                     if last_log_time.elapsed().as_secs() >= 2 {
-                        eprintln!(
+                        tracing::debug!(
                             "[Audio] Captured {} frames so far (silent={})",
                             total_frames_captured, is_silent
                         );
@@ -512,7 +512,7 @@ fn run_capture_loop(
                     };
 
                     if tx.blocking_send(sample).is_err() {
-                        eprintln!("[Audio] Channel closed, stopping capture");
+                        tracing::debug!("[Audio] Channel closed, stopping capture");
                         let _ = capture_client.ReleaseBuffer(num_frames);
                         break;
                     }
@@ -520,7 +520,7 @@ fn run_capture_loop(
 
                 // Release buffer
                 if capture_client.ReleaseBuffer(num_frames).is_err() {
-                    eprintln!("[Audio] ReleaseBuffer failed");
+                    tracing::warn!("[Audio] ReleaseBuffer failed");
                     break;
                 }
 
@@ -534,7 +534,7 @@ fn run_capture_loop(
 
         // Stop and cleanup
         let _ = audio_client.Stop();
-        eprintln!("[Audio] Capture stopped");
+        tracing::debug!("[Audio] Capture stopped");
     }
 
     Ok(())
@@ -596,7 +596,7 @@ fn convert_samples_to_f32(
                 output.push(sample as f32 / 2147483648.0);
             }
         } else {
-            eprintln!(
+            tracing::debug!(
                 "[Audio] Unsupported format: {} bits, float={}",
                 bits_per_sample, is_float
             );
@@ -763,7 +763,7 @@ impl AudioMixer {
         self.render_buffer.clear();
         self.render_mix_buffer.clear();
 
-        eprintln!(
+        tracing::debug!(
             "[AudioMixer] set_num_streams({}), aec_enabled={}",
             num, self.aec_enabled
         );
@@ -777,7 +777,7 @@ impl AudioMixer {
                 .build()
             {
                 Ok(aec) => {
-                    eprintln!(
+                    tracing::debug!(
                         "[AudioMixer] AEC3 initialized: 48kHz, {} channels, {}ms frames (frame_size={})",
                         self.channels,
                         AEC_FRAME_SAMPLES * 1000 / 48000,
@@ -786,13 +786,13 @@ impl AudioMixer {
                     self.aec = Some(aec);
                 }
                 Err(e) => {
-                    eprintln!("[AudioMixer] Failed to initialize AEC3: {:?}", e);
+                    tracing::error!("[AudioMixer] Failed to initialize AEC3: {:?}", e);
                     self.aec = None;
                 }
             }
         } else {
             if num == 2 {
-                eprintln!("[AudioMixer] Two streams but AEC disabled");
+                tracing::debug!("[AudioMixer] Two streams but AEC disabled");
             }
             self.aec = None;
         }
@@ -828,7 +828,7 @@ impl AudioMixer {
                 while self.render_buffer.len() >= frame_size {
                     let render_frame: Vec<f32> = self.render_buffer.drain(0..frame_size).collect();
                     if let Err(e) = aec.handle_render_frame(&render_frame) {
-                        eprintln!("[AudioMixer] AEC3 handle_render_frame error: {:?}", e);
+                        tracing::debug!("[AudioMixer] AEC3 handle_render_frame error: {:?}", e);
                     }
                 }
             }
@@ -857,7 +857,7 @@ impl AudioMixer {
                     match aec.process_capture_frame(&capture_frame, false, &mut out) {
                         Ok(_metrics) => out,
                         Err(e) => {
-                            eprintln!("[AudioMixer] AEC3 process_capture_frame error: {:?}", e);
+                            tracing::debug!("[AudioMixer] AEC3 process_capture_frame error: {:?}", e);
                             capture_frame
                         }
                     }
@@ -970,7 +970,7 @@ impl MultiCaptureManager {
             stream2 = Some((handle, stop_flag));
         }
 
-        eprintln!(
+        tracing::debug!(
             "[Audio] Started dual capture: {} streams, AEC={}",
             num_streams, aec_enabled
         );
@@ -986,7 +986,7 @@ impl MultiCaptureManager {
 
 impl Drop for MultiCaptureManager {
     fn drop(&mut self) {
-        eprintln!("[Audio] Stopping dual capture...");
+        tracing::debug!("[Audio] Stopping dual capture...");
 
         // Signal streams to stop
         if let Some((_, ref stop_flag)) = self.stream1 {
@@ -1010,7 +1010,7 @@ impl Drop for MultiCaptureManager {
             let _ = handle.join();
         }
 
-        eprintln!("[Audio] Dual capture stopped");
+        tracing::debug!("[Audio] Dual capture stopped");
     }
 }
 
@@ -1022,7 +1022,7 @@ fn run_mixer_thread(
     aec_enabled: bool,
     stop_flag: Arc<AtomicBool>,
 ) {
-    eprintln!("[AudioMixer] Mixer thread started");
+    tracing::debug!("[AudioMixer] Mixer thread started");
 
     let mut mixer = AudioMixer::new(output_tx, aec_enabled);
     mixer.set_num_streams(num_streams);
@@ -1042,13 +1042,13 @@ fn run_mixer_thread(
                 // Continue, will check stop flag
             }
             Err(std_mpsc::RecvTimeoutError::Disconnected) => {
-                eprintln!("[AudioMixer] Stream channels disconnected");
+                tracing::debug!("[AudioMixer] Stream channels disconnected");
                 break;
             }
         }
     }
 
-    eprintln!("[AudioMixer] Mixer thread exited");
+    tracing::debug!("[AudioMixer] Mixer thread exited");
 }
 
 /// Run capture for a single stream
@@ -1059,7 +1059,7 @@ fn run_stream_capture(
     stream_tx: std_mpsc::Sender<StreamSamples>,
     stop_flag: Arc<AtomicBool>,
 ) {
-    eprintln!(
+    tracing::debug!(
         "[Audio] Stream {} capture thread started (device={}, loopback={})",
         stream_index, device_id, is_loopback
     );
@@ -1068,7 +1068,7 @@ fn run_stream_capture(
     unsafe {
         let hr = CoInitializeEx(None, COINIT_MULTITHREADED);
         if hr.is_err() && hr.0 != 1 {
-            eprintln!(
+            tracing::debug!(
                 "[Audio] Stream {} failed to initialize COM: {:?}",
                 stream_index, hr
             );
@@ -1084,7 +1084,7 @@ fn run_stream_capture(
         &stream_tx,
         &stop_flag,
     ) {
-        eprintln!("[Audio] Stream {} capture error: {}", stream_index, e);
+        tracing::debug!("[Audio] Stream {} capture error: {}", stream_index, e);
     }
 
     // Uninitialize COM
@@ -1092,7 +1092,7 @@ fn run_stream_capture(
         CoUninitialize();
     }
 
-    eprintln!("[Audio] Stream {} capture thread exited", stream_index);
+    tracing::debug!("[Audio] Stream {} capture thread exited", stream_index);
 }
 
 /// Inner capture loop for a single stream (COM already initialized)
@@ -1126,7 +1126,7 @@ fn run_stream_capture_loop(
             .map_err(|e| format!("Failed to get mix format: {}", e))?;
 
         let device_format = AudioFormat::from_waveformatex(mix_format_ptr);
-        eprintln!(
+        tracing::debug!(
             "[Audio] Stream {} device format: {}Hz, {} channels, {} bits, float={}",
             stream_index,
             device_format.sample_rate,
@@ -1174,7 +1174,7 @@ fn run_stream_capture_loop(
 
         // Create resampler if device sample rate differs from target
         let mut resampler = if capture_format.sample_rate != TARGET_SAMPLE_RATE {
-            eprintln!(
+            tracing::debug!(
                 "[Audio] Stream {} resampling {}Hz -> {}Hz",
                 stream_index, capture_format.sample_rate, TARGET_SAMPLE_RATE
             );
@@ -1191,7 +1191,7 @@ fn run_stream_capture_loop(
             .Start()
             .map_err(|e| format!("Failed to start audio capture: {}", e))?;
 
-        eprintln!("[Audio] Stream {} capture started", stream_index);
+        tracing::debug!("[Audio] Stream {} capture started", stream_index);
 
         // Capture loop
         loop {
@@ -1210,7 +1210,7 @@ fn run_stream_capture_loop(
             let packet_length = match capture_client.GetNextPacketSize() {
                 Ok(len) => len,
                 Err(e) => {
-                    eprintln!(
+                    tracing::debug!(
                         "[Audio] Stream {} GetNextPacketSize failed: {:?}",
                         stream_index, e
                     );
@@ -1308,7 +1308,7 @@ pub fn start_audio_capture_dual(
     mic_source_id: Option<&str>,
     aec_enabled: bool,
 ) -> Result<(AudioReceiver, StopHandle), CaptureError> {
-    eprintln!(
+    tracing::debug!(
         "[Audio] Starting dual capture: system={:?}, mic={:?}, aec={}",
         system_source_id, mic_source_id, aec_enabled
     );
@@ -1381,7 +1381,7 @@ pub fn start_audio_capture_dual(
 /// For Windows, verifies that COM can be initialized and audio devices are accessible.
 #[allow(dead_code)]
 pub fn init_audio_backend() -> Result<(), String> {
-    eprintln!("[Audio] Initializing Windows WASAPI audio backend");
+    tracing::debug!("[Audio] Initializing Windows WASAPI audio backend");
 
     // Test COM initialization
     let com_initialized = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED).is_ok() };
@@ -1394,20 +1394,20 @@ pub fn init_audio_backend() -> Result<(), String> {
         }
         match result {
             Ok(devices) => {
-                eprintln!(
+                tracing::debug!(
                     "[Audio] Windows WASAPI audio backend initialized ({} devices)",
                     devices.len()
                 );
                 Ok(())
             }
             Err(e) => {
-                eprintln!("[Audio] Failed to enumerate devices: {:?}", e);
+                tracing::debug!("[Audio] Failed to enumerate devices: {:?}", e);
                 // Don't fail initialization, just warn
                 Ok(())
             }
         }
     } else {
-        eprintln!("[Audio] COM initialization failed, audio may not work");
+        tracing::debug!("[Audio] COM initialization failed, audio may not work");
         // Don't fail initialization, just warn
         Ok(())
     }
@@ -1440,15 +1440,15 @@ mod tests {
 
         let devices = result.unwrap();
         // Print devices for manual verification (use cargo test -- --nocapture)
-        eprintln!("\n=== Audio Device Enumeration Test ===");
-        eprintln!("Found {} audio devices:", devices.len());
+        tracing::debug!("\n=== Audio Device Enumeration Test ===");
+        tracing::debug!("Found {} audio devices:", devices.len());
         for device in &devices {
-            eprintln!(
+            tracing::debug!(
                 "  - {} [{}] (type: {:?})",
                 device.name, device.id, device.source_type
             );
         }
-        eprintln!("=====================================\n");
+        tracing::debug!("=====================================\n");
 
         // Verify device properties if any devices exist
         for device in &devices {
@@ -1510,17 +1510,17 @@ mod tests {
             .iter()
             .find(|s| s.source_type == AudioSourceType::Output);
         if output_source.is_none() {
-            eprintln!("[Test] No output audio sources found, skipping integration test");
+            tracing::debug!("[Test] No output audio sources found, skipping integration test");
             return;
         }
 
         let source = output_source.unwrap();
-        eprintln!("[Test] Testing capture with device: {}", source.name);
+        tracing::debug!("[Test] Testing capture with device: {}", source.name);
 
         // Start capture
         let result = start_audio_capture(&source.id);
         if let Err(ref e) = result {
-            eprintln!("[Test] Capture start error (may be expected): {}", e);
+            tracing::warn!("[Test] Capture start error (may be expected): {}", e);
             // Don't fail the test - device may be in use
             return;
         }
@@ -1546,7 +1546,7 @@ mod tests {
                         frames_received += 1;
                     }
                     Ok(None) => {
-                        eprintln!("[Test] Channel closed");
+                        tracing::debug!("[Test] Channel closed");
                         break;
                     }
                     Err(_) => {
@@ -1559,7 +1559,7 @@ mod tests {
         // Stop capture
         stop_flag.store(true, Ordering::Relaxed);
 
-        eprintln!(
+        tracing::debug!(
             "[Test] Capture complete: {} samples in {} frames over {}ms",
             samples_received,
             frames_received,
@@ -1568,7 +1568,7 @@ mod tests {
 
         // For loopback capture, we might get 0 samples if nothing is playing
         // Just verify we didn't crash
-        eprintln!("[Test] Integration test passed");
+        tracing::debug!("[Test] Integration test passed");
     }
 
     #[test]
@@ -1714,21 +1714,21 @@ mod tests {
             .find(|s| s.source_type == AudioSourceType::Input);
 
         if output.is_none() || input.is_none() {
-            eprintln!("[Test] Need both output and input devices for dual capture test");
+            tracing::debug!("[Test] Need both output and input devices for dual capture test");
             return;
         }
 
         let sys_id = &output.unwrap().id;
         let mic_id = &input.unwrap().id;
 
-        eprintln!("[Test] Testing dual capture with:");
-        eprintln!("  System: {}", output.unwrap().name);
-        eprintln!("  Mic: {}", input.unwrap().name);
+        tracing::debug!("[Test] Testing dual capture with:");
+        tracing::debug!("  System: {}", output.unwrap().name);
+        tracing::debug!("  Mic: {}", input.unwrap().name);
 
         // Start dual capture
         let result = start_audio_capture_dual(Some(sys_id), Some(mic_id), true);
         if let Err(ref e) = result {
-            eprintln!("[Test] Dual capture start error (may be expected): {:?}", e);
+            tracing::warn!("[Test] Dual capture start error (may be expected): {:?}", e);
             return;
         }
 
@@ -1760,7 +1760,7 @@ mod tests {
         // Give threads time to stop
         std::thread::sleep(std::time::Duration::from_millis(200));
 
-        eprintln!("[Test] Dual capture received {} samples", samples_received);
-        eprintln!("[Test] Dual capture test passed");
+        tracing::debug!("[Test] Dual capture received {} samples", samples_received);
+        tracing::debug!("[Test] Dual capture test passed");
     }
 }

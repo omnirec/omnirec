@@ -128,9 +128,9 @@ pub fn list_windows() -> Vec<WindowInfo> {
     let content = match SCShareableContent::try_current() {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("[macOS] Failed to get SCShareableContent: {}", e);
-            eprintln!("[macOS] Screen recording permission may not be granted.");
-            eprintln!("[macOS] Grant permission in System Settings > Privacy & Security > Screen Recording");
+            tracing::debug!("[macOS] Failed to get SCShareableContent: {}", e);
+            tracing::debug!("[macOS] Screen recording permission may not be granted.");
+            tracing::debug!("[macOS] Grant permission in System Settings > Privacy & Security > Screen Recording");
             return Vec::new();
         }
     };

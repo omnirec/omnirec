@@ -147,14 +147,14 @@ pub fn get_desktop_environment() -> String {
 #[cfg(target_os = "linux")]
 #[tauri::command]
 pub async fn configure_region_selector_window(window_label: String) -> Result<(), String> {
-    eprintln!(
+    tracing::debug!(
         "[configure_region_selector] Configuring Hyprland rules for window: {}",
         window_label
     );
 
     // Check if we're on Hyprland
     if std::env::var("HYPRLAND_INSTANCE_SIGNATURE").is_err() {
-        eprintln!("[configure_region_selector] Not on Hyprland, skipping");
+        tracing::debug!("[configure_region_selector] Not on Hyprland, skipping");
         return Ok(());
     }
 
@@ -184,17 +184,17 @@ pub async fn configure_region_selector_window(window_label: String) -> Result<()
         match output {
             Ok(result) => {
                 if result.status.success() {
-                    eprintln!("[configure_region_selector] Applied: {}", rule);
+                    tracing::debug!("[configure_region_selector] Applied: {}", rule);
                 } else {
                     let err = String::from_utf8_lossy(&result.stderr);
-                    eprintln!(
+                    tracing::debug!(
                         "[configure_region_selector] Failed to apply rule: {} - {}",
                         rule, err
                     );
                 }
             }
             Err(e) => {
-                eprintln!(
+                tracing::debug!(
                     "[configure_region_selector] Failed to execute hyprctl: {}",
                     e
                 );
@@ -225,7 +225,7 @@ pub async fn get_region_selector_position() -> Result<(i32, i32, i32, i32), Stri
 
     for client in clients {
         if client.title == "Region Selection" {
-            eprintln!(
+            tracing::debug!(
                 "[get_region_selector_position] Found window at ({}, {}) size {}x{}",
                 client.at.0, client.at.1, client.size.0, client.size.1
             );
@@ -282,7 +282,7 @@ pub async fn move_region_selector(x: i32, y: i32, width: i32, height: i32) -> Re
 
     if !output.status.success() {
         let err = String::from_utf8_lossy(&output.stderr);
-        eprintln!("[move_region_selector] movewindowpixel failed: {}", err);
+        tracing::debug!("[move_region_selector] movewindowpixel failed: {}", err);
     }
 
     // Resize the window using hyprctl dispatch
@@ -295,10 +295,10 @@ pub async fn move_region_selector(x: i32, y: i32, width: i32, height: i32) -> Re
 
     if !output.status.success() {
         let err = String::from_utf8_lossy(&output.stderr);
-        eprintln!("[move_region_selector] resizewindowpixel failed: {}", err);
+        tracing::debug!("[move_region_selector] resizewindowpixel failed: {}", err);
     }
 
-    eprintln!(
+    tracing::debug!(
         "[move_region_selector] Moved window to ({}, {}) size {}x{}",
         x, y, width, height
     );

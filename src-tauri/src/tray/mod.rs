@@ -110,8 +110,8 @@ pub fn open_config_window(app: &tauri::AppHandle) {
         .shadow(true)
         .build()
     {
-        Ok(_) => eprintln!("[Tray] Config window created"),
-        Err(e) => eprintln!("[Tray] Failed to create config window: {:?}", e),
+        Ok(_) => tracing::debug!("[Tray] Config window created"),
+        Err(e) => tracing::error!("[Tray] Failed to create config window: {:?}", e),
     }
 }
 
@@ -138,8 +138,8 @@ pub fn open_about_window(app: &tauri::AppHandle) {
         .shadow(true)
         .build()
     {
-        Ok(_) => eprintln!("[Tray] About window created"),
-        Err(e) => eprintln!("[Tray] Failed to create about window: {:?}", e),
+        Ok(_) => tracing::debug!("[Tray] About window created"),
+        Err(e) => tracing::error!("[Tray] Failed to create about window: {:?}", e),
     }
 }
 
@@ -163,8 +163,8 @@ pub fn open_log_viewer_window(app: &tauri::AppHandle) {
         .center()
         .build()
     {
-        Ok(_) => eprintln!("[Tray] Logs window created"),
-        Err(e) => eprintln!("[Tray] Failed to create logs window: {:?}", e),
+        Ok(_) => tracing::debug!("[Tray] Logs window created"),
+        Err(e) => tracing::error!("[Tray] Failed to create logs window: {:?}", e),
     }
 }
 
@@ -195,13 +195,13 @@ pub fn toggle_always_on_top(app: &tauri::AppHandle) {
     let new_state = config.always_on_top;
 
     if let Err(e) = crate::config::save_config(&config) {
-        eprintln!("[Tray] Failed to save always-on-top config: {}", e);
+        tracing::error!("[Tray] Failed to save always-on-top config: {}", e);
     }
 
     // Apply to the main window
     if let Some(window) = app.get_webview_window("main") {
         if let Err(e) = window.set_always_on_top(new_state) {
-            eprintln!("[Tray] Failed to set always-on-top: {:?}", e);
+            tracing::error!("[Tray] Failed to set always-on-top: {:?}", e);
         }
     }
 
@@ -220,13 +220,13 @@ pub fn toggle_always_on_top(app: &tauri::AppHandle) {
         if let Ok(guard) = tray_state.always_on_top_item.lock() {
             if let Some(item) = guard.as_ref() {
                 if let Err(e) = item.set_checked(new_state) {
-                    eprintln!("[Tray] Failed to update always-on-top checkmark: {:?}", e);
+                    tracing::error!("[Tray] Failed to update always-on-top checkmark: {:?}", e);
                 }
             }
         }
     }
 
-    eprintln!("[Tray] Always on Top toggled to: {}", new_state);
+    tracing::debug!("[Tray] Always on Top toggled to: {}", new_state);
 }
 
 // =============================================================================

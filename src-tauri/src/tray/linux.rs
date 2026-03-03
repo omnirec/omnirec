@@ -25,7 +25,7 @@ fn show_main_window(app: &tauri::AppHandle) {
         let _ = window.set_focus();
     } else {
         // Window was destroyed (e.g., headless mode) — recreate it
-        eprintln!("[Tray] Main window not found, recreating...");
+        tracing::debug!("[Tray] Main window not found, recreating...");
         match tauri::WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
             .title("OmniRec")
             .inner_size(469.0, 610.0)
@@ -37,11 +37,11 @@ fn show_main_window(app: &tauri::AppHandle) {
             .build()
         {
             Ok(window) => {
-                eprintln!("[Tray] Main window recreated successfully");
+                tracing::debug!("[Tray] Main window recreated successfully");
                 let _ = window.set_focus();
             }
             Err(e) => {
-                eprintln!("[Tray] Failed to recreate main window: {}", e);
+                tracing::debug!("[Tray] Failed to recreate main window: {}", e);
             }
         }
     }
@@ -127,11 +127,11 @@ fn load_tray_icon_from_paths(
         if path.exists() {
             match Image::from_path(path) {
                 Ok(img) => {
-                    eprintln!("[Tray] Loaded icon from: {:?}", path);
+                    tracing::debug!("[Tray] Loaded icon from: {:?}", path);
                     return Some(img.to_owned());
                 }
                 Err(e) => {
-                    eprintln!("[Tray] Failed to load icon from {:?}: {}", path, e);
+                    tracing::warn!("[Tray] Failed to load icon from {:?}: {}", path, e);
                 }
             }
         }
@@ -167,12 +167,12 @@ fn create_fallback_tray_icon(color: (u8, u8, u8)) -> Image<'static> {
 fn load_platform_tray_icon(app: &tauri::App) -> Image<'static> {
     if is_cosmic() {
         // COSMIC: Use full-color icons
-        eprintln!("[Tray] COSMIC detected, using full-color icon");
+        tracing::debug!("[Tray] COSMIC detected, using full-color icon");
         load_tray_icon(app, icon_names::COLOR_128)
             .or_else(|| load_tray_icon(app, icon_names::COLOR_64))
             .or_else(|| load_tray_icon(app, icon_names::COLOR_32))
             .unwrap_or_else(|| {
-                eprintln!("[Tray] Warning: Could not load icon, using fallback");
+                tracing::warn!("[Tray] Warning: Could not load icon, using fallback");
                 create_fallback_tray_icon((59, 130, 246)) // Blue fallback
             })
     } else {
@@ -182,7 +182,7 @@ fn load_platform_tray_icon(app: &tauri::App) -> Image<'static> {
             .or_else(|| load_tray_icon(app, icon_names::SYMBOLIC_32))
             .or_else(|| load_tray_icon(app, icon_names::SYMBOLIC))
             .unwrap_or_else(|| {
-                eprintln!("[Tray] Warning: Could not load icon, using fallback");
+                tracing::warn!("[Tray] Warning: Could not load icon, using fallback");
                 create_fallback_tray_icon((255, 255, 255)) // White fallback
             })
     }
@@ -204,7 +204,7 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    eprintln!("[Tray] Setting up tray icon for portal-mode desktop...");
+    tracing::debug!("[Tray] Setting up tray icon for portal-mode desktop...");
 
     // Load tray icon
     let icon = load_platform_tray_icon(app);
@@ -281,35 +281,35 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         .tooltip("OmniRec")
         .on_menu_event(|app, event| match event.id.as_ref() {
             id if id == menu_ids::RECORD => {
-                eprintln!("[Tray] Record Screen/Window clicked");
+                tracing::debug!("[Tray] Record Screen/Window clicked");
                 let _ = app.emit("tray-start-recording", ());
             }
             id if id == menu_ids::STOP => {
-                eprintln!("[Tray] Stop Recording clicked");
+                tracing::debug!("[Tray] Stop Recording clicked");
                 let _ = app.emit("tray-stop-recording", ());
             }
             id if id == menu_ids::TRANSCRIPTION => {
-                eprintln!("[Tray] Transcription clicked");
+                tracing::debug!("[Tray] Transcription clicked");
                 let _ = app.emit("tray-show-transcription", ());
             }
             id if id == menu_ids::ALWAYS_ON_TOP => {
-                eprintln!("[Tray] Always on Top clicked");
+                tracing::debug!("[Tray] Always on Top clicked");
                 super::toggle_always_on_top(app);
             }
             id if id == menu_ids::CONFIGURATION => {
-                eprintln!("[Tray] Configuration clicked - opening config window");
+                tracing::debug!("[Tray] Configuration clicked - opening config window");
                 super::open_config_window(app);
             }
             id if id == menu_ids::LOGS => {
-                eprintln!("[Tray] Logs clicked - opening log viewer");
+                tracing::debug!("[Tray] Logs clicked - opening log viewer");
                 super::open_log_viewer_window(app);
             }
             id if id == menu_ids::ABOUT => {
-                eprintln!("[Tray] About clicked - opening about window");
+                tracing::debug!("[Tray] About clicked - opening about window");
                 super::open_about_window(app);
             }
             id if id == menu_ids::EXIT => {
-                eprintln!("[Tray] Exit clicked");
+                tracing::debug!("[Tray] Exit clicked");
                 let _ = app.emit("tray-exit", ());
                 std::thread::spawn({
                     let app = app.clone();
@@ -332,11 +332,11 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 
     // Hide main window on portal-mode desktops (start with tray only)
     if let Some(window) = app.get_webview_window("main") {
-        eprintln!("[Tray] Hiding main window for portal mode");
+        tracing::debug!("[Tray] Hiding main window for portal mode");
         let _ = window.hide();
     }
 
-    eprintln!("[Tray] Tray setup complete");
+    tracing::debug!("[Tray] Tray setup complete");
     Ok(())
 }
 
@@ -354,15 +354,15 @@ pub fn set_tray_visible(app: &tauri::AppHandle, visible: bool) {
             .is_recording
             .store(!visible, std::sync::atomic::Ordering::SeqCst);
         if let Ok(tray) = tray_state.tray.lock() {
-            eprintln!("[Tray] Setting visible: {}", visible);
+            tracing::debug!("[Tray] Setting visible: {}", visible);
             match tray.set_visible(visible) {
-                Ok(()) => eprintln!("[Tray] set_visible({}) succeeded", visible),
-                Err(e) => eprintln!("[Tray] set_visible({}) failed: {:?}", visible, e),
+                Ok(()) => tracing::debug!("[Tray] set_visible({}) succeeded", visible),
+                Err(e) => tracing::debug!("[Tray] set_visible({}) failed: {:?}", visible, e),
             }
         } else {
-            eprintln!("[Tray] Failed to lock tray mutex");
+            tracing::debug!("[Tray] Failed to lock tray mutex");
         }
     } else {
-        eprintln!("[Tray] No TrayState available");
+        tracing::debug!("[Tray] No TrayState available");
     }
 }

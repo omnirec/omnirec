@@ -3439,7 +3439,7 @@ dependencies = [
 
 [[package]]
 name = "omnirec"
-version = "0.1.16"
+version = "0.1.18"
 dependencies = [
  "aec3",
  "ashpd 0.9.2",
@@ -3491,7 +3491,7 @@ dependencies = [
 
 [[package]]
 name = "omnirec-cli"
-version = "0.1.16"
+version = "0.1.18"
 dependencies = [
  "clap",
  "directories",
@@ -3508,7 +3508,7 @@ dependencies = [
 
 [[package]]
 name = "omnirec-common"
-version = "0.1.16"
+version = "0.1.18"
 dependencies = [
  "directories",
  "libc",

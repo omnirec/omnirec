@@ -90,15 +90,15 @@ fn start_pipewire_capture_internal(
     let stop_flag_clone = stop_flag.clone();
 
     if let Some(crop) = crop_region {
-        eprintln!("[PipeWire] Starting capture thread for node {} ({}x{}) with crop region ({}x{} at {},{}", 
+        tracing::debug!("[PipeWire] Starting capture thread for node {} ({}x{}) with crop region ({}x{} at {},{}", 
             node_id, width, height, crop.width, crop.height, crop.x, crop.y);
     } else if enable_auto_crop {
-        eprintln!(
+        tracing::debug!(
             "[PipeWire] Starting capture thread for node {} ({}x{}) with auto-crop enabled",
             node_id, width, height
         );
     } else {
-        eprintln!(
+        tracing::debug!(
             "[PipeWire] Starting capture thread for node {} ({}x{})",
             node_id, width, height
         );
@@ -115,9 +115,9 @@ fn start_pipewire_capture_internal(
             frame_tx,
             stop_flag_clone,
         ) {
-            eprintln!("[PipeWire] Capture error: {}", e);
+            tracing::error!("[PipeWire] Capture error: {}", e);
         }
-        eprintln!("[PipeWire] Capture thread exited");
+        tracing::debug!("[PipeWire] Capture thread exited");
     });
 
     Ok((frame_rx, stop_flag))
@@ -152,7 +152,7 @@ fn run_pipewire_capture(
     frame_tx: mpsc::Sender<CapturedFrame>,
     stop_flag: Arc<AtomicBool>,
 ) -> Result<(), String> {
-    eprintln!("[PipeWire] Initializing PipeWire...");
+    tracing::debug!("[PipeWire] Initializing PipeWire...");
 
     pw::init();
 
@@ -166,7 +166,7 @@ fn run_pipewire_capture(
         .connect(None)
         .map_err(|e| format!("Failed to connect to PipeWire daemon: {}", e))?;
 
-    eprintln!("[PipeWire] Connected to PipeWire daemon");
+    tracing::debug!("[PipeWire] Connected to PipeWire daemon");
 
     // Create stream
     let stream = pw::stream::Stream::new(
@@ -202,12 +202,12 @@ fn run_pipewire_capture(
     let _listener = stream
         .add_local_listener_with_user_data(stream_data)
         .state_changed(move |_, _, old, new| {
-            eprintln!("[PipeWire] Stream state: {:?} -> {:?}", old, new);
+            tracing::debug!("[PipeWire] Stream state: {:?} -> {:?}", old, new);
 
             match new {
                 pw::stream::StreamState::Error(msg) => {
                     // Stream error - likely window closed or capture target unavailable
-                    eprintln!("[PipeWire] Stream error (target may have closed): {}", msg);
+                    tracing::error!("[PipeWire] Stream error (target may have closed): {}", msg);
                     stop_flag_for_state.store(true, Ordering::SeqCst);
                     if let Some(mainloop) = mainloop_weak.upgrade() {
                         mainloop.quit();
@@ -215,27 +215,27 @@ fn run_pipewire_capture(
                 }
                 pw::stream::StreamState::Unconnected => {
                     // Stream disconnected - capture source gone
-                    eprintln!("[PipeWire] Stream disconnected - stopping capture");
+                    tracing::debug!("[PipeWire] Stream disconnected - stopping capture");
                     stop_flag_for_state.store(true, Ordering::SeqCst);
                     if let Some(mainloop) = mainloop_weak.upgrade() {
                         mainloop.quit();
                     }
                 }
                 pw::stream::StreamState::Streaming => {
-                    eprintln!("[PipeWire] Stream is now streaming");
+                    tracing::debug!("[PipeWire] Stream is now streaming");
                 }
                 pw::stream::StreamState::Paused => {
                     // Only stop if we were previously streaming.
                     // Normal startup goes: Unconnected -> Connecting -> Paused -> Streaming
                     // User-initiated pause goes: Streaming -> Paused
                     if matches!(old, pw::stream::StreamState::Streaming) {
-                        eprintln!("[PipeWire] Stream paused after streaming - stopping capture");
+                        tracing::debug!("[PipeWire] Stream paused after streaming - stopping capture");
                         stop_flag_for_state.store(true, Ordering::SeqCst);
                         if let Some(mainloop) = mainloop_weak.upgrade() {
                             mainloop.quit();
                         }
                     } else {
-                        eprintln!(
+                        tracing::debug!(
                             "[PipeWire] Stream paused (startup phase, waiting for streaming)"
                         );
                     }
@@ -268,7 +268,7 @@ fn run_pipewire_capture(
 
             // Parse video format info
             if let Err(e) = user_data.format.parse(param) {
-                eprintln!("[PipeWire] Failed to parse video format: {:?}", e);
+                tracing::debug!("[PipeWire] Failed to parse video format: {:?}", e);
                 return;
             }
 
@@ -279,14 +279,14 @@ fn run_pipewire_capture(
 
             // Log format info
             if user_data.format_changes == 1 {
-                eprintln!("[PipeWire] Initial video format:");
+                tracing::debug!("[PipeWire] Initial video format:");
             } else {
-                eprintln!("[PipeWire] Format renegotiated (window resize detected):");
-                eprintln!("  old size: {}x{}", old_width, old_height);
+                tracing::debug!("[PipeWire] Format renegotiated (window resize detected):");
+                tracing::debug!("  old size: {}x{}", old_width, old_height);
             }
-            eprintln!("  format: {:?}", user_data.format.format());
-            eprintln!("  size: {}x{}", user_data.width, user_data.height);
-            eprintln!(
+            tracing::debug!("  format: {:?}", user_data.format.format());
+            tracing::debug!("  size: {}x{}", user_data.width, user_data.height);
+            tracing::debug!(
                 "  framerate: {}/{}",
                 user_data.format.framerate().num,
                 user_data.format.framerate().denom
@@ -297,7 +297,7 @@ fn run_pipewire_capture(
                 // Only log once when stop flag is first detected
                 static LOGGED_STOP: AtomicBool = AtomicBool::new(false);
                 if !LOGGED_STOP.swap(true, Ordering::Relaxed) {
-                    eprintln!("[PipeWire] process: stop flag is set, skipping remaining frames");
+                    tracing::debug!("[PipeWire] process: stop flag is set, skipping remaining frames");
                 }
                 return;
             }
@@ -307,7 +307,7 @@ fn run_pipewire_capture(
                     user_data.frames_received += 1;
                     // Log periodically instead of every frame
                     if user_data.frames_received == 1 || user_data.frames_received % 100 == 0 {
-                        eprintln!("[PipeWire] Processing frame #{}", user_data.frames_received);
+                        tracing::debug!("[PipeWire] Processing frame #{}", user_data.frames_received);
                     }
                     process_buffer(&mut buffer, user_data);
                 }
@@ -395,14 +395,14 @@ fn run_pipewire_capture(
         )
         .map_err(|e| format!("Failed to connect stream to node {}: {}", node_id, e))?;
 
-    eprintln!("[PipeWire] Stream connected to node {}", node_id);
+    tracing::debug!("[PipeWire] Stream connected to node {}", node_id);
 
     // Activate the stream to start receiving buffers
     stream
         .set_active(true)
         .map_err(|e| format!("Failed to activate stream: {}", e))?;
 
-    eprintln!("[PipeWire] Stream activated");
+    tracing::debug!("[PipeWire] Stream activated");
 
     // Set up a timer to check stop flag
     let mainloop_clone = mainloop.clone();
@@ -410,7 +410,7 @@ fn run_pipewire_capture(
 
     let timer = mainloop.loop_().add_timer(move |_timer_expired_count| {
         if stop_flag_check.load(Ordering::Relaxed) {
-            eprintln!("[PipeWire] Stop flag detected, quitting main loop");
+            tracing::debug!("[PipeWire] Stop flag detected, quitting main loop");
             mainloop_clone.quit();
         }
     });
@@ -420,7 +420,7 @@ fn run_pipewire_capture(
         Some(std::time::Duration::from_millis(100)),
     );
 
-    eprintln!(
+    tracing::debug!(
         "[PipeWire] Entering main loop (stop_flag={})",
         stop_flag.load(Ordering::Relaxed)
     );
@@ -430,7 +430,7 @@ fn run_pipewire_capture(
     let _keep_alive = (_listener, timer);
 
     mainloop.run();
-    eprintln!(
+    tracing::debug!(
         "[PipeWire] Main loop exited (stop_flag={})",
         stop_flag.load(Ordering::Relaxed)
     );
@@ -457,13 +457,13 @@ fn process_buffer(buffer: &mut pw::buffer::Buffer, user_data: &mut StreamData) {
     if !LOGGED_BUFFER_INFO.swap(true, Ordering::Relaxed) {
         let data_type = data.type_();
         let chunk_size = chunk.size() as usize;
-        eprintln!("[PipeWire] First buffer info:");
-        eprintln!("  type: {:?}", data_type);
-        eprintln!(
+        tracing::debug!("[PipeWire] First buffer info:");
+        tracing::debug!("  type: {:?}", data_type);
+        tracing::debug!(
             "  stride={}, size={}, offset={}",
             stride, chunk_size, offset
         );
-        eprintln!(
+        tracing::debug!(
             "  fd={:?}, maxsize={}",
             data.as_raw().fd,
             data.as_raw().maxsize
@@ -471,7 +471,7 @@ fn process_buffer(buffer: &mut pw::buffer::Buffer, user_data: &mut StreamData) {
     }
 
     if stride == 0 {
-        eprintln!("[PipeWire] process_buffer: invalid stride");
+        tracing::warn!("[PipeWire] process_buffer: invalid stride");
         return;
     }
 
@@ -488,7 +488,7 @@ fn process_buffer(buffer: &mut pw::buffer::Buffer, user_data: &mut StreamData) {
             // Log only once
             static LOGGED_DMABUF: AtomicBool = AtomicBool::new(false);
             if !LOGGED_DMABUF.swap(true, Ordering::Relaxed) {
-                eprintln!("[PipeWire] Using DMA-BUF path (mmap)");
+                tracing::debug!("[PipeWire] Using DMA-BUF path (mmap)");
             }
 
             // Try to access via fd for DmaBuf
@@ -511,7 +511,7 @@ fn process_buffer(buffer: &mut pw::buffer::Buffer, user_data: &mut StreamData) {
                     );
 
                     if ptr == libc::MAP_FAILED {
-                        eprintln!(
+                        tracing::debug!(
                             "[PipeWire] mmap failed: {}",
                             std::io::Error::last_os_error()
                         );
@@ -547,7 +547,7 @@ fn process_buffer(buffer: &mut pw::buffer::Buffer, user_data: &mut StreamData) {
                 }
             }
 
-            eprintln!("[PipeWire] Cannot access buffer data (no fd available)");
+            tracing::warn!("[PipeWire] Cannot access buffer data (no fd available)");
             return;
         }
     };
@@ -577,15 +577,15 @@ fn extract_frame_data(
     // Log stride info once
     static LOGGED_EXTRACTION: AtomicBool = AtomicBool::new(false);
     if !LOGGED_EXTRACTION.swap(true, Ordering::Relaxed) {
-        eprintln!("[PipeWire] Frame extraction setup:");
-        eprintln!(
+        tracing::debug!("[PipeWire] Frame extraction setup:");
+        tracing::debug!(
             "  dimensions: {}x{}, stride={}, row_bytes={}",
             width, height, stride, row_bytes
         );
         if stride == row_bytes {
-            eprintln!("  using direct copy (stride matches)");
+            tracing::debug!("  using direct copy (stride matches)");
         } else {
-            eprintln!(
+            tracing::debug!(
                 "  using row-by-row copy (stride padding: {} bytes)",
                 stride - row_bytes
             );
@@ -612,7 +612,7 @@ fn extract_frame_data(
             // Log only once per session
             static LOGGED_TOO_SMALL: AtomicBool = AtomicBool::new(false);
             if !LOGGED_TOO_SMALL.swap(true, Ordering::Relaxed) {
-                eprintln!(
+                tracing::debug!(
                     "[PipeWire] Warning: buffer too small at row {}: need {} but have {}",
                     y,
                     row_end,
@@ -637,7 +637,7 @@ fn crop_frame_data(
 
     // Validate crop region
     if crop.x < 0 || crop.y < 0 {
-        eprintln!(
+        tracing::debug!(
             "[PipeWire] Invalid crop region: negative coordinates ({}, {})",
             crop.x, crop.y
         );
@@ -652,7 +652,7 @@ fn crop_frame_data(
     let crop_y_end = (crop_y + crop.height).min(full_height);
 
     if crop_x >= full_width || crop_y >= full_height {
-        eprintln!("[PipeWire] Crop region outside frame bounds");
+        tracing::warn!("[PipeWire] Crop region outside frame bounds");
         return None;
     }
 
@@ -664,7 +664,7 @@ fn crop_frame_data(
     if !LOGGED_CLAMPING.swap(true, Ordering::Relaxed)
         && (actual_crop_width != crop.width || actual_crop_height != crop.height)
     {
-        eprintln!(
+        tracing::debug!(
             "[PipeWire] Warning: crop region clamped from {}x{} to {}x{}",
             crop.width, crop.height, actual_crop_width, actual_crop_height
         );
@@ -681,7 +681,7 @@ fn crop_frame_data(
         if row_end <= frame_data.len() {
             cropped.extend_from_slice(&frame_data[row_start..row_end]);
         } else {
-            eprintln!(
+            tracing::debug!(
                 "[PipeWire] Crop overflow at row {}: need {} but have {}",
                 y,
                 row_end,
@@ -763,7 +763,7 @@ fn convert_to_bgra(frame_data: Vec<u8>, format: spa::param::video::VideoFormat) 
         _ => {
             static LOGGED_UNKNOWN: AtomicBool = AtomicBool::new(false);
             if !LOGGED_UNKNOWN.swap(true, Ordering::Relaxed) {
-                eprintln!(
+                tracing::debug!(
                     "[PipeWire] Warning: unknown video format {:?}, colors may be incorrect",
                     format
                 );
@@ -818,7 +818,7 @@ fn detect_content_bounds(frame_data: &[u8], width: u32, height: u32) -> Option<C
         let height_ratio = content_height as f32 / height as f32;
 
         if width_ratio < 0.95 || height_ratio < 0.95 {
-            eprintln!(
+            tracing::debug!(
                 "[PipeWire] Auto-crop detected content bounds: {}x{} at ({}, {})",
                 content_width, content_height, min_x, min_y
             );
@@ -847,7 +847,7 @@ fn send_frame(user_data: &mut StreamData, width: u32, height: u32, frame_data: V
             user_data.auto_crop = Some(bounds);
         } else {
             // Disable auto-crop if we couldn't detect bounds
-            eprintln!(
+            tracing::debug!(
                 "[PipeWire] Auto-crop: no distinct content bounds detected, using full frame"
             );
             user_data.enable_auto_crop = false;
@@ -880,11 +880,11 @@ fn send_frame(user_data: &mut StreamData, width: u32, height: u32, frame_data: V
             // Log dropped frames periodically
             static DROPS: AtomicBool = AtomicBool::new(false);
             if !DROPS.swap(true, Ordering::Relaxed) {
-                eprintln!("[PipeWire] Warning: encoder falling behind, dropping frames");
+                tracing::warn!("[PipeWire] Warning: encoder falling behind, dropping frames");
             }
         }
         Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
-            eprintln!("[PipeWire] Frame channel closed, stopping capture");
+            tracing::debug!("[PipeWire] Frame channel closed, stopping capture");
             user_data.stop_flag.store(true, Ordering::SeqCst);
         }
     }

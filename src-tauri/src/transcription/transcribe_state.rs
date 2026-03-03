@@ -176,7 +176,7 @@ impl TranscribeState {
         self.recording_start = Some(Instant::now());
         self.output_path = Some(output_path);
 
-        eprintln!(
+        tracing::debug!(
             "[TranscribeState] Started - transcript: {:?}, sample_rate: {}, channels: {}, model: {:?}",
             transcript_path, input_sample_rate, input_channels, model_path
         );
@@ -238,7 +238,7 @@ impl TranscribeState {
         static FIRST_SAMPLE_LOGGED: std::sync::atomic::AtomicBool =
             std::sync::atomic::AtomicBool::new(false);
         if !FIRST_SAMPLE_LOGGED.swap(true, std::sync::atomic::Ordering::Relaxed) {
-            eprintln!(
+            tracing::debug!(
                 "[TranscribeState] First samples received: {} input -> {} resampled",
                 samples.len(),
                 resampled.len()
@@ -335,7 +335,7 @@ impl TranscribeState {
     /// Handle speech started event.
     fn on_speech_started(&mut self, lookback_samples: usize) {
         if self.in_speech {
-            eprintln!("[TranscribeState] Speech STARTED ignored - already in_speech");
+            tracing::debug!("[TranscribeState] Speech STARTED ignored - already in_speech");
             return; // Already in speech
         }
 
@@ -344,7 +344,7 @@ impl TranscribeState {
         self.segment_sample_count = 0;
         self.lookback_sample_count = lookback_samples;
 
-        eprintln!(
+        tracing::debug!(
             "[TranscribeState] Speech STARTED (lookback: {} samples, start_idx: {}, ring_buffer write_pos: {})",
             lookback_samples, self.segment_start_idx, self.ring_buffer.write_position()
         );
@@ -353,19 +353,19 @@ impl TranscribeState {
     /// Handle speech ended event.
     fn on_speech_ended(&mut self) {
         if !self.in_speech {
-            eprintln!("[TranscribeState] Speech ENDED ignored - not in_speech");
+            tracing::debug!("[TranscribeState] Speech ENDED ignored - not in_speech");
             return;
         }
 
         let duration_secs = self.segment_sample_count as f64 / WHISPER_SAMPLE_RATE as f64;
-        eprintln!(
+        tracing::debug!(
             "[TranscribeState] Speech ENDED after {:.2}s, finalizing segment",
             duration_secs
         );
 
         self.finalize_current_segment();
 
-        eprintln!(
+        tracing::debug!(
             "[TranscribeState] After finalize: in_speech={}, ready for new speech",
             self.in_speech
         );
@@ -376,7 +376,7 @@ impl TranscribeState {
         let duration_secs = self.segment_sample_count as f64 / WHISPER_SAMPLE_RATE as f64;
 
         if duration_secs >= MAX_SEGMENT_DURATION_SECS {
-            eprintln!(
+            tracing::debug!(
                 "[TranscribeState] Max segment duration reached ({:.1}s), force extracting",
                 duration_secs
             );
@@ -445,7 +445,7 @@ impl TranscribeState {
         };
 
         if self.transcription_queue.enqueue(queued) {
-            eprintln!(
+            tracing::debug!(
                 "[TranscribeState] QUEUED segment: {:.2}s at timestamp {:.1}s (queue depth: {}, RMS: {:.4})",
                 duration_secs,
                 timestamp_secs,
@@ -454,7 +454,7 @@ impl TranscribeState {
             );
             true
         } else {
-            eprintln!("[TranscribeState] Queue full, segment dropped");
+            tracing::debug!("[TranscribeState] Queue full, segment dropped");
             false
         }
     }

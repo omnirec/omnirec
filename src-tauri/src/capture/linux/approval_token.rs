@@ -48,7 +48,7 @@ pub fn read_token() -> Option<String> {
         }
         Err(e) => {
             if e.kind() != io::ErrorKind::NotFound {
-                eprintln!("[ApprovalToken] Failed to read token: {}", e);
+                tracing::debug!("[ApprovalToken] Failed to read token: {}", e);
             }
             None
         }
@@ -77,7 +77,7 @@ pub fn write_token(token: &str) -> io::Result<()> {
         fs::set_permissions(&path, perms)?;
     }
 
-    eprintln!("[ApprovalToken] Token stored at {:?}", path);
+    tracing::debug!("[ApprovalToken] Token stored at {:?}", path);
     Ok(())
 }
 
@@ -107,7 +107,7 @@ pub fn delete_token() -> io::Result<()> {
     let path = get_token_path();
     if path.exists() {
         fs::remove_file(&path)?;
-        eprintln!("[ApprovalToken] Token deleted");
+        tracing::debug!("[ApprovalToken] Token deleted");
     }
     Ok(())
 }

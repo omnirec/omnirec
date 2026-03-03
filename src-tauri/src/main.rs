@@ -15,7 +15,7 @@ fn configure_wayland_env() {
         // Disabling compositing mode fixes black screen and other visual glitches.
         if std::env::var("WEBKIT_DISABLE_COMPOSITING_MODE").is_err() {
             std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
-            eprintln!("[main] Wayland detected, set WEBKIT_DISABLE_COMPOSITING_MODE=1");
+            tracing::debug!("[main] Wayland detected, set WEBKIT_DISABLE_COMPOSITING_MODE=1");
         }
     }
 }

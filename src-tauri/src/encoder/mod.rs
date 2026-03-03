@@ -58,12 +58,12 @@ fn detect_h264_encoder() -> &'static str {
     let encoders_output = match output {
         Ok(o) => String::from_utf8_lossy(&o.stdout).to_string(),
         Err(e) => {
-            eprintln!("[Encoder] Failed to run ffmpeg -encoders: {}", e);
+            tracing::debug!("[Encoder] Failed to run ffmpeg -encoders: {}", e);
             String::new()
         }
     };
 
-    eprintln!("[Encoder] Checking available H.264 encoders...");
+    tracing::debug!("[Encoder] Checking available H.264 encoders...");
 
     // Preference order: libx264 (best quality/compat), then hardware encoders, then fallback
     // Note: Fedora's ffmpeg-free doesn't include libx264, so we check hardware encoders too
@@ -84,14 +84,14 @@ fn detect_h264_encoder() -> &'static str {
             || encoders_output.contains(&format!(" {}\n", search_name))
             || encoders_output.lines().any(|l| l.contains(search_name))
         {
-            eprintln!("[Encoder] Found H.264 encoder: {}", encoder_name);
+            tracing::debug!("[Encoder] Found H.264 encoder: {}", encoder_name);
             return encoder_name;
         }
     }
 
     // Last resort fallback - try libx264 anyway
-    eprintln!("[Encoder] Warning: No H.264 encoder detected in ffmpeg output!");
-    eprintln!(
+    tracing::warn!("[Encoder] Warning: No H.264 encoder detected in ffmpeg output!");
+    tracing::debug!(
         "[Encoder] Available encoders: {}",
         encoders_output
             .lines()
@@ -99,7 +99,7 @@ fn detect_h264_encoder() -> &'static str {
             .collect::<Vec<_>>()
             .join(", ")
     );
-    eprintln!("[Encoder] Trying libx264 as fallback (may fail on Fedora without RPM Fusion)");
+    tracing::debug!("[Encoder] Trying libx264 as fallback (may fail on Fedora without RPM Fusion)");
     "libx264"
 }
 
@@ -223,7 +223,7 @@ impl VideoEncoder {
             }
             _ => {
                 // Generic options for other encoders
-                eprintln!("[Encoder] Using generic options for encoder: {}", encoder);
+                tracing::debug!("[Encoder] Using generic options for encoder: {}", encoder);
             }
         }
 
@@ -251,9 +251,9 @@ impl VideoEncoder {
                 use std::io::{BufRead, BufReader};
                 let reader = BufReader::new(stderr);
                 for line in reader.lines().map_while(Result::ok) {
-                    eprintln!("[FFmpeg] {}", line);
+                    tracing::debug!("[FFmpeg] {}", line);
                 }
-                eprintln!("[FFmpeg] stderr reader thread exiting");
+                tracing::debug!("[FFmpeg] stderr reader thread exiting");
             });
         }
 
@@ -268,7 +268,7 @@ impl VideoEncoder {
         // Handle frames that may be slightly larger than encoder dimensions
         // (can happen due to even-dimension rounding)
         if frame.width < self.width || frame.height < self.height {
-            eprintln!(
+            tracing::debug!(
                 "Skipping frame: dimensions {}x{} smaller than encoder {}x{}",
                 frame.width, frame.height, self.width, self.height
             );
@@ -360,7 +360,7 @@ impl AudioEncoder {
         let output_path =
             std::env::temp_dir().join(format!("omnirec_audio_{}.wav", std::process::id()));
 
-        eprintln!("[AudioEncoder] Output path: {:?}", output_path);
+        tracing::debug!("[AudioEncoder] Output path: {:?}", output_path);
 
         Ok(Self {
             file: None,
@@ -424,7 +424,7 @@ impl AudioEncoder {
                 .map_err(|e| format!("Failed to update WAV header: {}", e))?;
         }
 
-        eprintln!(
+        tracing::debug!(
             "[AudioEncoder] Finished, wrote {} bytes of audio data",
             self.bytes_written
         );
@@ -480,7 +480,7 @@ pub fn mux_audio_video(
     // Actually, let's just replace the video file
     let output_path = video_path.with_extension("_temp.mp4");
 
-    eprintln!(
+    tracing::debug!(
         "[Mux] Muxing video {:?} with audio {:?} (audio delay: {}ms)",
         video_path, audio_path, audio_delay_ms
     );
@@ -557,7 +557,7 @@ pub fn mux_audio_video(
     // Clean up the audio file
     let _ = std::fs::remove_file(audio_path);
 
-    eprintln!("[Mux] Successfully muxed audio and video");
+    tracing::debug!("[Mux] Successfully muxed audio and video");
     Ok(video_path.clone())
 }
 
@@ -575,7 +575,7 @@ pub fn generate_output_path() -> Result<PathBuf, String> {
     let timestamp = Local::now().format("%Y-%m-%d_%H%M%S");
     let filename = format!("recording_{}.mp4", timestamp);
 
-    eprintln!("[Encoder] Output path: {:?}", output_dir.join(&filename));
+    tracing::debug!("[Encoder] Output path: {:?}", output_dir.join(&filename));
     Ok(output_dir.join(filename))
 }
 
@@ -616,39 +616,39 @@ pub async fn encode_frames(
     mut frame_rx: mpsc::Receiver<CapturedFrame>,
     stop_flag: Arc<AtomicBool>,
 ) -> Result<PathBuf, String> {
-    eprintln!("[Encoder] encode_frames task started, waiting for first frame...");
+    tracing::debug!("[Encoder] encode_frames task started, waiting for first frame...");
 
     // Wait for first frame to get dimensions
     let first_frame = frame_rx.recv().await.ok_or_else(|| {
-        eprintln!("[Encoder] recv() returned None - channel closed without frames");
+        tracing::debug!("[Encoder] recv() returned None - channel closed without frames");
         "No frames received".to_string()
     })?;
 
-    eprintln!(
+    tracing::debug!(
         "[Encoder] Got first frame: {}x{}",
         first_frame.width, first_frame.height
     );
 
-    eprintln!("[Encoder] Creating VideoEncoder...");
+    tracing::debug!("[Encoder] Creating VideoEncoder...");
     let mut encoder = VideoEncoder::new(first_frame.width, first_frame.height).map_err(|e| {
-        eprintln!("[Encoder] Failed to create encoder: {}", e);
+        tracing::error!("[Encoder] Failed to create encoder: {}", e);
         e
     })?;
 
-    eprintln!("[Encoder] Starting FFmpeg...");
+    tracing::debug!("[Encoder] Starting FFmpeg...");
     encoder.start().map_err(|e| {
-        eprintln!("[Encoder] Failed to start FFmpeg: {}", e);
+        tracing::error!("[Encoder] Failed to start FFmpeg: {}", e);
         e
     })?;
 
-    eprintln!("[Encoder] Writing first frame...");
+    tracing::debug!("[Encoder] Writing first frame...");
     // Write first frame
     encoder.write_frame(&first_frame).map_err(|e| {
-        eprintln!("[Encoder] Failed to write first frame: {}", e);
+        tracing::error!("[Encoder] Failed to write first frame: {}", e);
         e
     })?;
 
-    eprintln!("[Encoder] Encoder initialized, entering main loop...");
+    tracing::debug!("[Encoder] Encoder initialized, entering main loop...");
 
     let mut frames_written = 1u64;
     let start_time = std::time::Instant::now();
@@ -665,7 +665,7 @@ pub async fn encode_frames(
 
         // Check stop flag
         if stop_flag.load(Ordering::Relaxed) {
-            eprintln!("[Encoder] Stop flag set, exiting loop");
+            tracing::debug!("[Encoder] Stop flag set, exiting loop");
             break;
         }
 
@@ -682,13 +682,13 @@ pub async fn encode_frames(
                 // If stop flag is set and we've had many empty polls, exit
                 // This handles the case where the channel isn't properly closed
                 if stop_flag.load(Ordering::Relaxed) && consecutive_empty_polls > 10 {
-                    eprintln!("[Encoder] Stop flag set and no frames, exiting");
+                    tracing::debug!("[Encoder] Stop flag set and no frames, exiting");
                     break;
                 }
 
                 // Safety exit if we've polled too many times with no frames
                 if consecutive_empty_polls > MAX_EMPTY_POLLS {
-                    eprintln!(
+                    tracing::debug!(
                         "[Encoder] No frames for {}ms, checking stop flag",
                         MAX_EMPTY_POLLS * 10
                     );
@@ -699,7 +699,7 @@ pub async fn encode_frames(
                 }
             }
             Err(mpsc::error::TryRecvError::Disconnected) => {
-                eprintln!("[Encoder] Channel disconnected, exiting loop");
+                tracing::debug!("[Encoder] Channel disconnected, exiting loop");
                 break;
             }
         }
@@ -736,7 +736,7 @@ pub async fn encode_frames_with_audio(
     stop_flag: Arc<AtomicBool>,
     audio_config: AudioEncoderConfig,
 ) -> Result<PathBuf, String> {
-    eprintln!("[Encoder] encode_frames_with_audio task started");
+    tracing::debug!("[Encoder] encode_frames_with_audio task started");
 
     // Wait for first video frame to get dimensions
     let first_frame = frame_rx
@@ -748,7 +748,7 @@ pub async fn encode_frames_with_audio(
     // This is our reference point for A/V sync
     let video_start_time = std::time::Instant::now();
 
-    eprintln!(
+    tracing::debug!(
         "[Encoder] Got first frame: {}x{}",
         first_frame.width, first_frame.height
     );
@@ -764,7 +764,7 @@ pub async fn encode_frames_with_audio(
     // Write first video frame
     video_encoder.write_frame(&first_frame)?;
 
-    eprintln!("[Encoder] Encoders initialized, entering main loop...");
+    tracing::debug!("[Encoder] Encoders initialized, entering main loop...");
 
     let mut video_frames_written = 1u64;
     let mut audio_samples_written = 0u64;
@@ -783,7 +783,7 @@ pub async fn encode_frames_with_audio(
 
         // Check stop flag
         if stop_flag.load(Ordering::Relaxed) {
-            eprintln!("[Encoder] Stop flag set, exiting loop");
+            tracing::debug!("[Encoder] Stop flag set, exiting loop");
             break;
         }
 
@@ -796,7 +796,7 @@ pub async fn encode_frames_with_audio(
             Err(mpsc::error::TryRecvError::Empty) => {
                 consecutive_empty_polls += 1;
                 if stop_flag.load(Ordering::Relaxed) && consecutive_empty_polls > 10 {
-                    eprintln!("[Encoder] Stop flag set and no frames, exiting");
+                    tracing::debug!("[Encoder] Stop flag set and no frames, exiting");
                     break;
                 }
                 if consecutive_empty_polls > MAX_EMPTY_POLLS {
@@ -807,7 +807,7 @@ pub async fn encode_frames_with_audio(
                 }
             }
             Err(mpsc::error::TryRecvError::Disconnected) => {
-                eprintln!("[Encoder] Video channel disconnected");
+                tracing::debug!("[Encoder] Video channel disconnected");
                 break;
             }
         }
@@ -821,7 +821,7 @@ pub async fn encode_frames_with_audio(
                     .unwrap()
                     .duration_since(video_start_time)
                     .as_millis();
-                eprintln!(
+                tracing::debug!(
                     "[Encoder] First audio sample received, delay from video start: {}ms",
                     delay_ms
                 );
@@ -854,7 +854,7 @@ pub async fn encode_frames_with_audio(
     }
 
     let elapsed = video_start_time.elapsed().as_secs_f64();
-    eprintln!(
+    tracing::debug!(
         "[Encoder] Recording complete: {:.1}s, {} video frames, {} audio samples",
         elapsed, video_frames_written, audio_samples_written
     );
@@ -870,13 +870,13 @@ pub async fn encode_frames_with_audio(
             .map(|t| t.duration_since(video_start_time).as_millis() as i64)
             .unwrap_or(0);
 
-        eprintln!(
+        tracing::debug!(
             "[Encoder] Muxing audio and video (audio delay: {}ms)...",
             audio_delay_ms
         );
         mux_audio_video(&video_path, &audio_path, audio_delay_ms)?;
     } else {
-        eprintln!("[Encoder] No audio recorded, keeping video-only");
+        tracing::debug!("[Encoder] No audio recorded, keeping video-only");
         // Clean up empty audio file
         let _ = std::fs::remove_file(&audio_path);
     }
@@ -904,7 +904,7 @@ pub async fn encode_frames_with_audio_and_transcription(
     transcription_tx: Option<mpsc::Sender<Vec<f32>>>,
     output_path: Option<PathBuf>,
 ) -> Result<PathBuf, String> {
-    eprintln!(
+    tracing::debug!(
         "[Encoder] encode_frames_with_audio_and_transcription task started (transcription: {})",
         transcription_tx.is_some()
     );
@@ -919,7 +919,7 @@ pub async fn encode_frames_with_audio_and_transcription(
     // This is our reference point for A/V sync
     let video_start_time = std::time::Instant::now();
 
-    eprintln!(
+    tracing::debug!(
         "[Encoder] Got first frame: {}x{}",
         first_frame.width, first_frame.height
     );
@@ -932,7 +932,7 @@ pub async fn encode_frames_with_audio_and_transcription(
         output_path,
     )?;
     video_encoder.start()?;
-    eprintln!(
+    tracing::debug!(
         "[Encoder] Video output path: {:?}",
         video_encoder.output_path()
     );
@@ -944,7 +944,7 @@ pub async fn encode_frames_with_audio_and_transcription(
     // Write first video frame
     video_encoder.write_frame(&first_frame)?;
 
-    eprintln!("[Encoder] Encoders initialized, entering main loop...");
+    tracing::debug!("[Encoder] Encoders initialized, entering main loop...");
 
     let mut video_frames_written = 1u64;
     let mut audio_samples_written = 0u64;
@@ -963,7 +963,7 @@ pub async fn encode_frames_with_audio_and_transcription(
 
         // Check stop flag
         if stop_flag.load(Ordering::Relaxed) {
-            eprintln!("[Encoder] Stop flag set, exiting loop");
+            tracing::debug!("[Encoder] Stop flag set, exiting loop");
             break;
         }
 
@@ -976,7 +976,7 @@ pub async fn encode_frames_with_audio_and_transcription(
             Err(mpsc::error::TryRecvError::Empty) => {
                 consecutive_empty_polls += 1;
                 if stop_flag.load(Ordering::Relaxed) && consecutive_empty_polls > 10 {
-                    eprintln!("[Encoder] Stop flag set and no frames, exiting");
+                    tracing::debug!("[Encoder] Stop flag set and no frames, exiting");
                     break;
                 }
                 if consecutive_empty_polls > MAX_EMPTY_POLLS {
@@ -987,7 +987,7 @@ pub async fn encode_frames_with_audio_and_transcription(
                 }
             }
             Err(mpsc::error::TryRecvError::Disconnected) => {
-                eprintln!("[Encoder] Video channel disconnected");
+                tracing::debug!("[Encoder] Video channel disconnected");
                 break;
             }
         }
@@ -1001,7 +1001,7 @@ pub async fn encode_frames_with_audio_and_transcription(
                     .unwrap()
                     .duration_since(video_start_time)
                     .as_millis();
-                eprintln!(
+                tracing::debug!(
                     "[Encoder] First audio sample received, delay from video start: {}ms",
                     delay_ms
                 );
@@ -1019,11 +1019,11 @@ pub async fn encode_frames_with_audio_and_transcription(
                     Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
                         // Log occasionally if queue is full
                         if audio_samples_written.is_multiple_of(100000) {
-                            eprintln!("[Encoder] Transcription channel full, dropping samples");
+                            tracing::warn!("[Encoder] Transcription channel full, dropping samples");
                         }
                     }
                     Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
-                        eprintln!("[Encoder] Transcription channel closed");
+                        tracing::debug!("[Encoder] Transcription channel closed");
                     }
                 }
             }
@@ -1058,7 +1058,7 @@ pub async fn encode_frames_with_audio_and_transcription(
     }
 
     let elapsed = video_start_time.elapsed().as_secs_f64();
-    eprintln!(
+    tracing::debug!(
         "[Encoder] Recording complete: {:.1}s, {} video frames, {} audio samples",
         elapsed, video_frames_written, audio_samples_written
     );
@@ -1074,13 +1074,13 @@ pub async fn encode_frames_with_audio_and_transcription(
             .map(|t| t.duration_since(video_start_time).as_millis() as i64)
             .unwrap_or(0);
 
-        eprintln!(
+        tracing::debug!(
             "[Encoder] Muxing audio and video (audio delay: {}ms)...",
             audio_delay_ms
         );
         mux_audio_video(&video_path, &audio_path, audio_delay_ms)?;
     } else {
-        eprintln!("[Encoder] No audio recorded, keeping video-only");
+        tracing::debug!("[Encoder] No audio recorded, keeping video-only");
         // Clean up empty audio file
         let _ = std::fs::remove_file(&audio_path);
     }
@@ -1095,7 +1095,7 @@ pub async fn encode_frames_with_audio_and_transcription(
 /// FFmpeg is not available (though it should be installed as a package dependency).
 pub fn ensure_ffmpeg_blocking() -> Result<(), String> {
     let ffmpeg = resolve_ffmpeg_path();
-    eprintln!("[FFmpeg] Resolved path: {}", ffmpeg.display());
+    tracing::debug!("[FFmpeg] Resolved path: {}", ffmpeg.display());
 
     // Verify the binary is accessible by running `ffmpeg -version`
     match Command::new(&ffmpeg)
@@ -1105,7 +1105,7 @@ pub fn ensure_ffmpeg_blocking() -> Result<(), String> {
         .status()
     {
         Ok(status) if status.success() => {
-            eprintln!("[FFmpeg] Binary verified OK");
+            tracing::debug!("[FFmpeg] Binary verified OK");
             Ok(())
         }
         Ok(status) => Err(format!(
@@ -1114,7 +1114,7 @@ pub fn ensure_ffmpeg_blocking() -> Result<(), String> {
             status
         )),
         Err(e) => {
-            eprintln!(
+            tracing::debug!(
                 "[FFmpeg] Binary not found at {}: {}",
                 ffmpeg.display(),
                 e
@@ -1123,7 +1123,7 @@ pub fn ensure_ffmpeg_blocking() -> Result<(), String> {
             // not be installed in development environments)
             #[cfg(target_os = "linux")]
             {
-                eprintln!("[FFmpeg] Attempting auto-download as fallback...");
+                tracing::debug!("[FFmpeg] Attempting auto-download as fallback...");
                 ffmpeg_sidecar::download::auto_download()
                     .map_err(|e| format!("FFmpeg not found and auto-download failed: {}", e))
             }
@@ -1147,12 +1147,12 @@ pub fn transcode_video(source_path: &Path, format: OutputFormat) -> Result<PathB
     // Generate output path with new extension
     let output_path = source_path.with_extension(format.extension());
 
-    eprintln!(
+    tracing::debug!(
         "[Transcode] Converting {} to {:?}",
         source_path.display(),
         format
     );
-    eprintln!("[Transcode] Output: {}", output_path.display());
+    tracing::debug!("[Transcode] Output: {}", output_path.display());
 
     let mut command = new_ffmpeg_command();
 
@@ -1244,6 +1244,6 @@ pub fn transcode_video(source_path: &Path, format: OutputFormat) -> Result<PathB
         return Err(error_msg);
     }
 
-    eprintln!("[Transcode] Successfully created {}", output_path.display());
+    tracing::debug!("[Transcode] Successfully created {}", output_path.display());
     Ok(output_path)
 }

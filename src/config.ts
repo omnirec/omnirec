@@ -53,6 +53,8 @@ interface DownloadProgress {
   error: string | null;
 }
 
+type LogLevel = "error" | "warn" | "info" | "debug" | "trace";
+
 interface AppConfig {
   output: {
     directory: string | null;
@@ -66,6 +68,7 @@ interface AppConfig {
   appearance: {
     theme: ThemeMode;
   };
+  log_level: LogLevel;
 }
 
 // DOM elements
@@ -96,6 +99,7 @@ let modelProgressFill: HTMLElement | null;
 let modelProgressText: HTMLElement | null;
 let showTranscriptConfigItem: HTMLElement | null;
 let showTranscriptCheckbox: HTMLInputElement | null;
+let logLevelSelect: HTMLSelectElement | null;
 
 // State
 let defaultOutputDir = "";
@@ -140,6 +144,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   modelProgressText = document.querySelector("#model-progress-text");
   showTranscriptConfigItem = document.querySelector("#show-transcript-config-item");
   showTranscriptCheckbox = document.querySelector("#show-transcript-checkbox");
+  logLevelSelect = document.querySelector("#log-level-select");
 
   // Close button handler
   closeBtn?.addEventListener("click", () => {
@@ -161,6 +166,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   modelDownloadBtn?.addEventListener("click", handleModelDownload);
   modelCancelBtn?.addEventListener("click", handleModelCancel);
   showTranscriptCheckbox?.addEventListener("change", handleShowTranscriptChange);
+  logLevelSelect?.addEventListener("change", handleLogLevelChange);
 
   // Listen for model download progress events
   listen<DownloadProgress>("model-download-progress", (event) => {
@@ -192,7 +198,12 @@ async function loadConfig(): Promise<void> {
       themeSelect.value = themeMode;
     }
 
-    console.log("[Config] Loaded config, default dir:", defaultOutputDir, ", theme:", themeMode);
+    const logLevel: LogLevel = config.log_level || "warn";
+    if (logLevelSelect) {
+      logLevelSelect.value = logLevel;
+    }
+
+    console.log("[Config] Loaded config, default dir:", defaultOutputDir, ", theme:", themeMode, ", log level:", logLevel);
 
     await loadAudioSources();
   } catch (error) {
@@ -702,5 +713,18 @@ async function handleThemeChange(): Promise<void> {
     console.log("[Theme] Saved theme mode:", newMode);
   } catch (error) {
     console.error("[Theme] Failed to save theme:", error);
+  }
+}
+
+async function handleLogLevelChange(): Promise<void> {
+  if (!logLevelSelect) return;
+
+  const newLevel = logLevelSelect.value as LogLevel;
+
+  try {
+    await invoke("set_log_level", { level: newLevel });
+    console.log("[Config] Log level changed to:", newLevel);
+  } catch (error) {
+    console.error("[Config] Failed to set log level:", error);
   }
 }

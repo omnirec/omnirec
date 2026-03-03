@@ -42,7 +42,7 @@ pub fn show_highlight(x: i32, y: i32, width: i32, height: i32) {
 
     thread::spawn(move || {
         if let Err(e) = run_highlight(x, y, width, height) {
-            eprintln!("[Linux Highlight] Error: {}", e);
+            tracing::debug!("[Linux Highlight] Error: {}", e);
         }
     });
 }
@@ -85,7 +85,7 @@ fn get_hyprland_monitors() -> Vec<HyprMonitorInfo> {
             })
             .collect(),
         Err(e) => {
-            eprintln!("[Linux Highlight] Failed to get Hyprland monitors: {}", e);
+            tracing::debug!("[Linux Highlight] Failed to get Hyprland monitors: {}", e);
             Vec::new()
         }
     }
@@ -292,7 +292,7 @@ fn run_highlight(x: i32, y: i32, width: i32, height: i32) -> Result<(), String> 
     while start.elapsed() < Duration::from_millis(HIGHLIGHT_DURATION_MS) {
         // Check for cancellation
         if CANCEL_FLAG.load(Ordering::SeqCst) {
-            eprintln!("[Linux Highlight] Cancelled");
+            tracing::debug!("[Linux Highlight] Cancelled");
             break;
         }
 

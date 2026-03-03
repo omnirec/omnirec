@@ -26,7 +26,7 @@ pub fn list_monitors() -> Vec<MonitorInfo> {
     };
 
     if result != 0 {
-        eprintln!(
+        tracing::debug!(
             "[macOS] CGGetActiveDisplayList failed with error: {}",
             result
         );

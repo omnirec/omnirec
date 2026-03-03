@@ -124,7 +124,7 @@ async fn handle_client(
             match &state.selection {
                 Some(sel) => {
                     let has_token = approval_token::has_token();
-                    eprintln!(
+                    tracing::debug!(
                         "[IPC] Picker queried selection: type={}, id={}, geometry={:?}, has_token={}",
                         sel.source_type, sel.source_id, sel.geometry, has_token
                     );
@@ -136,14 +136,14 @@ async fn handle_client(
                     }
                 }
                 None => {
-                    eprintln!("[IPC] Picker queried but no selection available");
+                    tracing::debug!("[IPC] Picker queried but no selection available");
                     IpcResponse::NoSelection
                 }
             }
         }
         IpcRequest::ValidateToken { token } => {
             let is_valid = approval_token::validate_token(&token);
-            eprintln!(
+            tracing::debug!(
                 "[IPC] Token validation: {}",
                 if is_valid { "valid" } else { "invalid" }
             );
@@ -155,11 +155,11 @@ async fn handle_client(
         }
         IpcRequest::StoreToken { token } => match approval_token::write_token(&token) {
             Ok(()) => {
-                eprintln!("[IPC] Token stored successfully");
+                tracing::debug!("[IPC] Token stored successfully");
                 IpcResponse::TokenStored
             }
             Err(e) => {
-                eprintln!("[IPC] Failed to store token: {}", e);
+                tracing::debug!("[IPC] Failed to store token: {}", e);
                 IpcResponse::Error {
                     message: format!("Failed to store token: {}", e),
                 }
@@ -205,12 +205,12 @@ pub async fn start_ipc_server(
                     let state = state_clone.clone();
                     tokio::spawn(async move {
                         if let Err(e) = handle_client(stream, state).await {
-                            eprintln!("IPC client error: {}", e);
+                            tracing::error!("IPC client error: {}", e);
                         }
                     });
                 }
                 Err(e) => {
-                    eprintln!("IPC accept error: {}", e);
+                    tracing::error!("IPC accept error: {}", e);
                 }
             }
         }
@@ -222,7 +222,7 @@ pub async fn start_ipc_server(
 /// Update the current capture selection.
 #[allow(dead_code)]
 pub async fn set_selection(state: &Arc<RwLock<IpcServerState>>, selection: CaptureSelection) {
-    eprintln!(
+    tracing::debug!(
         "[IPC] Setting selection: type={}, id={}, geometry={:?}",
         selection.source_type, selection.source_id, selection.geometry
     );

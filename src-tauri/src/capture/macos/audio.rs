@@ -157,7 +157,7 @@ pub fn list_audio_sources() -> Result<Vec<AudioSource>, EnumerationError> {
         }
     }
 
-    eprintln!(
+    tracing::debug!(
         "[Audio] Enumerated {} audio sources on macOS",
         sources.len()
     );
@@ -296,7 +296,7 @@ struct AudioCaptureErrorHandler;
 
 impl UnsafeSCStreamError for AudioCaptureErrorHandler {
     fn handle_error(&self) {
-        eprintln!("[Audio] ScreenCaptureKit stream error");
+        tracing::debug!("[Audio] ScreenCaptureKit stream error");
     }
 }
 
@@ -361,7 +361,7 @@ impl UnsafeSCStreamOutput for AudioOutputHandler {
         static LOGGED_FORMAT: std::sync::atomic::AtomicBool =
             std::sync::atomic::AtomicBool::new(false);
         if !LOGGED_FORMAT.swap(true, Ordering::Relaxed) {
-            eprintln!("[Audio] Capture format: sample_rate={}, channels={}, format_id={}, format_flags={}, bytes_per_packet={}, frames_per_packet={}, bytes_per_frame={}, bits_per_channel={}, non_interleaved={}",
+            tracing::debug!("[Audio] Capture format: sample_rate={}, channels={}, format_id={}, format_flags={}, bytes_per_packet={}, frames_per_packet={}, bytes_per_frame={}, bits_per_channel={}, non_interleaved={}",
                 asbd.sample_rate,
                 asbd.channels_per_frame,
                 asbd.format_id,
@@ -497,7 +497,7 @@ pub fn start_audio_capture(_source_id: &str) -> Result<(AudioReceiver, StopHandl
         ));
     }
 
-    eprintln!("[Audio] Starting system audio capture on macOS");
+    tracing::debug!("[Audio] Starting system audio capture on macOS");
 
     // Get shareable content using unsafe API
     let content = UnsafeSCShareableContent::get()
@@ -553,14 +553,14 @@ pub fn start_audio_capture(_source_id: &str) -> Result<(AudioReceiver, StopHandl
         .start_capture()
         .map_err(|e| CaptureError::AudioError(format!("Failed to start audio capture: {}", e)))?;
 
-    eprintln!("[Audio] System audio capture started");
+    tracing::debug!("[Audio] System audio capture started");
 
     // Keep stream alive in a thread
     std::thread::spawn(move || {
         while !stop_flag.load(Ordering::Relaxed) {
             std::thread::sleep(std::time::Duration::from_millis(100));
         }
-        eprintln!("[Audio] Stopping system audio capture");
+        tracing::debug!("[Audio] Stopping system audio capture");
         let _ = stream.stop_capture();
     });
 
@@ -581,13 +581,13 @@ pub fn start_system_audio_capture() -> Result<(AudioReceiver, StopHandle), Captu
 /// Performs one-time setup and logs available audio devices.
 #[allow(dead_code)]
 pub fn init_audio_backend() -> Result<(), String> {
-    eprintln!("[Audio] Initializing macOS audio backend");
+    tracing::debug!("[Audio] Initializing macOS audio backend");
 
     // Check macOS version for audio capture support
     if is_macos_13_or_later() {
-        eprintln!("[Audio] macOS 13+ detected - system audio capture available");
+        tracing::debug!("[Audio] macOS 13+ detected - system audio capture available");
     } else {
-        eprintln!("[Audio] macOS version < 13 - system audio capture not available");
+        tracing::debug!("[Audio] macOS version < 13 - system audio capture not available");
     }
 
     // Enumerate devices for logging
@@ -601,7 +601,7 @@ pub fn init_audio_backend() -> Result<(), String> {
                 .iter()
                 .filter(|s| s.source_type == AudioSourceType::Input)
                 .count();
-            eprintln!(
+            tracing::debug!(
                 "[Audio] Found {} audio devices ({} outputs, {} inputs)",
                 sources.len(),
                 output_count,
@@ -609,7 +609,7 @@ pub fn init_audio_backend() -> Result<(), String> {
             );
         }
         Err(e) => {
-            eprintln!("[Audio] Failed to enumerate audio devices: {:?}", e);
+            tracing::debug!("[Audio] Failed to enumerate audio devices: {:?}", e);
         }
     }
 
@@ -657,6 +657,6 @@ mod tests {
     fn test_system_audio_available_check() {
         // Should return a boolean without crashing
         let result = is_system_audio_available();
-        eprintln!("System audio available: {}", result);
+        tracing::debug!("System audio available: {}", result);
     }
 }

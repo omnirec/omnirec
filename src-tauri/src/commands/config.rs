@@ -20,6 +20,7 @@ pub struct ConfigResponse {
     pub output: OutputConfigResponse,
     pub audio: AudioConfigResponse,
     pub appearance: AppearanceConfigResponse,
+    pub log_level: String,
 }
 
 #[derive(serde::Serialize)]
@@ -55,6 +56,7 @@ impl From<&AppConfig> for ConfigResponse {
             appearance: AppearanceConfigResponse {
                 theme: config.appearance.theme.as_str().to_string(),
             },
+            log_level: config.log_level.as_filter_str().to_string(),
         }
     }
 }
@@ -91,7 +93,7 @@ pub async fn save_output_directory(
     // Save to disk
     save_config_to_disk(&config)?;
 
-    eprintln!(
+    tracing::debug!(
         "[save_output_directory] Saved output directory: {:?}",
         config.output.directory
     );
@@ -144,7 +146,7 @@ pub async fn save_theme(theme: String, state: State<'_, AppState>) -> Result<(),
     // Save to disk
     save_config_to_disk(&config)?;
 
-    eprintln!(
+    tracing::debug!(
         "[save_theme] Saved theme: {}",
         config.appearance.theme.as_str()
     );
