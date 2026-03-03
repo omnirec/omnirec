@@ -160,7 +160,6 @@ pub fn open_log_viewer_window(app: &tauri::AppHandle) {
         .resizable(true)
         .decorations(false)
         .shadow(true)
-        .skip_taskbar(true)
         .center()
         .build()
     {

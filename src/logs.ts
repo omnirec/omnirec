@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -226,14 +226,11 @@ document.addEventListener("DOMContentLoaded", async () => {
   scrollToBottomBtn = document.getElementById("scroll-to-bottom-btn") as HTMLButtonElement;
   downloadBtn = document.getElementById("download-btn") as HTMLButtonElement;
 
-  // Close button — destroy the window
+  // Close button
   const closeBtn = document.getElementById("close-btn");
   if (closeBtn) {
-    closeBtn.addEventListener("click", async (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const win = getCurrentWindow();
-      await win.destroy();
+    closeBtn.addEventListener("click", () => {
+      getCurrentWebviewWindow().close();
     });
   }
 
