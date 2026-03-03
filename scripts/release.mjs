@@ -200,6 +200,7 @@ const versionedFiles = [
   "src-cli/Cargo.toml",
   "packaging/aur/PKGBUILD",
   "README.md",
+  "Cargo.lock",
 ];
 
 const main = async () => {
@@ -209,6 +210,8 @@ const main = async () => {
     console.log("Dry run complete. Local files updated; no git commands executed.");
     return;
   }
+  console.log("Syncing Cargo.lock...");
+  run("cargo", ["update", "--workspace"]);
   run("git", ["add", ...versionedFiles]);
   const staged = run("git", ["diff", "--cached", "--name-only"]);
   if (!staged) {
