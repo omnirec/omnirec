@@ -89,85 +89,29 @@ interface ThumbnailResponse {
   height: number;
 }
 
-// Thumbnail cache with TTL
-const THUMBNAIL_CACHE_TTL_MS = 5000; // 5 seconds
-const thumbnailCache = new Map<string, { data: string; timestamp: number }>();
+// Per-item thumbnail refresh timestamps
+// Keys: "window:{handle}" or "display:{id}"
+const lastRefreshed = new Map<string, number>();
 
-function getCachedThumbnail(key: string): string | null {
-  const cached = thumbnailCache.get(key);
-  if (cached && Date.now() - cached.timestamp < THUMBNAIL_CACHE_TTL_MS) {
-    return cached.data;
-  }
-  return null;
+// Minimum interval between captures for a single item (5 seconds)
+const THUMBNAIL_MIN_INTERVAL_MS = 5000;
+// Background refresh interval - captures visible stale items (20 seconds)
+const THUMBNAIL_BACKGROUND_INTERVAL_MS = 20000;
+
+function isStale(id: string, thresholdMs: number): boolean {
+  return Date.now() - (lastRefreshed.get(id) ?? 0) >= thresholdMs;
 }
 
-function setCachedThumbnail(key: string, data: string): void {
-  thumbnailCache.set(key, { data, timestamp: Date.now() });
+function recordRefresh(id: string): void {
+  lastRefreshed.set(id, Date.now());
 }
 
-// Thumbnail request queue - serialize requests to avoid portal conflicts on Linux
-// On Windows/macOS, requests are processed in parallel for faster loading
-type ThumbnailRequest = {
-  type: "window" | "display";
-  id: string | number;
-  imgElement: HTMLImageElement;
-};
-const thumbnailQueue: ThumbnailRequest[] = [];
-let thumbnailQueueProcessing = false;
+// Viewport visibility tracking via IntersectionObserver
+const visibleItems = new Set<string>();
+const pendingCapture = new Set<string>();
 
-// Track pending parallel requests to avoid duplicates
-const pendingThumbnails = new Set<HTMLImageElement>();
-
-async function processThumbnailQueue(): Promise<void> {
-  if (thumbnailQueueProcessing) return;
-  thumbnailQueueProcessing = true;
-
-  // Collect all pending requests
-  const requests = [...thumbnailQueue];
-  thumbnailQueue.length = 0;
-
-  // Filter out requests for elements no longer in DOM
-  const validRequests = requests.filter(r => document.contains(r.imgElement));
-
-  // Process all requests in parallel - Windows/macOS don't have portal serialization issues
-  // and even on Linux, thumbnail capture uses screencopy which doesn't conflict
-  const promises = validRequests.map(async (request) => {
-    try {
-      if (request.type === "window") {
-        await loadWindowThumbnailDirect(request.id as number, request.imgElement);
-      } else {
-        await loadDisplayThumbnailDirect(request.id as string, request.imgElement);
-      }
-    } catch (error) {
-      console.error(`Failed to load ${request.type} thumbnail:`, error);
-    } finally {
-      pendingThumbnails.delete(request.imgElement);
-    }
-  });
-
-  await Promise.all(promises);
-
-  thumbnailQueueProcessing = false;
-
-  // Process any new requests that came in while we were processing
-  if (thumbnailQueue.length > 0) {
-    processThumbnailQueue();
-  }
-}
-
-function queueThumbnailRequest(request: ThumbnailRequest): void {
-  // Don't queue duplicates for the same element
-  if (pendingThumbnails.has(request.imgElement)) return;
-  
-  const exists = thumbnailQueue.some(
-    (r) => r.imgElement === request.imgElement
-  );
-  if (!exists) {
-    pendingThumbnails.add(request.imgElement);
-    thumbnailQueue.push(request);
-    processThumbnailQueue();
-  }
-}
+// App-window visibility (Page Visibility API)
+let appWindowVisible = !document.hidden;
 
 // DOM Elements
 let windowListEl: HTMLElement | null;
@@ -220,6 +164,7 @@ let systemThemeMediaQuery: MediaQueryList | null = null;
 // Thumbnail refresh state
 let windowThumbnailRefreshInterval: number | null = null;
 let displayThumbnailRefreshInterval: number | null = null;
+let metadataPollInterval: number | null = null;
 let regionPreviewData: string | null = null;
 let lastRegionPreviewTime = 0;
 let regionPreviewPendingTimeout: number | null = null;
@@ -414,12 +359,24 @@ window.addEventListener("DOMContentLoaded", () => {
     }
   });
 
+  // Page Visibility API - pause/resume all refresh when app window hides/shows
+  document.addEventListener("visibilitychange", () => {
+    appWindowVisible = !document.hidden;
+    if (!appWindowVisible) {
+      stopMetadataPoll();
+    } else {
+      // Resume appropriate poll for the current tab
+      if (captureMode === "window" || captureMode === "display") {
+        startMetadataPoll();
+      }
+    }
+  });
+
   // Initial load - detect desktop environment and check permissions
   detectDesktopEnvironment();
   checkPermissionsAndLoad();
   loadAppVersion();
   loadConfig();
-  
 
 });
 
@@ -532,14 +489,28 @@ function setViewMode(mode: ViewMode): void {
     stopDisplayThumbnailRefresh();
   }
 
+  // Stop metadata poll - it will be restarted by the load/start functions below
+  stopMetadataPoll();
+
   // Load displays when switching to display mode
   if (mode === "display") {
     loadDisplays();
   }
 
-  // Restart window refresh when switching to window mode
+  // Restart window refresh when switching to window mode, and trigger immediate
+  // evaluation of all currently-visible items (tab-activation scheduling rule)
   if (mode === "window") {
     startWindowThumbnailRefresh();
+    startMetadataPoll();
+    // Queue all visible stale items for immediate capture
+    for (const id of visibleItems) {
+      if (id.startsWith("window:") && isStale(id, THUMBNAIL_MIN_INTERVAL_MS)) {
+        pendingCapture.add(id);
+      }
+    }
+    if (pendingCapture.size > 0) {
+      drainPendingCaptures().catch(err => console.error("Drain error:", err));
+    }
   }
 
   updateRecordButton();
@@ -799,7 +770,7 @@ async function openRegionSelector(): Promise<void> {
   }
 }
 
-// Load available windows
+// Load available windows (initial load only - subsequent updates via reconcileWindowList)
 async function loadWindows(): Promise<void> {
   if (!windowListEl) return;
 
@@ -807,8 +778,9 @@ async function loadWindows(): Promise<void> {
   selectedWindow = null;
   updateRecordButton();
 
-  // Stop any existing refresh interval
+  // Stop any existing refresh intervals
   stopWindowThumbnailRefresh();
+  stopMetadataPoll();
 
   try {
     const windows = await invoke<WindowInfo[]>("get_windows");
@@ -831,67 +803,98 @@ async function loadWindows(): Promise<void> {
       windowListEl.appendChild(item);
     }
 
-    // Load thumbnails now that items are in DOM
-    for (const win of windows) {
-      const item = windowListEl.querySelector(`[data-handle="${win.handle}"]`);
-      const img = item?.querySelector<HTMLImageElement>(".window-item__thumb-img");
-      if (img) {
-        loadWindowThumbnail(win.handle, img);
-      }
-    }
-
-    // Start auto-refresh for thumbnails
+    // Thumbnails are loaded by IntersectionObserver as items enter the viewport.
+    // Start auto-refresh and metadata polling.
     startWindowThumbnailRefresh();
+    startMetadataPoll();
   } catch (error) {
     windowListEl.innerHTML = `<p class="error">Error loading windows: ${error}</p>`;
     setStatus(`Error: ${error}`, true);
   }
 }
 
-// Start auto-refresh for window thumbnails
-function startWindowThumbnailRefresh(): void {
-  if (windowThumbnailRefreshInterval !== null) return;
-  
-  windowThumbnailRefreshInterval = window.setInterval(() => {
-    if (currentState !== "idle" || captureMode !== "window") {
-      return; // Don't refresh during recording or when not in window mode
+// =============================================================================
+// IntersectionObserver - viewport visibility tracking
+// =============================================================================
+
+const listIntersectionObserver = new IntersectionObserver((entries) => {
+  for (const entry of entries) {
+    const el = entry.target as HTMLElement;
+    const id = el.dataset.itemId;
+    if (!id) continue;
+
+    if (entry.isIntersecting) {
+      visibleItems.add(id);
+      // Schedule immediate capture if stale (scroll-into-view rule: 5s threshold)
+      if (isStale(id, THUMBNAIL_MIN_INTERVAL_MS)) {
+        pendingCapture.add(id);
+      }
+    } else {
+      visibleItems.delete(id);
     }
-    refreshWindowThumbnails();
+  }
+}, { threshold: 0.1 });
+
+// =============================================================================
+// Metadata poll loop - lightweight list reconciliation (no thumbnail capture)
+// =============================================================================
+
+function startMetadataPoll(): void {
+  if (metadataPollInterval !== null) return;
+  metadataPollInterval = window.setInterval(() => {
+    if (!appWindowVisible || currentState !== "idle") return;
+    if (captureMode === "window") {
+      reconcileWindowList().catch(err => console.error("Window reconcile error:", err));
+    } else if (captureMode === "display") {
+      reconcileDisplayList().catch(err => console.error("Display reconcile error:", err));
+    }
   }, 5000);
 }
 
-// Stop auto-refresh for window thumbnails
-function stopWindowThumbnailRefresh(): void {
-  if (windowThumbnailRefreshInterval !== null) {
-    clearInterval(windowThumbnailRefreshInterval);
-    windowThumbnailRefreshInterval = null;
+function stopMetadataPoll(): void {
+  if (metadataPollInterval !== null) {
+    clearInterval(metadataPollInterval);
+    metadataPollInterval = null;
   }
 }
 
-// Refresh window list and thumbnails (incremental update)
-async function refreshWindowThumbnails(): Promise<void> {
+// Incrementally reconcile the window list DOM without clearing thumbnails or scroll position
+async function reconcileWindowList(): Promise<void> {
   if (!windowListEl) return;
-
   try {
     const windows = await invoke<WindowInfo[]>("get_windows");
     const newHandles = new Set(windows.map(w => w.handle));
 
-    // Get current items in the DOM
+    // Build map of current DOM items keyed by handle
     const existingItems = windowListEl.querySelectorAll<HTMLElement>(".window-item");
     const existingHandles = new Set<number>();
 
-    // Remove items that no longer exist
     existingItems.forEach((item) => {
       const handle = parseInt(item.dataset.handle || "0", 10);
       if (!newHandles.has(handle)) {
+        // Window closed - remove item and clean up tracking
+        const id = item.dataset.itemId;
+        if (id) {
+          listIntersectionObserver.unobserve(item);
+          visibleItems.delete(id);
+          lastRefreshed.delete(id);
+          pendingCapture.delete(id);
+        }
         item.remove();
-        // Clear selection if removed window was selected
         if (selectedWindow?.handle === handle) {
           selectedWindow = null;
           updateRecordButton();
         }
       } else {
         existingHandles.add(handle);
+        // Update metadata in place (title, process name)
+        const win = windows.find(w => w.handle === handle);
+        if (win) {
+          const titleEl = item.querySelector(".window-item__title");
+          const processEl = item.querySelector(".window-item__process");
+          if (titleEl) titleEl.textContent = win.title;
+          if (processEl) processEl.textContent = win.process_name;
+        }
       }
     });
 
@@ -903,34 +906,169 @@ async function refreshWindowThumbnails(): Promise<void> {
       return;
     }
 
-    // Remove empty message if present
     const emptyMsg = windowListEl.querySelector(".empty");
     if (emptyMsg) emptyMsg.remove();
 
-    // Add new items that don't exist yet
+    // Append new windows
     for (const win of windows) {
       if (!existingHandles.has(win.handle)) {
         const item = createWindowItem(win);
         windowListEl.appendChild(item);
-        // Load thumbnail for the new item
-        const img = item.querySelector<HTMLImageElement>(".window-item__thumb-img");
-        if (img) {
-          loadWindowThumbnail(win.handle, img);
-        }
       }
     }
+  } catch (error) {
+    console.error("Error reconciling window list:", error);
+  }
+}
 
-    // Refresh thumbnails for existing items
-    existingHandles.forEach((handle) => {
-      thumbnailCache.delete(`window:${handle}`);
-      const item = windowListEl!.querySelector(`[data-handle="${handle}"]`);
-      const img = item?.querySelector<HTMLImageElement>(".window-item__thumb-img");
-      if (img) {
-        loadWindowThumbnail(handle, img);
+// Incrementally reconcile the display list DOM without clearing thumbnails or scroll position
+async function reconcileDisplayList(): Promise<void> {
+  if (!displayListEl) return;
+  try {
+    const displays = await invoke<MonitorInfo[]>("get_monitors");
+    const newIds = new Set(displays.map(d => d.id));
+
+    const existingItems = displayListEl.querySelectorAll<HTMLElement>(".display-item");
+    const existingIds = new Set<string>();
+
+    existingItems.forEach((item) => {
+      const id = item.dataset.id;
+      if (!id || !newIds.has(id)) {
+        const itemId = item.dataset.itemId;
+        if (itemId) {
+          listIntersectionObserver.unobserve(item);
+          visibleItems.delete(itemId);
+          lastRefreshed.delete(itemId);
+          pendingCapture.delete(itemId);
+        }
+        item.remove();
+        if (selectedDisplay?.id === id) {
+          selectedDisplay = null;
+          updateRecordButton();
+        }
+      } else {
+        existingIds.add(id);
+        // Update metadata in place
+        const display = displays.find(d => d.id === id);
+        if (display) {
+          const nameEl = item.querySelector(".display-item__name");
+          const resEl = item.querySelector(".display-item__resolution");
+          if (nameEl) {
+            const primaryBadge = display.is_primary
+              ? '<span class="display-item__primary">Primary</span>'
+              : "";
+            nameEl.innerHTML = escapeHtml(display.name) + primaryBadge;
+          }
+          if (resEl) resEl.textContent = `${display.width} x ${display.height}`;
+        }
       }
     });
+
+    if (displays.length === 0) {
+      if (!displayListEl.querySelector(".empty")) {
+        displayListEl.innerHTML = '<p class="empty">No displays found</p>';
+      }
+      return;
+    }
+
+    const emptyMsg = displayListEl.querySelector(".empty");
+    if (emptyMsg) emptyMsg.remove();
+
+    for (const display of displays) {
+      if (!existingIds.has(display.id)) {
+        const item = createDisplayItem(display);
+        displayListEl.appendChild(item);
+      }
+    }
   } catch (error) {
-    console.error("Error refreshing windows:", error);
+    console.error("Error reconciling display list:", error);
+  }
+}
+
+// =============================================================================
+// Pending capture drain - processes queued IDs in small batches
+// =============================================================================
+
+let drainInProgress = false;
+
+async function drainPendingCaptures(): Promise<void> {
+  if (drainInProgress) return;
+  if (!appWindowVisible || currentState !== "idle") return;
+
+  drainInProgress = true;
+  try {
+    // Snapshot the pending set and clear it before processing
+    const ids = [...pendingCapture];
+    pendingCapture.clear();
+
+    // Process in batches of 2 to avoid burst load
+    const BATCH_SIZE = 2;
+    for (let i = 0; i < ids.length; i += BATCH_SIZE) {
+      if (!appWindowVisible || currentState !== "idle") break;
+
+      const batch = ids.slice(i, i + BATCH_SIZE);
+      await Promise.all(batch.map(id => captureItemById(id)));
+    }
+  } finally {
+    drainInProgress = false;
+    // Process any items that were added while draining
+    if (pendingCapture.size > 0 && appWindowVisible && currentState === "idle") {
+      drainPendingCaptures().catch(err => console.error("Drain error:", err));
+    }
+  }
+}
+
+// Capture a single item by its tracking ID, enforcing the hard minimum interval
+async function captureItemById(id: string): Promise<void> {
+  // Hard minimum: never capture more than once per 5 seconds
+  if (!isStale(id, THUMBNAIL_MIN_INTERVAL_MS)) return;
+  // Item must still be visible in the viewport
+  if (!visibleItems.has(id)) return;
+
+  if (id.startsWith("window:")) {
+    const handle = parseInt(id.slice(7), 10);
+    const item = windowListEl?.querySelector<HTMLElement>(`[data-handle="${handle}"]`);
+    const img = item?.querySelector<HTMLImageElement>(".window-item__thumb-img");
+    if (!img) return;
+    await captureWindowThumbnailDirect(handle, img);
+  } else if (id.startsWith("display:")) {
+    const monitorId = id.slice(8);
+    const item = displayListEl?.querySelector<HTMLElement>(`[data-item-id="${CSS.escape(id)}"]`);
+    const img = item?.querySelector<HTMLImageElement>(".display-item__thumb-img");
+    if (!img) return;
+    await captureDisplayThumbnailDirect(monitorId, img);
+  }
+}
+
+// =============================================================================
+// Window thumbnail refresh scheduler
+// =============================================================================
+
+// Start auto-refresh for window thumbnails
+function startWindowThumbnailRefresh(): void {
+  if (windowThumbnailRefreshInterval !== null) return;
+  
+  windowThumbnailRefreshInterval = window.setInterval(() => {
+    if (!appWindowVisible || currentState !== "idle" || captureMode !== "window") return;
+    tickWindowThumbnails();
+    drainPendingCaptures().catch(err => console.error("Drain error:", err));
+  }, THUMBNAIL_BACKGROUND_INTERVAL_MS);
+}
+
+// Stop auto-refresh for window thumbnails
+function stopWindowThumbnailRefresh(): void {
+  if (windowThumbnailRefreshInterval !== null) {
+    clearInterval(windowThumbnailRefreshInterval);
+    windowThumbnailRefreshInterval = null;
+  }
+}
+
+// Background tick: queue visible items stale beyond 20s (respecting 5s hard min)
+function tickWindowThumbnails(): void {
+  for (const id of visibleItems) {
+    if (id.startsWith("window:") && isStale(id, THUMBNAIL_BACKGROUND_INTERVAL_MS)) {
+      pendingCapture.add(id);
+    }
   }
 }
 
@@ -939,6 +1077,8 @@ function createWindowItem(win: WindowInfo): HTMLElement {
   const item = document.createElement("div");
   item.className = "window-item";
   item.dataset.handle = String(win.handle);
+  const itemId = `window:${win.handle}`;
+  item.dataset.itemId = itemId;
 
   item.innerHTML = `
     <div class="window-item__thumbnail">
@@ -953,51 +1093,41 @@ function createWindowItem(win: WindowInfo): HTMLElement {
 
   item.addEventListener("click", () => selectWindow(win, item));
 
-  // NOTE: Don't load thumbnail here - element not in DOM yet
-  // Thumbnails are loaded after items are appended in loadWindows()
+  // Hover-triggered refresh: queue capture if item is stale (5s threshold)
+  item.addEventListener("mouseenter", () => {
+    if (!appWindowVisible || currentState !== "idle" || captureMode !== "window") return;
+    if (isStale(itemId, THUMBNAIL_MIN_INTERVAL_MS)) {
+      pendingCapture.add(itemId);
+      drainPendingCaptures().catch(err => console.error("Drain error:", err));
+    }
+  });
+
+  // Observe for viewport visibility (IntersectionObserver handles thumbnail scheduling)
+  listIntersectionObserver.observe(item);
 
   return item;
 }
 
-// Load a window thumbnail (queued to serialize portal requests)
-function loadWindowThumbnail(handle: number, imgElement: HTMLImageElement): void {
-  const cacheKey = `window:${handle}`;
-  const cached = getCachedThumbnail(cacheKey);
-  
-  if (cached) {
-    imgElement.src = `data:image/jpeg;base64,${cached}`;
-    imgElement.classList.add("loaded");
-    return;
-  }
-
-  // Queue the request to avoid concurrent portal sessions
-  queueThumbnailRequest({ type: "window", id: handle, imgElement });
-}
-
-// Direct thumbnail load (called from queue processor)
-async function loadWindowThumbnailDirect(handle: number, imgElement: HTMLImageElement): Promise<void> {
-  const cacheKey = `window:${handle}`;
-  
-  // Check cache again in case it was populated while queued
-  const cached = getCachedThumbnail(cacheKey);
-  if (cached) {
-    imgElement.src = `data:image/jpeg;base64,${cached}`;
-    imgElement.classList.add("loaded");
-    return;
-  }
+// Direct window thumbnail capture (invokes Tauri command)
+async function captureWindowThumbnailDirect(handle: number, imgElement: HTMLImageElement): Promise<void> {
+  const id = `window:${handle}`;
+  // Final hard-minimum check before the IPC call
+  if (!isStale(id, THUMBNAIL_MIN_INTERVAL_MS)) return;
 
   const result = await invoke<ThumbnailResponse | null>("get_window_thumbnail", {
     windowHandle: handle,
   });
-  
+
   if (result && result.data) {
-    setCachedThumbnail(cacheKey, result.data);
-    imgElement.src = `data:image/jpeg;base64,${result.data}`;
-    imgElement.classList.add("loaded");
+    recordRefresh(id);
+    if (document.contains(imgElement)) {
+      imgElement.src = `data:image/jpeg;base64,${result.data}`;
+      imgElement.classList.add("loaded");
+    }
   }
 }
 
-// Load available displays
+// Load available displays (initial load only - subsequent updates via reconcileDisplayList)
 async function loadDisplays(): Promise<void> {
   if (!displayListEl) return;
 
@@ -1005,8 +1135,9 @@ async function loadDisplays(): Promise<void> {
   selectedDisplay = null;
   updateRecordButton();
 
-  // Stop any existing refresh interval
+  // Stop any existing refresh intervals
   stopDisplayThumbnailRefresh();
+  stopMetadataPoll();
 
   try {
     const displays = await invoke<MonitorInfo[]>("get_monitors");
@@ -1022,19 +1153,10 @@ async function loadDisplays(): Promise<void> {
       displayListEl.appendChild(item);
     }
 
-    // Load thumbnails now that items are in DOM
-    // Use DOM traversal instead of querySelector to avoid issues with special characters in IDs
-    const items = displayListEl.querySelectorAll<HTMLElement>(".display-item");
-    items.forEach((item) => {
-      const monitorId = item.dataset.id;
-      const img = item.querySelector<HTMLImageElement>(".display-item__thumb-img");
-      if (img && monitorId) {
-        loadDisplayThumbnail(monitorId, img);
-      }
-    });
-
-    // Start auto-refresh for thumbnails
+    // Thumbnails are loaded by IntersectionObserver as items enter the viewport.
+    // Start auto-refresh and metadata polling.
     startDisplayThumbnailRefresh();
+    startMetadataPoll();
   } catch (error) {
     displayListEl.innerHTML = `<p class="error">Error loading displays: ${error}</p>`;
     setStatus(`Error: ${error}`, true);
@@ -1046,11 +1168,10 @@ function startDisplayThumbnailRefresh(): void {
   if (displayThumbnailRefreshInterval !== null) return;
   
   displayThumbnailRefreshInterval = window.setInterval(() => {
-    if (currentState !== "idle" || captureMode !== "display") {
-      return; // Don't refresh during recording or when not in display mode
-    }
-    refreshDisplayThumbnails();
-  }, 5000);
+    if (!appWindowVisible || currentState !== "idle" || captureMode !== "display") return;
+    tickDisplayThumbnails();
+    drainPendingCaptures().catch(err => console.error("Drain error:", err));
+  }, THUMBNAIL_BACKGROUND_INTERVAL_MS);
 }
 
 // Stop auto-refresh for display thumbnails
@@ -1061,69 +1182,12 @@ function stopDisplayThumbnailRefresh(): void {
   }
 }
 
-// Refresh display list and thumbnails (incremental update)
-async function refreshDisplayThumbnails(): Promise<void> {
-  if (!displayListEl) return;
-
-  try {
-    const displays = await invoke<MonitorInfo[]>("get_monitors");
-    const newIds = new Set(displays.map(d => d.id));
-
-    // Get current items in the DOM
-    const existingItems = displayListEl.querySelectorAll<HTMLElement>(".display-item");
-    const existingIds = new Set<string>();
-
-    // Remove items that no longer exist
-    existingItems.forEach((item) => {
-      const id = item.dataset.id;
-      if (!id || !newIds.has(id)) {
-        item.remove();
-        // Clear selection if removed display was selected
-        if (selectedDisplay?.id === id) {
-          selectedDisplay = null;
-          updateRecordButton();
-        }
-      } else {
-        existingIds.add(id);
-      }
-    });
-
-    // Handle empty state
-    if (displays.length === 0) {
-      if (!displayListEl.querySelector(".empty")) {
-        displayListEl.innerHTML = '<p class="empty">No displays found</p>';
-      }
-      return;
+// Background tick: queue visible display items stale beyond 20s (respecting 5s hard min)
+function tickDisplayThumbnails(): void {
+  for (const id of visibleItems) {
+    if (id.startsWith("display:") && isStale(id, THUMBNAIL_BACKGROUND_INTERVAL_MS)) {
+      pendingCapture.add(id);
     }
-
-    // Remove empty message if present
-    const emptyMsg = displayListEl.querySelector(".empty");
-    if (emptyMsg) emptyMsg.remove();
-
-    // Add new items that don't exist yet
-    for (const display of displays) {
-      if (!existingIds.has(display.id)) {
-        const item = createDisplayItem(display);
-        displayListEl.appendChild(item);
-        // Load thumbnail for the new item
-        const img = item.querySelector<HTMLImageElement>(".display-item__thumb-img");
-        if (img) {
-          loadDisplayThumbnail(display.id, img);
-        }
-      }
-    }
-
-    // Refresh thumbnails for existing items
-    existingIds.forEach((id) => {
-      thumbnailCache.delete(`display:${id}`);
-      const item = displayListEl!.querySelector(`[data-id="${id}"]`);
-      const img = item?.querySelector<HTMLImageElement>(".display-item__thumb-img");
-      if (img) {
-        loadDisplayThumbnail(id, img);
-      }
-    });
-  } catch (error) {
-    console.error("Error refreshing displays:", error);
   }
 }
 
@@ -1132,6 +1196,8 @@ function createDisplayItem(display: MonitorInfo): HTMLElement {
   const item = document.createElement("div");
   item.className = "display-item";
   item.dataset.id = display.id;
+  const itemId = `display:${display.id}`;
+  item.dataset.itemId = itemId;
 
   const primaryBadge = display.is_primary
     ? '<span class="display-item__primary">Primary</span>'
@@ -1150,46 +1216,37 @@ function createDisplayItem(display: MonitorInfo): HTMLElement {
 
   item.addEventListener("click", () => selectDisplayItem(display, item));
 
-  // NOTE: Don't load thumbnail here - element not in DOM yet
-  // Thumbnails are loaded after items are appended in loadDisplays()
+  // Hover-triggered refresh: queue capture if item is stale (5s threshold)
+  item.addEventListener("mouseenter", () => {
+    if (!appWindowVisible || currentState !== "idle" || captureMode !== "display") return;
+    if (isStale(itemId, THUMBNAIL_MIN_INTERVAL_MS)) {
+      pendingCapture.add(itemId);
+      drainPendingCaptures().catch(err => console.error("Drain error:", err));
+    }
+  });
+
+  // Observe for viewport visibility (IntersectionObserver handles thumbnail scheduling)
+  listIntersectionObserver.observe(item);
 
   return item;
 }
 
-// Load a display thumbnail (queued for parallel processing)
-function loadDisplayThumbnail(monitorId: string, imgElement: HTMLImageElement): void {
-  const cacheKey = `display:${monitorId}`;
-  const cached = getCachedThumbnail(cacheKey);
-  
-  if (cached) {
-    imgElement.src = `data:image/jpeg;base64,${cached}`;
-    imgElement.classList.add("loaded");
-    return;
-  }
-
-  queueThumbnailRequest({ type: "display", id: monitorId, imgElement });
-}
-
-// Direct display thumbnail load (called from queue processor)
-async function loadDisplayThumbnailDirect(monitorId: string, imgElement: HTMLImageElement): Promise<void> {
-  const cacheKey = `display:${monitorId}`;
-  
-  // Check cache again in case it was populated while queued
-  const cached = getCachedThumbnail(cacheKey);
-  if (cached) {
-    imgElement.src = `data:image/jpeg;base64,${cached}`;
-    imgElement.classList.add("loaded");
-    return;
-  }
+// Direct display thumbnail capture (invokes Tauri command)
+async function captureDisplayThumbnailDirect(monitorId: string, imgElement: HTMLImageElement): Promise<void> {
+  const id = `display:${monitorId}`;
+  // Final hard-minimum check before the IPC call
+  if (!isStale(id, THUMBNAIL_MIN_INTERVAL_MS)) return;
 
   const result = await invoke<ThumbnailResponse | null>("get_display_thumbnail", {
     monitorId,
   });
-  
+
   if (result && result.data) {
-    setCachedThumbnail(cacheKey, result.data);
-    imgElement.src = `data:image/jpeg;base64,${result.data}`;
-    imgElement.classList.add("loaded");
+    recordRefresh(id);
+    if (document.contains(imgElement)) {
+      imgElement.src = `data:image/jpeg;base64,${result.data}`;
+      imgElement.classList.add("loaded");
+    }
   }
 }
 
