@@ -818,6 +818,7 @@ async function loadWindows(): Promise<void> {
 // =============================================================================
 
 const listIntersectionObserver = new IntersectionObserver((entries) => {
+  let added = false;
   for (const entry of entries) {
     const el = entry.target as HTMLElement;
     const id = el.dataset.itemId;
@@ -828,10 +829,15 @@ const listIntersectionObserver = new IntersectionObserver((entries) => {
       // Schedule immediate capture if stale (scroll-into-view rule: 5s threshold)
       if (isStale(id, THUMBNAIL_MIN_INTERVAL_MS)) {
         pendingCapture.add(id);
+        added = true;
       }
     } else {
       visibleItems.delete(id);
     }
+  }
+  // Drain immediately so thumbnails load on first show without requiring hover
+  if (added) {
+    drainPendingCaptures().catch(err => console.error("Drain error:", err));
   }
 }, { threshold: 0.1 });
 
