@@ -1,11 +1,11 @@
 //! IPC server with secure socket setup and peer verification.
 
-use omnirec_common::ipc::{read_json, write_json, Request, Response};
+use omnirec_types::ipc::{read_json, write_json, Request, Response};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tracing::{error, info, warn};
 
 #[cfg(unix)]
-use omnirec_common::ipc::get_socket_path;
+use omnirec_types::ipc::get_socket_path;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 #[cfg(unix)]
@@ -67,7 +67,7 @@ where
         // Read request
         let request: Request = match read_json(&mut stream).await {
             Ok(req) => req,
-            Err(omnirec_common::ipc::IpcError::ConnectionClosed) => {
+            Err(omnirec_types::ipc::IpcError::ConnectionClosed) => {
                 info!("Client disconnected: {}", peer_info);
                 break;
             }
@@ -102,7 +102,7 @@ where
 /// Run the IPC server (Unix implementation).
 #[cfg(unix)]
 pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
-    use omnirec_common::security::peer_verify::verify_peer;
+    use omnirec_types::security::peer_verify::verify_peer;
     use tokio::net::UnixListener;
 
     let socket_path = get_socket_path();
@@ -296,7 +296,7 @@ fn create_pipe_server(
 /// Run the IPC server (Windows implementation).
 #[cfg(windows)]
 pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
-    use omnirec_common::security::peer_verify::verify_peer;
+    use omnirec_types::security::peer_verify::verify_peer;
     use std::os::windows::io::AsRawHandle;
     use windows::Win32::Foundation::HANDLE;
 

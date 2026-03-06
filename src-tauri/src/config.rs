@@ -275,6 +275,21 @@ impl WhisperModel {
         ]
     }
 
+    /// Convert to the vtx-common `WhisperModel` variant for use with vtx-engine APIs.
+    pub fn to_vtx_model(self) -> vtx_common::WhisperModel {
+        match self {
+            Self::TinyEn => vtx_common::WhisperModel::TinyEn,
+            Self::Tiny => vtx_common::WhisperModel::Tiny,
+            Self::BaseEn => vtx_common::WhisperModel::BaseEn,
+            Self::Base => vtx_common::WhisperModel::Base,
+            Self::SmallEn => vtx_common::WhisperModel::SmallEn,
+            Self::Small => vtx_common::WhisperModel::Small,
+            Self::MediumEn => vtx_common::WhisperModel::MediumEn,
+            Self::Medium => vtx_common::WhisperModel::Medium,
+            Self::LargeV3 => vtx_common::WhisperModel::LargeV3,
+        }
+    }
+
     /// Parse from string (display name format)
     pub fn from_str(s: &str) -> Option<Self> {
         match s {

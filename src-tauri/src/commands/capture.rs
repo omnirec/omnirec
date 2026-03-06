@@ -5,7 +5,7 @@
 
 use crate::capture::{self, ThumbnailCapture};
 use crate::AppState;
-use omnirec_common::{MonitorInfo, WindowInfo};
+use omnirec_types::{MonitorInfo, WindowInfo};
 use tauri::State;
 
 /// Thumbnail result for JSON serialization.

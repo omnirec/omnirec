@@ -3,7 +3,7 @@
 //! The CLI connects to the Tauri app via IPC socket. If the app is not running,
 //! it spawns the app in headless mode (--headless) which runs tray-only.
 
-use omnirec_common::ipc::{Request, Response, MAX_MESSAGE_SIZE};
+use omnirec_types::ipc::{Request, Response, MAX_MESSAGE_SIZE};
 use std::io::{Read, Write};
 use std::time::Duration;
 use tokio::sync::Mutex;
@@ -89,7 +89,7 @@ impl ServiceClient {
         Self {
             connection: Mutex::new(ConnectionState::Disconnected),
             #[cfg(unix)]
-            socket_path: omnirec_common::ipc::get_socket_path(),
+            socket_path: omnirec_types::ipc::get_socket_path(),
         }
     }
 

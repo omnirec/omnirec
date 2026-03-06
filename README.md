@@ -145,13 +145,13 @@ OmniRec can automatically transcribe speech during recording, creating a timesta
 
 ### Whisper Model
 
-Transcription uses [whisper.cpp](https://github.com/ggerganov/whisper.cpp) with the `ggml-medium.en` model (~1.5GB). The model is downloaded automatically on first use and cached in:
+Transcription uses [whisper.cpp](https://github.com/ggerganov/whisper.cpp) via the [vtx-engine](https://github.com/user/vtx-engine) library, with the `ggml-medium.en` model (~1.5 GB) as the default. The model is downloaded automatically on first use and cached in:
 
 | Platform | Location |
 |----------|----------|
-| Linux | `~/.cache/omnirec/ggml-medium.en.bin` |
-| macOS | `~/Library/Caches/omnirec/ggml-medium.en.bin` |
-| Windows | `%LOCALAPPDATA%\omnirec\cache\ggml-medium.en.bin` |
+| Linux | `~/.cache/omnirec/whisper/ggml-medium.en.bin` |
+| macOS | `~/Library/Caches/omnirec/whisper/ggml-medium.en.bin` |
+| Windows | `%LOCALAPPDATA%\omnirec\whisper\ggml-medium.en.bin` |
 
 ### GPU Acceleration (CUDA)
 
@@ -165,7 +165,7 @@ cargo build -p omnirec --features cuda --release
 make build-cuda
 ```
 
-Requires CUDA toolkit installed on your system.
+Requires CUDA toolkit installed on your system. On Windows, CUDA-accelerated binaries are bundled automatically (CPU fallback at runtime if no GPU is present).
 
 ## Command Line Interface
 

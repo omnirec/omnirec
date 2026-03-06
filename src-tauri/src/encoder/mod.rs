@@ -1138,7 +1138,7 @@ pub fn ensure_ffmpeg_blocking() -> Result<(), String> {
     }
 }
 
-use omnirec_common::OutputFormat;
+use omnirec_types::OutputFormat;
 use std::path::Path;
 
 /// Transcode a source MP4 file to the specified output format.

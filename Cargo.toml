@@ -1,8 +1,25 @@
 [workspace]
-members = ["src-tauri", "src-common", "src-cli"]
+members = ["src-tauri", "omnirec-types", "src-cli"]
 resolver = "2"
 
 # Note: CUDA acceleration for transcription:
 # - Windows: Always included (falls back to CPU if no GPU available)
 # - Linux: Enable via: cargo build -p omnirec --features cuda
 #   Or use the Makefile targets: make build-cuda
+
+# =============================================================================
+# Local development path override for vtx-engine.
+#
+# vtx-engine is not yet published to crates.io. During development, uncomment
+# this block to use a local sibling checkout at ../vtx-engine.
+# Expected directory layout:
+#   ~/ws/omnirec/omnirec/   ← this workspace
+#   ~/ws/vtx-engine/        ← vtx-engine sibling workspace
+#
+# IMPORTANT: Comment this block out before committing for production builds
+# (once vtx-engine is published to crates.io, the version-pinned dep in
+# src-tauri/Cargo.toml and src-cli/Cargo.toml will be used automatically).
+# =============================================================================
+[patch.crates-io]
+vtx-engine = { path = "../../vtx-engine/crates/vtx-engine" }
+vtx-common = { path = "../../vtx-engine/crates/vtx-common" }

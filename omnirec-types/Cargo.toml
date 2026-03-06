@@ -1,5 +1,5 @@
 [package]
-name = "omnirec-common"
+name = "omnirec-types"
 version = "0.1.18"
 edition = "2021"
 description = "Shared types and IPC protocol for OmniRec"
@@ -7,6 +7,9 @@ description = "Shared types and IPC protocol for OmniRec"
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+# vtx-common for TranscriptionSegment conversion
+vtx-common = "0.1.0"
 
 # Async I/O for IPC protocol
 tokio = { version = "1", features = ["io-util", "net", "sync", "macros", "rt"] }

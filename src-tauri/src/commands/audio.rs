@@ -7,7 +7,7 @@ use crate::capture;
 use crate::config::{save_config as save_config_to_disk, AudioConfig};
 use crate::state::get_recording_manager;
 use crate::AppState;
-use omnirec_common::AudioSource;
+use omnirec_types::AudioSource;
 use tauri::State;
 
 /// Get list of available audio sources.
@@ -65,7 +65,7 @@ pub async fn save_audio_config(
     // Sync to RecordingManager
     let manager = get_recording_manager();
     let _ = manager
-        .set_audio_config(omnirec_common::AudioConfig {
+        .set_audio_config(omnirec_types::AudioConfig {
             enabled,
             source_id,
             microphone_id,

@@ -7,7 +7,7 @@ use crate::capture;
 use crate::state::get_recording_manager;
 use crate::tray::set_tray_visible;
 use crate::AppState;
-use omnirec_common::{CaptureRegion, RecordingState};
+use omnirec_types::{CaptureRegion, RecordingState};
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, State};
 

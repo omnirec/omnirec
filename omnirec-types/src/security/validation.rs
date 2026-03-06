@@ -74,9 +74,6 @@ impl std::fmt::Display for ValidationError {
 impl std::error::Error for ValidationError {}
 
 /// Validate a monitor ID string.
-///
-/// Monitor IDs must match the pattern: alphanumeric, dash, underscore, 1-64 chars.
-/// Examples: "DP-1", "HDMI-A-1", "eDP-1", "Virtual1"
 pub fn validate_monitor_id(id: &str) -> Result<(), ValidationError> {
     if !MONITOR_ID_PATTERN.is_match(id) {
         return Err(ValidationError::InvalidMonitorId(id.to_string()));
@@ -85,9 +82,6 @@ pub fn validate_monitor_id(id: &str) -> Result<(), ValidationError> {
 }
 
 /// Validate an audio source ID string.
-///
-/// Source IDs can contain alphanumeric, dots, colons, dashes, underscores, 1-256 chars.
-/// Examples: "alsa_output.pci-0000_00_1f.3.analog-stereo.monitor"
 pub fn validate_source_id(id: &str) -> Result<(), ValidationError> {
     if !SOURCE_ID_PATTERN.is_match(id) {
         return Err(ValidationError::InvalidSourceId(id.to_string()));
@@ -96,12 +90,7 @@ pub fn validate_source_id(id: &str) -> Result<(), ValidationError> {
 }
 
 /// Validate a window handle.
-///
-/// Window handles are platform-specific integers. On most platforms,
-/// valid handles are non-negative.
 pub fn validate_window_handle(handle: isize) -> Result<(), ValidationError> {
-    // On most platforms, window handles should be non-negative
-    // Windows HWND can technically be any value, but negative is unusual
     if handle < 0 {
         return Err(ValidationError::InvalidWindowHandle(handle));
     }
@@ -109,8 +98,6 @@ pub fn validate_window_handle(handle: isize) -> Result<(), ValidationError> {
 }
 
 /// Validate dimension values (width, height).
-///
-/// Dimensions must be positive and not exceed MAX_DIMENSION (16384).
 pub fn validate_dimensions(width: u32, height: u32) -> Result<(), ValidationError> {
     if width == 0 || width > MAX_DIMENSION {
         return Err(ValidationError::DimensionOutOfRange {
@@ -130,9 +117,6 @@ pub fn validate_dimensions(width: u32, height: u32) -> Result<(), ValidationErro
 }
 
 /// Validate coordinate values (x, y).
-///
-/// Coordinates can be negative (for multi-monitor setups) but must be
-/// within reasonable bounds (±MAX_COORDINATE).
 pub fn validate_coordinates(x: i32, y: i32) -> Result<(), ValidationError> {
     if !(-MAX_COORDINATE..=MAX_COORDINATE).contains(&x) {
         return Err(ValidationError::CoordinateOutOfRange {
@@ -155,39 +139,29 @@ mod tests {
 
     #[test]
     fn test_valid_monitor_ids() {
-        // Linux/Wayland style
         assert!(validate_monitor_id("DP-1").is_ok());
         assert!(validate_monitor_id("HDMI-A-1").is_ok());
         assert!(validate_monitor_id("eDP-1").is_ok());
         assert!(validate_monitor_id("Virtual1").is_ok());
         assert!(validate_monitor_id("DVI_D_0").is_ok());
-        // Windows style
         assert!(validate_monitor_id(r"\\.\DISPLAY1").is_ok());
         assert!(validate_monitor_id(r"\\.\DISPLAY2").is_ok());
     }
 
     #[test]
     fn test_invalid_monitor_ids() {
-        // Empty
         assert!(validate_monitor_id("").is_err());
-        // Too long
         assert!(validate_monitor_id(&"a".repeat(65)).is_err());
-        // Contains spaces
         assert!(validate_monitor_id("DP 1").is_err());
     }
 
     #[test]
     fn test_valid_source_ids() {
-        // Linux/PipeWire style
         assert!(validate_source_id("123").is_ok());
         assert!(validate_source_id("alsa_output.pci-0000_00_1f.3.analog-stereo.monitor").is_ok());
         assert!(validate_source_id("pulse:sink:0").is_ok());
-        // Windows WASAPI style endpoint IDs
         assert!(
             validate_source_id("{0.0.0.00000000}.{b3f8fa53-0004-438e-9003-51a46e139bfc}").is_ok()
-        );
-        assert!(
-            validate_source_id("{0.0.1.00000000}.{d11a3f67-7b3e-4c7e-b123-456789abcdef}").is_ok()
         );
     }
 

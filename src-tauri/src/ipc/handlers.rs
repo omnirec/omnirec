@@ -4,8 +4,8 @@
 
 use crate::capture;
 use crate::state::get_recording_manager;
-use omnirec_common::ipc::{Request, Response};
-use omnirec_common::{AudioConfig, CaptureRegion, OutputFormat, TranscriptionConfig};
+use omnirec_types::ipc::{Request, Response};
+use omnirec_types::{AudioConfig, CaptureRegion, OutputFormat, TranscriptionConfig};
 use tracing::{debug, error, info, warn};
 
 /// Handle an IPC request and return a response.
@@ -271,7 +271,7 @@ pub async fn handle_request(request: Request) -> Response {
             #[cfg(target_os = "linux")]
             {
                 use crate::capture::linux::approval_token;
-                use omnirec_common::ipc::SelectionGeometry;
+                use omnirec_types::ipc::SelectionGeometry;
                 if let Some(state) = crate::capture::linux::get_ipc_state() {
                     let guard = state.read().await;
                     if let Some(ref selection) = guard.selection {

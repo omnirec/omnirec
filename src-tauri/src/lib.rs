@@ -21,7 +21,6 @@ pub mod ipc;
 mod platform;
 pub mod state;
 pub mod tray;
-mod transcription;
 
 use config::{load_config, save_config, AppConfig, LogLevel};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -192,7 +191,7 @@ fn init_logging(
 
     // Both production and development write to the log file.
     // Development additionally writes to stdout with ANSI color.
-    if let Err(e) = omnirec_common::logging::ensure_log_dir() {
+    if let Err(e) = omnirec_types::logging::ensure_log_dir() {
         // pre-subscriber bootstrap: cannot use tracing yet
         eprintln!(
             "Warning: Failed to create log directory, using temp dir: {}",
@@ -200,7 +199,7 @@ fn init_logging(
         );
     }
 
-    let log_path = omnirec_common::logging::app_log_path();
+    let log_path = omnirec_types::logging::app_log_path();
     let log_dir = log_path.parent().unwrap();
 
     let file_appender = match tracing_appender::rolling::RollingFileAppender::builder()
@@ -357,7 +356,7 @@ fn log_to_file(level: String, message: String) {
 /// Returns an empty string if no log file exists yet.
 #[tauri::command]
 fn get_log_history() -> String {
-    let log_dir = omnirec_common::logging::app_log_path()
+    let log_dir = omnirec_types::logging::app_log_path()
         .parent()
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| std::env::temp_dir().join("omnirec-logs"));
@@ -429,7 +428,7 @@ async fn download_logs(app_handle: tauri::AppHandle) -> Result<(), String> {
     use std::io::Write;
     use tauri_plugin_dialog::DialogExt;
 
-    let log_dir = omnirec_common::logging::app_log_path()
+    let log_dir = omnirec_types::logging::app_log_path()
         .parent()
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| std::env::temp_dir().join("omnirec-logs"));
@@ -630,7 +629,7 @@ pub fn run() {
                         config.audio.microphone_id,
                         config.audio.echo_cancellation
                     );
-                    let _ = manager.set_audio_config(omnirec_common::AudioConfig {
+                    let _ = manager.set_audio_config(omnirec_types::AudioConfig {
                         enabled: config.audio.enabled,
                         source_id: config.audio.source_id.clone(),
                         microphone_id: config.audio.microphone_id.clone(),
@@ -642,7 +641,7 @@ pub fn run() {
                     info!("[Setup] Syncing transcription config: enabled={}, model={:?}",
                         config.transcription.enabled, model_path
                     );
-                    let _ = manager.set_transcription_config(omnirec_common::TranscriptionConfig {
+                    let _ = manager.set_transcription_config(omnirec_types::TranscriptionConfig {
                         enabled: config.transcription.enabled,
                         model_path: Some(model_path.to_string_lossy().to_string()),
                     }).await;
@@ -810,7 +809,7 @@ pub fn run() {
                 manager.shutdown();
 
                 // Clean up socket file
-                let socket_path = omnirec_common::ipc::get_socket_path();
+                let socket_path = omnirec_types::ipc::get_socket_path();
                 if socket_path.exists() {
                     let _ = std::fs::remove_file(&socket_path);
                     info!("[Exit] Removed socket file: {:?}", socket_path);

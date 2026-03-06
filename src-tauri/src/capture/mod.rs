@@ -20,7 +20,7 @@ pub mod macos;
 pub mod windows;
 
 // Re-export common types from omnirec-common for IPC
-pub use omnirec_common::{
+pub use omnirec_types::{
     AudioConfig, AudioSource, AudioSourceType, CaptureRegion, MonitorInfo, OutputFormat,
     RecordingState, WindowInfo,
 };

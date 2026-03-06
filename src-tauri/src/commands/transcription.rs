@@ -1,18 +1,20 @@
 //! Transcription configuration commands.
 //!
 //! Commands for managing voice transcription settings.
-//! These commands interact directly with the RecordingManager.
+//! Model management (path resolution, download) is delegated to vtx-engine's ModelManager.
 
 use crate::config::{save_config as save_config_to_disk, TranscriptionConfig, WhisperModel};
 use crate::state::get_recording_manager;
 use crate::AppState;
-use futures_util::StreamExt;
-use omnirec_common::TranscriptionStatus;
+use omnirec_types::TranscriptionStatus;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{Emitter, State};
+use vtx_engine::ModelManager;
 
+/// Token to signal cancellation of an in-progress download.
 static DOWNLOAD_CANCEL: AtomicBool = AtomicBool::new(false);
+/// Guard against concurrent downloads.
 static DOWNLOAD_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
 
 /// Model status information returned by get_model_status
@@ -51,7 +53,6 @@ pub struct DownloadProgress {
 }
 
 /// Get current transcription configuration.
-/// This returns the local config stored in the Tauri client.
 #[tauri::command]
 pub async fn get_transcription_config(
     state: State<'_, AppState>,
@@ -60,8 +61,7 @@ pub async fn get_transcription_config(
     Ok(config.transcription.clone())
 }
 
-/// Save transcription configuration.
-/// This updates both the local config and syncs to the RecordingManager.
+/// Save transcription configuration and sync to RecordingManager.
 #[tauri::command]
 pub async fn save_transcription_config(
     enabled: bool,
@@ -93,10 +93,12 @@ pub async fn save_transcription_config(
 
     // Sync to RecordingManager
     let manager = get_recording_manager();
-    let _ = manager.set_transcription_config(omnirec_common::TranscriptionConfig {
-        enabled,
-        model_path: Some(model_path.to_string_lossy().to_string()),
-    }).await;
+    let _ = manager
+        .set_transcription_config(omnirec_types::TranscriptionConfig {
+            enabled,
+            model_path: Some(model_path.to_string_lossy().to_string()),
+        })
+        .await;
 
     tracing::info!(
         "Saved transcription config: enabled={}, model={:?}, show_transcript_window={:?}",
@@ -108,7 +110,7 @@ pub async fn save_transcription_config(
     Ok(())
 }
 
-/// Get current transcription status from the RecordingManager.
+/// Get current transcription status from the RecordingManager (backed by vtx-engine state).
 #[tauri::command]
 pub async fn get_transcription_status(
     _state: State<'_, AppState>,
@@ -117,7 +119,8 @@ pub async fn get_transcription_status(
     Ok(manager.get_transcription_status().await)
 }
 
-/// Get status of a specific model (or the currently configured model if not specified)
+/// Get status of a specific model (or the currently configured model if not specified).
+/// Uses vtx-engine's ModelManager for path resolution.
 #[tauri::command]
 pub async fn get_model_status(
     model: Option<String>,
@@ -130,7 +133,11 @@ pub async fn get_model_status(
         config.transcription.model
     };
 
-    let path = whisper_model.model_path();
+    // Use vtx-engine's ModelManager for canonical path resolution.
+    let vtx_model: vtx_common::WhisperModel = whisper_model.to_vtx_model();
+    let mgr = ModelManager::new("OmniRec");
+    let path = mgr.path(vtx_model);
+
     let exists = path.exists();
     let file_size = if exists {
         std::fs::metadata(&path).ok().map(|m| m.len())
@@ -151,9 +158,10 @@ pub async fn get_model_status(
     })
 }
 
-/// List all available whisper models with their info
+/// List all available whisper models with their info.
 #[tauri::command]
 pub async fn list_available_models() -> Result<Vec<ModelInfo>, String> {
+    let mgr = ModelManager::new("OmniRec");
     let models: Vec<ModelInfo> = WhisperModel::all()
         .iter()
         .map(|m| ModelInfo {
@@ -163,14 +171,15 @@ pub async fn list_available_models() -> Result<Vec<ModelInfo>, String> {
             size_display: m.size_display().to_string(),
             description: m.description().to_string(),
             english_only: m.is_english_only(),
-            downloaded: m.is_downloaded(),
+            downloaded: mgr.is_available(m.to_vtx_model()),
         })
         .collect();
 
     Ok(models)
 }
 
-/// Download a whisper model with progress events
+/// Download a whisper model with progress events.
+/// Uses vtx-engine's ModelManager for the download.
 #[tauri::command]
 pub async fn download_model(model: String, app_handle: tauri::AppHandle) -> Result<(), String> {
     if DOWNLOAD_IN_PROGRESS.swap(true, Ordering::SeqCst) {
@@ -181,29 +190,101 @@ pub async fn download_model(model: String, app_handle: tauri::AppHandle) -> Resu
 
     let whisper_model =
         WhisperModel::from_str(&model).ok_or_else(|| format!("Invalid model: {}", model))?;
-
-    let url = whisper_model.download_url();
-    let path = whisper_model.model_path();
+    let vtx_model = whisper_model.to_vtx_model();
     let model_name = model.clone();
 
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("Failed to create directory: {}", e))?;
-    }
+    // Emit initial progress event
+    let _ = app_handle.emit(
+        "model-download-progress",
+        DownloadProgress {
+            model: model_name.clone(),
+            bytes_downloaded: 0,
+            total_bytes: whisper_model.size_bytes(),
+            percentage: 0,
+            status: "downloading".to_string(),
+            error: None,
+        },
+    );
 
-    let result =
-        tokio::spawn(
-            async move { download_with_progress(&url, &path, &model_name, &app_handle).await },
-        )
-        .await
-        .map_err(|e| format!("Download task failed: {}", e))?;
+    let mgr = ModelManager::new("OmniRec");
+    let app_handle_clone = app_handle.clone();
+    let model_name_clone = model_name.clone();
+    let expected_size = whisper_model.size_bytes();
+
+    let result = mgr
+        .download(vtx_model, move |pct| {
+            // Check cancellation
+            if DOWNLOAD_CANCEL.load(Ordering::SeqCst) {
+                return;
+            }
+            // Emit progress event for each percentage point.
+            // vtx-engine's ModelManager calls this with values 0..=100.
+            let _ = app_handle_clone.emit(
+                "model-download-progress",
+                DownloadProgress {
+                    model: model_name_clone.clone(),
+                    bytes_downloaded: (expected_size * pct as u64) / 100,
+                    total_bytes: expected_size,
+                    percentage: pct,
+                    status: "downloading".to_string(),
+                    error: None,
+                },
+            );
+        })
+        .await;
 
     DOWNLOAD_IN_PROGRESS.store(false, Ordering::SeqCst);
 
-    result
+    // Check if cancelled
+    if DOWNLOAD_CANCEL.load(Ordering::SeqCst) {
+        let _ = app_handle.emit(
+            "model-download-progress",
+            DownloadProgress {
+                model: model_name.clone(),
+                bytes_downloaded: 0,
+                total_bytes: whisper_model.size_bytes(),
+                percentage: 0,
+                status: "cancelled".to_string(),
+                error: None,
+            },
+        );
+        return Err("Download cancelled".to_string());
+    }
+
+    match result {
+        Ok(()) => {
+            let _ = app_handle.emit(
+                "model-download-progress",
+                DownloadProgress {
+                    model: model_name,
+                    bytes_downloaded: whisper_model.size_bytes(),
+                    total_bytes: whisper_model.size_bytes(),
+                    percentage: 100,
+                    status: "completed".to_string(),
+                    error: None,
+                },
+            );
+            Ok(())
+        }
+        Err(e) => {
+            let err_msg = e.to_string();
+            let _ = app_handle.emit(
+                "model-download-progress",
+                DownloadProgress {
+                    model: model_name,
+                    bytes_downloaded: 0,
+                    total_bytes: whisper_model.size_bytes(),
+                    percentage: 0,
+                    status: "error".to_string(),
+                    error: Some(err_msg.clone()),
+                },
+            );
+            Err(err_msg)
+        }
+    }
 }
 
-/// Cancel an in-progress download
+/// Cancel an in-progress download.
 #[tauri::command]
 pub async fn cancel_download() -> Result<(), String> {
     if !DOWNLOAD_IN_PROGRESS.load(Ordering::SeqCst) {
@@ -216,130 +297,10 @@ pub async fn cancel_download() -> Result<(), String> {
     Ok(())
 }
 
-/// Check if a download is in progress
+/// Check if a download is in progress.
 #[tauri::command]
 pub async fn is_download_in_progress() -> Result<bool, String> {
     Ok(DOWNLOAD_IN_PROGRESS.load(Ordering::SeqCst))
-}
-
-async fn download_with_progress(
-    url: &str,
-    path: &std::path::Path,
-    model: &str,
-    app_handle: &tauri::AppHandle,
-) -> Result<(), String> {
-    tracing::info!("Starting download from {} to {:?}", url, path);
-
-    let client = reqwest::Client::new();
-    let response = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|e| format!("Failed to start download: {}", e))?;
-
-    if !response.status().is_success() {
-        return Err(format!("HTTP error: {}", response.status()));
-    }
-
-    let total_bytes = response.content_length().unwrap_or(0);
-
-    let temp_path = path.with_extension("download");
-    let mut file = tokio::fs::File::create(&temp_path)
-        .await
-        .map_err(|e| format!("Failed to create temp file: {}", e))?;
-
-    let mut stream = response.bytes_stream();
-    let mut downloaded: u64 = 0;
-    let mut last_percentage: u8 = 0;
-
-    let _ = app_handle.emit(
-        "model-download-progress",
-        DownloadProgress {
-            model: model.to_string(),
-            bytes_downloaded: 0,
-            total_bytes,
-            percentage: 0,
-            status: "downloading".to_string(),
-            error: None,
-        },
-    );
-
-    use tokio::io::AsyncWriteExt;
-
-    while let Some(chunk_result) = stream.next().await {
-        if DOWNLOAD_CANCEL.load(Ordering::SeqCst) {
-            let _ = tokio::fs::remove_file(&temp_path).await;
-
-            let _ = app_handle.emit(
-                "model-download-progress",
-                DownloadProgress {
-                    model: model.to_string(),
-                    bytes_downloaded: downloaded,
-                    total_bytes,
-                    percentage: last_percentage,
-                    status: "cancelled".to_string(),
-                    error: None,
-                },
-            );
-
-            return Err("Download cancelled".to_string());
-        }
-
-        let chunk = chunk_result.map_err(|e| format!("Error reading chunk: {}", e))?;
-
-        file.write_all(&chunk)
-            .await
-            .map_err(|e| format!("Error writing chunk: {}", e))?;
-
-        downloaded += chunk.len() as u64;
-
-        let percentage = if total_bytes > 0 {
-            ((downloaded as f64 / total_bytes as f64) * 100.0) as u8
-        } else {
-            0
-        };
-
-        if percentage > last_percentage {
-            last_percentage = percentage;
-
-            let _ = app_handle.emit(
-                "model-download-progress",
-                DownloadProgress {
-                    model: model.to_string(),
-                    bytes_downloaded: downloaded,
-                    total_bytes,
-                    percentage,
-                    status: "downloading".to_string(),
-                    error: None,
-                },
-            );
-        }
-    }
-
-    file.flush()
-        .await
-        .map_err(|e| format!("Error flushing file: {}", e))?;
-    drop(file);
-
-    tokio::fs::rename(&temp_path, path)
-        .await
-        .map_err(|e| format!("Failed to finalize download: {}", e))?;
-
-    let _ = app_handle.emit(
-        "model-download-progress",
-        DownloadProgress {
-            model: model.to_string(),
-            bytes_downloaded: downloaded,
-            total_bytes,
-            percentage: 100,
-            status: "completed".to_string(),
-            error: None,
-        },
-    );
-
-    tracing::info!("Download completed: {:?}", path);
-
-    Ok(())
 }
 
 /// Get transcription segments since a given index.
@@ -361,7 +322,7 @@ pub async fn get_transcription_segments(
 /// Response for transcription segments request
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TranscriptionSegmentsResponse {
-    pub segments: Vec<omnirec_common::TranscriptionSegment>,
+    pub segments: Vec<omnirec_types::TranscriptionSegment>,
     pub total_count: u32,
 }
 

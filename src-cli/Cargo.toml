@@ -9,8 +9,11 @@ name = "omnirec"
 path = "src/main.rs"
 
 [dependencies]
-# Shared types and IPC protocol
-omnirec-common = { path = "../src-common" }
+# Shared types and IPC protocol (OmniRec-specific types and IPC)
+omnirec-types = { path = "../omnirec-types" }
+
+# vtx-common for shared audio/transcription types
+vtx-common = "0.1.0"
 
 # CLI argument parsing
 clap = { version = "4", features = ["derive", "color"] }

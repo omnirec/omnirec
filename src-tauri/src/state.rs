@@ -4,7 +4,7 @@
 //! - Recording state (idle, recording, saving)
 //! - Output format configuration
 //! - Audio configuration
-//! - Transcription configuration
+//! - Transcription configuration (delegated to vtx-engine)
 //! - Elapsed time tracking
 //! - Event broadcasting to subscribed clients
 
@@ -15,15 +15,19 @@ use crate::encoder::{
     encode_frames, encode_frames_with_audio, encode_frames_with_audio_and_transcription,
     AudioEncoderConfig,
 };
-use crate::transcription::TranscribeState;
-use omnirec_common::{
+use omnirec_types::{
     AudioConfig, OutputFormat, RecordingState, TranscriptionConfig, TranscriptionSegment,
+    TranscriptionStatus,
 };
-use std::path::PathBuf;
+use std::io::{BufWriter, Write};
+use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 use std::time::Instant;
-use tokio::sync::{broadcast, mpsc, Mutex, RwLock};
+use tokio::sync::{broadcast, Mutex, RwLock};
 use tracing::{error, info, warn};
+use vtx_common::EngineEvent;
+use vtx_engine::{AudioEngine, EngineBuilder};
 
 /// Result of a completed recording.
 #[derive(Debug, Clone)]
@@ -52,6 +56,49 @@ pub enum ServiceEvent {
     Shutdown,
 }
 
+/// Thin transcript writer: creates the file, writes the heading and appends segments.
+struct TranscriptWriter {
+    writer: BufWriter<std::fs::File>,
+}
+
+impl TranscriptWriter {
+    /// Create a new transcript writer at the given path.
+    fn new(path: &PathBuf) -> Result<Self, std::io::Error> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let file = std::fs::File::create(path)?;
+        let mut writer = BufWriter::new(file);
+        writeln!(writer, "# Recording Transcript\n")?;
+        writer.flush()?;
+        Ok(Self { writer })
+    }
+
+    /// Derive transcript path from the video output path.
+    fn transcript_path(video_path: &Path) -> PathBuf {
+        let stem = video_path
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "recording".to_string());
+        let parent = video_path
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_default();
+        parent.join(format!("{}_transcript.md", stem))
+    }
+
+    /// Append a transcription segment line: `[HH:MM:SS] text`.
+    fn append_segment(&mut self, timestamp_offset_ms: u64, text: &str) {
+        let total_secs = timestamp_offset_ms / 1000;
+        let h = total_secs / 3600;
+        let m = (total_secs % 3600) / 60;
+        let s = total_secs % 60;
+        let line = format!("[{:02}:{:02}:{:02}] {}\n\n", h, m, s, text);
+        let _ = self.writer.write_all(line.as_bytes());
+        let _ = self.writer.flush();
+    }
+}
+
 /// Global recording state manager for the service.
 pub struct RecordingManager {
     state: RwLock<RecordingState>,
@@ -61,25 +108,56 @@ pub struct RecordingManager {
     encoding_task: Mutex<Option<tokio::task::JoinHandle<Result<PathBuf, String>>>>,
     output_format: RwLock<OutputFormat>,
     audio_config: RwLock<AudioConfig>,
-    /// Transcription configuration
+    /// Transcription configuration (enabled/model path)
     transcription_config: RwLock<TranscriptionConfig>,
-    /// Transcription state (active during recording)
-    transcription_state: Mutex<TranscribeState>,
-    /// Transcription processing task handle
-    transcription_task: Mutex<Option<tokio::task::JoinHandle<()>>>,
+    /// vtx-engine instance for audio capture and transcription.
+    /// Wrapped in Arc so it can be shared with the event subscriber task.
+    engine: Arc<AudioEngine>,
+    /// Handle for the engine event subscriber task
+    engine_task: Mutex<Option<tokio::task::JoinHandle<()>>>,
     /// Broadcast channel for events
     event_tx: broadcast::Sender<ServiceEvent>,
     /// Elapsed time update task handle
     elapsed_task: Mutex<Option<tokio::task::JoinHandle<()>>>,
-    /// Transcription segments produced during the current recording (for live display)
-    /// Uses Arc<std::sync::Mutex> because it's accessed from blocking callback threads
+    /// Transcription segments accumulated during the current recording session.
+    /// Uses Arc<std::sync::Mutex> because the OnceLock init is synchronous and
+    /// we want to avoid async in the accessor path.
     transcription_segments: std::sync::Arc<std::sync::Mutex<Vec<TranscriptionSegment>>>,
 }
 
 impl RecordingManager {
     /// Create a new recording manager.
+    ///
+    /// # Panics
+    /// Panics if the vtx-engine fails to initialize (should not happen in normal use).
     pub fn new() -> Self {
         let (event_tx, _) = broadcast::channel(100);
+
+        // Build vtx-engine with the OmniRec long-form transcription profile.
+        // We spawn a temporary single-thread runtime because RecordingManager::new()
+        // is called from a synchronous OnceLock initializer.
+        let engine = {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("Failed to build tokio runtime for engine init");
+            rt.block_on(async {
+                EngineBuilder::new()
+                    .app_name("OmniRec")
+                    .with_profile(vtx_common::TranscriptionProfile::Transcription)
+                    // VAD thresholds preserved from the previous OmniRec transcription module
+                    .vad_voiced_threshold_db(-42.0)
+                    .vad_whisper_threshold_db(-52.0)
+                    .vad_voiced_onset_ms(80)
+                    .vad_whisper_onset_ms(120)
+                    .without_visualization()
+                    .build()
+                    .await
+                    .expect("Failed to initialize vtx-engine")
+                    .0
+            })
+        };
+
         Self {
             state: RwLock::new(RecordingState::Idle),
             stop_flag: Mutex::new(None),
@@ -89,8 +167,8 @@ impl RecordingManager {
             output_format: RwLock::new(OutputFormat::default()),
             audio_config: RwLock::new(AudioConfig::default()),
             transcription_config: RwLock::new(TranscriptionConfig::default()),
-            transcription_state: Mutex::new(TranscribeState::new()),
-            transcription_task: Mutex::new(None),
+            engine: Arc::new(engine),
+            engine_task: Mutex::new(None),
             event_tx,
             elapsed_task: Mutex::new(None),
             transcription_segments: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
@@ -98,14 +176,13 @@ impl RecordingManager {
     }
 
     /// Subscribe to service events.
-    #[allow(dead_code)] // Will be used when event streaming is implemented
+    #[allow(dead_code)]
     pub fn subscribe(&self) -> broadcast::Receiver<ServiceEvent> {
         self.event_tx.subscribe()
     }
 
     /// Broadcast an event to all subscribers.
     fn broadcast(&self, event: ServiceEvent) {
-        // Ignore send errors (no subscribers)
         let _ = self.event_tx.send(event);
     }
 
@@ -187,17 +264,20 @@ impl RecordingManager {
         Ok(())
     }
 
-    /// Get current transcription status.
-    pub async fn get_transcription_status(&self) -> omnirec_common::TranscriptionStatus {
-        let state = self.transcription_state.lock().await;
-        let active = state.is_active();
-        let queue = state.queue();
+    /// Get current transcription status (from vtx-engine state).
+    pub async fn get_transcription_status(&self) -> TranscriptionStatus {
+        let engine_status = self.engine.get_status();
+        let model_status = self.engine.check_model_status();
+        let recording_active = self.engine.is_recording();
 
-        omnirec_common::TranscriptionStatus {
-            model_loaded: false, // TODO: Check if model is loaded
-            active,
-            segments_processed: queue.segments_processed() as u32,
-            queue_depth: queue.queue_depth() as u32,
+        TranscriptionStatus {
+            model_loaded: model_status.available,
+            active: recording_active || engine_status.capturing,
+            segments_processed: {
+                let segs = self.transcription_segments.lock().unwrap();
+                segs.len() as u32
+            },
+            queue_depth: engine_status.queue_depth as u32,
             error: None,
         }
     }
@@ -225,7 +305,7 @@ impl RecordingManager {
     }
 
     /// Get a clone of the stop flag (for external stop monitoring).
-    #[allow(dead_code)] // Will be used for external stop monitoring
+    #[allow(dead_code)]
     pub async fn get_stop_flag(&self) -> Option<StopHandle> {
         self.stop_flag.lock().await.clone()
     }
@@ -313,8 +393,9 @@ impl RecordingManager {
 
         // Get transcription config
         let transcription_cfg = self.get_transcription_config().await;
-        // Transcription requires system audio (can't transcribe mic-only reliably)
-        let transcription_enabled = transcription_cfg.enabled && has_system_audio;
+        // Transcription is enabled when configured and we have some audio source.
+        // vtx-engine captures its own audio stream independently of FFmpeg.
+        let transcription_enabled = transcription_cfg.enabled && audio_enabled;
 
         tracing::debug!(
             "[Recording] Audio config: enabled={}, source_id={:?}, mic_id={:?}, has_system_audio={}, has_mic={}, audio_enabled={}",
@@ -347,7 +428,6 @@ impl RecordingManager {
                 .await
             {
                 Ok((audio_rx, audio_stop)) => {
-                    // Store audio stop flag
                     {
                         let mut flag = self.audio_stop_flag.lock().await;
                         *flag = Some(audio_stop);
@@ -356,9 +436,7 @@ impl RecordingManager {
                     let audio_encoder_config = AudioEncoderConfig::default();
 
                     if transcription_enabled {
-                        tracing::debug!("[Transcription] Transcription is ENABLED - creating channel and starting task");
-
-                        // Generate output path upfront so transcription can use the same base name
+                        // Generate output path upfront so the transcript can use the same base name
                         let video_output_path = match crate::encoder::generate_output_path() {
                             Ok(path) => path,
                             Err(e) => {
@@ -368,36 +446,26 @@ impl RecordingManager {
                         };
                         tracing::debug!("[Transcription] Video output path: {:?}", video_output_path);
 
-                        // Get model path from config
-                        let model_path = transcription_cfg.model_path.as_ref().map(PathBuf::from);
-                        tracing::debug!("[Transcription] Model path from config: {:?}", model_path);
+                        // Determine the device ID to pass to vtx-engine.
+                        // Prefer the microphone device; fall back to system audio source.
+                        let mic_device_id = audio_cfg.microphone_id.clone()
+                            .or_else(|| audio_cfg.source_id.clone());
 
-                        // Create transcription channel
-                        let (transcription_tx, transcription_rx) = mpsc::channel::<Vec<f32>>(256);
+                        // Start vtx-engine capture and recording session.
+                        self.start_engine_recording(mic_device_id, video_output_path.clone()).await;
 
-                        // Start transcription processing task with video output path
-                        // Note: Transcription uses channel disconnection to detect stop, not the stop_flag,
-                        // because the video capture stop_flag can be set during PipeWire format renegotiation.
-                        self.start_transcription_task(
-                            transcription_rx,
-                            video_output_path.clone(),
-                            model_path,
-                        )
-                        .await;
-
-                        // Use encoder with transcription support, passing the pre-generated output path
+                        // Use the existing encoder that supports a pre-generated output path.
+                        // No transcription channel needed — vtx-engine handles transcription.
                         tokio::spawn(encode_frames_with_audio_and_transcription(
                             frame_rx,
                             audio_rx,
                             stop_flag.clone(),
                             audio_encoder_config,
-                            Some(transcription_tx),
+                            None, // No transcription channel; vtx-engine captures independently
                             Some(video_output_path),
                         ))
                     } else {
-                        tracing::debug!("[Transcription] Transcription is DISABLED (config.enabled={}, has_system_audio={})", 
-                            transcription_cfg.enabled, has_system_audio);
-                        // Standard audio encoding without transcription
+                        tracing::debug!("[Transcription] Transcription is DISABLED");
                         tokio::spawn(encode_frames_with_audio(
                             frame_rx,
                             audio_rx,
@@ -437,176 +505,107 @@ impl RecordingManager {
         Ok(())
     }
 
-    /// Start the transcription processing task.
+    /// Start vtx-engine audio capture and manual recording session.
     ///
-    /// This task receives audio samples from the encoder and feeds them to the
-    /// transcription state machine for voice detection and transcription.
-    ///
-    /// # Arguments
-    /// * `transcription_rx` - Channel to receive audio samples from the encoder
-    /// * `video_output_path` - Path to the video output file (transcript will be derived from this)
-    /// * `model_path` - Optional custom model path (uses default if None)
-    async fn start_transcription_task(
+    /// # Platform notes (tasks 6.1–6.3)
+    /// On Windows (WASAPI), macOS (CoreAudio), and Linux (PipeWire), opening a
+    /// second concurrent capture session on the same device alongside FFmpeg's
+    /// encoding pipeline is supported — each session receives its own independent
+    /// audio stream from the OS audio subsystem. vtx-engine's native capture
+    /// backend is therefore used directly here (`start_capture` + `start_recording`)
+    /// rather than feeding OmniRec's resampled pipeline through
+    /// `transcribe_audio_stream`. This avoids the need for OmniRec to resample
+    /// to 16 kHz and route samples into the engine.
+    async fn start_engine_recording(
         &self,
-        transcription_rx: mpsc::Receiver<Vec<f32>>,
+        mic_device_id: Option<String>,
         video_output_path: PathBuf,
-        model_path: Option<PathBuf>,
     ) {
-        // Initialize transcription state with the video output path
-        {
-            let mut state = self.transcription_state.lock().await;
-            if let Err(e) =
-                state.start_with_model(video_output_path.clone(), 48000, 2, model_path.clone())
-            {
-                error!("Failed to start transcription: {}", e);
-                return;
-            }
-        }
-
-        // Get queue reference for final stats
-        let transcription_state = self.transcription_state.lock().await;
-        let queue = transcription_state.queue();
-        drop(transcription_state);
-
-        // Use a std channel for the blocking thread
-        let (std_tx, std_rx) = std::sync::mpsc::channel::<Vec<f32>>();
-
-        // Create callback for segment events
+        let engine = self.engine.clone();
         let event_tx = self.event_tx.clone();
         let segments_storage = self.transcription_segments.clone();
-        let on_segment: std::sync::Arc<crate::transcription::OnSegmentCallback> =
-            std::sync::Arc::new(Box::new(move |timestamp_secs, text| {
-                // Store segment for polling-based retrieval
-                if let Ok(mut segments) = segments_storage.lock() {
-                    segments.push(TranscriptionSegment {
-                        timestamp_secs,
-                        text: text.clone(),
-                    });
-                }
-                // Also broadcast as event (for future streaming support)
-                let _ = event_tx.send(ServiceEvent::TranscriptionSegment {
-                    timestamp_secs,
-                    text,
-                });
-            }));
 
-        // Spawn a blocking thread for transcription processing
-        // TranscribeState.process_samples() is synchronous
-        let queue_clone = queue.clone();
-        let video_path_for_thread = video_output_path.clone();
-        let model_path_for_thread = model_path.clone();
-        let on_segment_clone = on_segment.clone();
-        let transcription_thread = std::thread::spawn(move || {
-            tracing::debug!("[Transcription] Worker thread started");
-            let mut transcribe_state = TranscribeState::new();
+        // Subscribe to engine events BEFORE starting capture so we don't miss any events.
+        let mut engine_rx = engine.subscribe();
 
-            // Start the transcription state with the video output path, model path, and callback
-            if let Err(e) = transcribe_state.start_with_model_and_callback(
-                video_path_for_thread,
-                48000,
-                2,
-                model_path_for_thread,
-                Some(on_segment_clone),
-            ) {
-                tracing::debug!(
-                    "[Transcription] Failed to start transcription in thread: {}",
-                    e
-                );
-                return;
-            }
-            tracing::debug!("[Transcription] TranscribeState initialized in worker thread");
-
-            let mut total_samples_received: u64 = 0;
-            let mut last_stats_time = std::time::Instant::now();
-
-            // Note: We don't check stop_flag here because it can be set by PipeWire during
-            // format renegotiation, which is normal behavior. Instead, we rely on the channel
-            // being disconnected when the encoder finishes (which happens when recording stops).
-            loop {
-                // Receive with timeout to allow periodic logging
-                match std_rx.recv_timeout(std::time::Duration::from_millis(100)) {
-                    Ok(samples) => {
-                        total_samples_received += samples.len() as u64;
-                        transcribe_state.process_samples(&samples);
-
-                        // Log stats every 5 seconds
-                        if last_stats_time.elapsed().as_secs() >= 5 {
-                            let duration_secs = total_samples_received as f64 / 48000.0 / 2.0; // stereo
-                            tracing::debug!(
-                                "[Transcription] Received {:.1}s of audio ({} samples), queue depth: {}",
-                                duration_secs,
-                                total_samples_received,
-                                queue_clone.queue_depth()
-                            );
-                            last_stats_time = std::time::Instant::now();
-                        }
-                    }
-                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                        continue;
-                    }
-                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                        tracing::debug!("[Transcription] Channel disconnected, exiting loop");
-                        break;
-                    }
-                }
-            }
-
-            // Finalize transcription
-            transcribe_state.stop();
-            tracing::debug!(
-                "[Transcription] Thread finished - total {:.1}s of audio, {} segments processed",
-                total_samples_received as f64 / 48000.0 / 2.0,
-                queue_clone.segments_processed()
-            );
-        });
-
-        // Spawn async task to forward samples from async channel to std channel
-        // Note: We don't check stop_flag here because it can be set by PipeWire during
-        // format renegotiation. The encoder will close the transcription_tx channel when
-        // recording actually ends, which will cause recv() to return None.
-        let mut transcription_rx = transcription_rx;
-        let handle = tokio::spawn(async move {
-            let mut forwarded_count: u64 = 0;
-
-            loop {
-                match transcription_rx.recv().await {
-                    Some(samples) => {
-                        forwarded_count += 1;
-                        // Forward to the blocking thread
-                        if std_tx.send(samples).is_err() {
-                            // Thread has exited
-                            tracing::warn!("[Transcription] Forwarder: worker thread exited");
-                            break;
-                        }
-                    }
-                    None => {
-                        // Channel closed - encoder has finished
-                        tracing::debug!(
-                            "[Transcription] Forwarder: channel closed after {} batches",
-                            forwarded_count
-                        );
-                        break;
-                    }
-                }
-            }
-
-            // Drop sender to signal thread to stop
-            drop(std_tx);
-
-            // Wait for thread to finish
-            let _ = transcription_thread.join();
-
-            info!(
-                "[Transcription] Task finished ({} segments processed)",
-                queue.segments_processed()
-            );
-        });
-
-        // Store the task handle
-        {
-            let mut task = self.transcription_task.lock().await;
-            *task = Some(handle);
+        // Start vtx-engine's audio capture on the selected device.
+        if let Err(e) = engine.start_capture(mic_device_id, None).await {
+            error!("[Transcription] Engine start_capture failed: {}", e);
+            return;
         }
+
+        // Begin the manual recording session (audio accumulation starts here).
+        engine.start_recording();
+        info!("[Transcription] vtx-engine recording started");
+
+        // Derive transcript path from the video output path.
+        let transcript_path = TranscriptWriter::transcript_path(&video_output_path);
+
+        // Spawn the engine event subscriber task (tasks 7.1–7.5).
+        let handle = tokio::spawn(async move {
+            // Create the transcript file.
+            let mut writer = match TranscriptWriter::new(&transcript_path) {
+                Ok(w) => Some(w),
+                Err(e) => {
+                    error!("[Transcription] Failed to create transcript file {:?}: {}", transcript_path, e);
+                    None
+                }
+            };
+
+            loop {
+                match engine_rx.recv().await {
+                    Ok(EngineEvent::TranscriptionSegment(seg)) => {
+                        tracing::debug!(
+                            "[Transcription] Segment: offset={}ms, text={}",
+                            seg.timestamp_offset_ms, seg.text
+                        );
+
+                        // Convert vtx-common segment → OmniRec IPC segment and store for polling.
+                        let ipc_seg = TranscriptionSegment::from_vtx(&seg);
+                        if let Ok(mut segs) = segments_storage.lock() {
+                            segs.push(ipc_seg.clone());
+                        }
+
+                        // Broadcast as a service event for subscribed CLI clients.
+                        let _ = event_tx.send(ServiceEvent::TranscriptionSegment {
+                            timestamp_secs: ipc_seg.timestamp_secs,
+                            text: ipc_seg.text.clone(),
+                        });
+
+                        // Append to the transcript file.
+                        if let Some(ref mut w) = writer {
+                            w.append_segment(seg.timestamp_offset_ms, &seg.text);
+                        }
+                    }
+                    Ok(EngineEvent::RecordingStopped { duration_ms }) => {
+                        info!("[Transcription] Engine recording stopped ({}ms)", duration_ms);
+                        // Do NOT break here — wait for TranscriptionSegment events which may
+                        // arrive after RecordingStopped (transcription is async).
+                    }
+                    Ok(EngineEvent::CaptureStateChanged { capturing: false, .. }) => {
+                        // Capture has fully stopped. All pending transcription segments have
+                        // been emitted before this event.
+                        tracing::debug!("[Transcription] Capture stopped, exiting event loop");
+                        break;
+                    }
+                    Ok(_) => {
+                        // Other events (RecordingStarted, SpeechStarted, etc.) — no action needed.
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                        warn!("[Transcription] Event receiver lagged: dropped {} events", n);
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                        tracing::debug!("[Transcription] Engine broadcast channel closed");
+                        break;
+                    }
+                }
+            }
+
+            info!("[Transcription] Event subscriber task finished");
+        });
+
+        let mut task = self.engine_task.lock().await;
+        *task = Some(handle);
     }
 
     /// Start audio capture from up to two sources with optional AEC.
@@ -616,8 +615,6 @@ impl RecordingManager {
         mic_source_id: Option<&str>,
         _aec_enabled: bool,
     ) -> Result<(AudioReceiver, StopHandle), String> {
-        // TODO: Implement dual audio capture with AEC
-        // For now, just capture system audio if available
         if let Some(source_id) = system_source_id {
             let backend = crate::capture::get_backend();
             backend
@@ -658,7 +655,6 @@ impl RecordingManager {
 
     /// Stop the current recording and save the file.
     pub async fn stop_recording(&self) -> Result<RecordingResult, String> {
-        // Check current state
         {
             let state = self.state.read().await;
             if *state != RecordingState::Recording {
@@ -666,10 +662,8 @@ impl RecordingManager {
             }
         }
 
-        // Get the output format before changing state
         let format = self.get_output_format().await;
 
-        // Set state to saving
         self.set_state(RecordingState::Saving).await;
 
         // Stop elapsed time broadcasting
@@ -680,7 +674,7 @@ impl RecordingManager {
             }
         }
 
-        // Signal stop (both video and audio)
+        // Signal stop flags (video and FFmpeg audio)
         {
             let flag = self.stop_flag.lock().await;
             if let Some(ref stop_flag) = *flag {
@@ -694,7 +688,14 @@ impl RecordingManager {
             }
         }
 
-        // Wait for encoding to complete
+        // Stop vtx-engine recording — this submits the accumulated audio buffer
+        // for transcription. TranscriptionSegment events will follow asynchronously.
+        if self.engine.is_recording() {
+            self.engine.stop_recording();
+            info!("[Transcription] Engine stop_recording() called");
+        }
+
+        // Wait for video/audio encoding to complete
         let source_path = {
             let mut task = self.encoding_task.lock().await;
             if let Some(handle) = task.take() {
@@ -735,7 +736,6 @@ impl RecordingManager {
                         success: false,
                         path: None,
                     });
-                    // Return source path on transcode failure
                     source_path.clone()
                 }
             }
@@ -756,20 +756,22 @@ impl RecordingManager {
 
     /// Clean up internal state and reset to idle.
     async fn cleanup(&self) {
-        // Stop transcription if active
-        {
-            let mut state = self.transcription_state.lock().await;
-            if state.is_active() {
-                state.stop();
+        // Stop vtx-engine capture. The audio loop exit triggers a CaptureStateChanged event,
+        // which causes the event subscriber task to finish.
+        if self.engine.is_capturing() {
+            if let Err(e) = self.engine.stop_capture().await {
+                warn!("[Transcription] Engine stop_capture error: {}", e);
             }
         }
-        // Wait for transcription task to complete
+
+        // Wait for the engine event subscriber task to finish (ensures transcript is fully written).
         {
-            let mut task = self.transcription_task.lock().await;
+            let mut task = self.engine_task.lock().await;
             if let Some(handle) = task.take() {
                 let _ = handle.await;
             }
         }
+
         {
             let mut flag = self.stop_flag.lock().await;
             *flag = None;
@@ -786,8 +788,11 @@ impl RecordingManager {
     }
 
     /// Broadcast shutdown event to all subscribers.
-    #[allow(dead_code)] // Will be used for graceful shutdown
     pub fn shutdown(&self) {
+        if self.engine.is_recording() {
+            self.engine.stop_recording();
+        }
+        self.engine.shutdown();
         self.broadcast(ServiceEvent::Shutdown);
     }
 }

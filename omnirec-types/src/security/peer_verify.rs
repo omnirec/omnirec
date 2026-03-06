@@ -55,19 +55,12 @@ impl std::fmt::Display for PeerVerifyError {
 
 impl std::error::Error for PeerVerifyError {}
 
-/// Verify that an executable path is trusted.
-///
-/// The executable must:
-/// 1. Have a filename matching one of TRUSTED_EXECUTABLES
-/// 2. Be located in a TRUSTED_DIRECTORY OR the same directory as the service
 fn verify_executable(exe_path: &Path) -> Result<(), PeerVerifyError> {
-    // Get executable name
     let exe_name = exe_path
         .file_name()
         .and_then(|n| n.to_str())
         .ok_or_else(|| PeerVerifyError::UntrustedExecutable(exe_path.to_path_buf()))?;
 
-    // Check name (handle .exe suffix on Windows)
     #[cfg(windows)]
     let name_matches = TRUSTED_EXECUTABLES.iter().any(|t| {
         exe_name.eq_ignore_ascii_case(t) || exe_name.eq_ignore_ascii_case(&format!("{}.exe", t))
@@ -80,12 +73,10 @@ fn verify_executable(exe_path: &Path) -> Result<(), PeerVerifyError> {
         return Err(PeerVerifyError::UntrustedExecutable(exe_path.to_path_buf()));
     }
 
-    // Get executable directory
     let exe_dir = exe_path
         .parent()
         .ok_or_else(|| PeerVerifyError::UntrustedDirectory(exe_path.to_path_buf()))?;
 
-    // Check if in trusted directory OR same directory as self
     let self_dir = std::env::current_exe()
         .ok()
         .and_then(|p| p.parent().map(|d| d.to_path_buf()));
@@ -93,7 +84,6 @@ fn verify_executable(exe_path: &Path) -> Result<(), PeerVerifyError> {
     let in_trusted_dir = TRUSTED_DIRECTORIES.iter().any(|d| exe_dir == Path::new(d));
     let same_as_self = self_dir.as_ref().map(|d| exe_dir == d).unwrap_or(false);
 
-    // During development, also allow cargo target directories and CMake build directories
     let exe_dir_str = exe_dir.to_string_lossy();
     let in_target_dir = exe_dir_str.contains("target")
         && (exe_dir_str.contains("debug") || exe_dir_str.contains("release"));
@@ -113,7 +103,6 @@ pub fn verify_peer(stream: &std::os::unix::net::UnixStream) -> Result<PeerInfo, 
 
     let fd = stream.as_raw_fd();
 
-    // Get peer credentials via SO_PEERCRED
     let creds = unsafe {
         let mut creds: libc::ucred = std::mem::zeroed();
         let mut len = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
@@ -133,7 +122,6 @@ pub fn verify_peer(stream: &std::os::unix::net::UnixStream) -> Result<PeerInfo, 
         creds
     };
 
-    // Verify UID matches current user
     let current_uid = unsafe { libc::getuid() };
     if creds.uid != current_uid {
         return Err(PeerVerifyError::UidMismatch {
@@ -142,11 +130,9 @@ pub fn verify_peer(stream: &std::os::unix::net::UnixStream) -> Result<PeerInfo, 
         });
     }
 
-    // Get executable path from /proc
     let exe_path = std::fs::read_link(format!("/proc/{}/exe", creds.pid))
         .map_err(|_| PeerVerifyError::ProcessNotFound(creds.pid))?;
 
-    // Verify executable is trusted
     verify_executable(&exe_path)?;
 
     Ok(PeerInfo {
@@ -162,11 +148,9 @@ pub fn verify_peer(stream: &std::os::unix::net::UnixStream) -> Result<PeerInfo, 
 
     let fd = stream.as_raw_fd();
 
-    // macOS constants not in libc
     const SOL_LOCAL: libc::c_int = 0;
     const LOCAL_PEERPID: libc::c_int = 0x002;
 
-    // Get PID via LOCAL_PEERPID
     let pid = unsafe {
         let mut pid: libc::pid_t = 0;
         let mut len = std::mem::size_of::<libc::pid_t>() as libc::socklen_t;
@@ -186,7 +170,6 @@ pub fn verify_peer(stream: &std::os::unix::net::UnixStream) -> Result<PeerInfo, 
         pid
     };
 
-    // Get executable path via proc_pidpath
     let exe_path = {
         const PROC_PIDPATHINFO_MAXSIZE: usize = 4096;
         let mut buf = vec![0u8; PROC_PIDPATHINFO_MAXSIZE];
@@ -209,7 +192,6 @@ pub fn verify_peer(stream: &std::os::unix::net::UnixStream) -> Result<PeerInfo, 
         )
     };
 
-    // Verify executable is trusted
     verify_executable(&exe_path)?;
 
     Ok(PeerInfo {
@@ -227,14 +209,12 @@ pub fn verify_peer(pipe: windows::Win32::Foundation::HANDLE) -> Result<PeerInfo,
         OpenProcess, QueryFullProcessImageNameW, PROCESS_QUERY_LIMITED_INFORMATION,
     };
 
-    // Get client PID
     let mut pid: u32 = 0;
     unsafe {
         GetNamedPipeClientProcessId(pipe, &mut pid)
             .map_err(|e| PeerVerifyError::CredentialsFailed(e.to_string()))?;
     }
 
-    // Get executable path
     let exe_path = unsafe {
         let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
             .map_err(|_| PeerVerifyError::ProcessNotFound(pid as i32))?;
@@ -256,7 +236,6 @@ pub fn verify_peer(pipe: windows::Win32::Foundation::HANDLE) -> Result<PeerInfo,
         PathBuf::from(String::from_utf16_lossy(&buf[..len as usize]))
     };
 
-    // Verify executable is trusted
     verify_executable(&exe_path)?;
 
     Ok(PeerInfo {

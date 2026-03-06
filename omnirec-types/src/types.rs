@@ -1,4 +1,4 @@
-//! Shared types for cross-platform capture operations.
+//! OmniRec-specific shared types for capture, IPC, and recording configuration.
 
 use serde::{Deserialize, Serialize};
 
@@ -216,11 +216,24 @@ pub struct TranscriptionStatus {
     pub error: Option<String>,
 }
 
-/// A single transcription segment produced during recording.
+/// A single transcription segment for the IPC/frontend protocol.
+///
+/// Uses `timestamp_secs: f64` for frontend compatibility.
+/// Internally, vtx-common's `TranscriptionSegment` uses `timestamp_offset_ms: u64`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TranscriptionSegment {
-    /// Timestamp in seconds from the start of recording
+    /// Timestamp in seconds from the start of recording (frontend-compatible)
     pub timestamp_secs: f64,
     /// The transcribed text
     pub text: String,
+}
+
+impl TranscriptionSegment {
+    /// Convert from a vtx-common TranscriptionSegment.
+    pub fn from_vtx(seg: &vtx_common::TranscriptionSegment) -> Self {
+        Self {
+            timestamp_secs: seg.timestamp_offset_ms as f64 / 1000.0,
+            text: seg.text.clone(),
+        }
+    }
 }
