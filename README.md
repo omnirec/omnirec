@@ -55,12 +55,12 @@
 > OmniRec is in active development and is not yet available for general use. If you would like to help test OmniRec or contribute to its development, please download one of the available pre-release installation packages or build from source (see below).
 
 <!-- release-links:start -->
-**Current release:** v0.1.18
+**Current release:** v0.1.19
 
 **Download packages**
-- Windows: [OmniRec_0.1.18_x64-setup.exe](https://github.com/omnirec/omnirec/releases/download/v0.1.18/OmniRec_0.1.18_x64-setup.exe)
-- macOS (Apple Silicon M-Series): [OmniRec_aarch64.dmg](https://github.com/omnirec/omnirec/releases/download/v0.1.18/OmniRec_aarch64.dmg)
-- macOS (Legacy Intel x64): [OmniRec_x64.dmg](https://github.com/omnirec/omnirec/releases/download/v0.1.18/OmniRec_x64.dmg)
+- Windows: [OmniRec_0.1.19_x64-setup.exe](https://github.com/omnirec/omnirec/releases/download/v0.1.19/OmniRec_0.1.19_x64-setup.exe)
+- macOS (Apple Silicon M-Series): [OmniRec_aarch64.dmg](https://github.com/omnirec/omnirec/releases/download/v0.1.19/OmniRec_aarch64.dmg)
+- macOS (Legacy Intel x64): [OmniRec_x64.dmg](https://github.com/omnirec/omnirec/releases/download/v0.1.19/OmniRec_x64.dmg)
 <!-- release-links:end -->
 
 ### Windows
