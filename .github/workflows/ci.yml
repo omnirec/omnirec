@@ -79,9 +79,6 @@ jobs:
       - name: Lint (Makefile)
         run: make lint
 
-      - name: Rust tests - common library
-        run: cargo test -p omnirec-common --all-features
-
       - name: Rust tests - main app
         # Note: --all-features omitted because 'cuda' feature requires NVIDIA CUDA Toolkit (Linux only)
         run: cargo test -p omnirec

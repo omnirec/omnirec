@@ -12,7 +12,7 @@ endif
         frontend client client-debug client-release cli cli-debug cli-release picker \
         package stage-cli stage-ffmpeg stub-sidecar \
         run-cli run-cli-release \
-        lint lint-rust lint-rust-common lint-rust-tauri lint-rust-cli lint-ts test \
+        lint lint-rust lint-rust-tauri lint-rust-cli lint-ts test \
         install-deps check-binaries help
 
 # Optional args to pass through to pnpm tauri build (e.g. ARGS="--target aarch64-apple-darwin")
@@ -165,15 +165,10 @@ picker:
 # =============================================================================
 
 # Run all linters
-lint: lint-rust-common lint-rust-tauri lint-rust-cli lint-ts
+lint: lint-rust-tauri lint-rust-cli lint-ts
 
 # Rust linting (all crates)
-lint-rust: lint-rust-common lint-rust-tauri lint-rust-cli
-
-# Rust linting - common library
-lint-rust-common:
-	@echo "==> Linting src-common..."
-	cargo clippy -p omnirec-common --all-targets --all-features -- -D warnings
+lint-rust: lint-rust-tauri lint-rust-cli
 
 # Create empty stub sidecar binaries for the current host triple so tauri-build
 # validation passes during lint/clippy without requiring real pre-built binaries.
@@ -220,8 +215,6 @@ test: test-rust
 
 # Rust tests (all crates)
 test-rust:
-	@echo "==> Testing src-common..."
-	cd src-common && cargo test --all-features
 	@echo "==> Testing src-tauri..."
 	cd src-tauri && cargo test --all-features
 	@echo "==> Testing src-cli..."
@@ -236,7 +229,6 @@ clean:
 	@echo "==> Cleaning frontend..."
 	rm -rf dist
 	@echo "==> Cleaning Rust targets..."
-	cd src-common && cargo clean
 	cd src-tauri && cargo clean
 	cd src-cli && cargo clean
 	@echo "==> Cleaning picker..."
@@ -244,7 +236,6 @@ clean:
 
 # Clean only Rust debug builds (keeps release)
 clean-debug:
-	cd src-common && cargo clean --profile dev
 	cd src-tauri && cargo clean --profile dev
 	cd src-cli && cargo clean --profile dev
 
@@ -318,7 +309,6 @@ help:
 	@echo "Quality Targets:"
 	@echo "  lint             Run all linters"
 	@echo "  lint-rust        Run Rust clippy on all crates"
-	@echo "  lint-rust-common Run Rust clippy on src-common"
 	@echo "  lint-rust-tauri  Run Rust clippy on src-tauri"
 	@echo "  lint-rust-cli    Run Rust clippy on src-cli"
 	@echo "  lint-ts          Run TypeScript type check"
