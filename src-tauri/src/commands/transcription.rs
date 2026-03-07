@@ -134,7 +134,7 @@ pub async fn get_model_status(
     };
 
     // Use vtx-engine's ModelManager for canonical path resolution.
-    let vtx_model: vtx_common::WhisperModel = whisper_model.to_vtx_model();
+    let vtx_model: vtx_engine::WhisperModel = whisper_model.to_vtx_model();
     let mgr = ModelManager::new("OmniRec");
     let path = mgr.path(vtx_model);
 

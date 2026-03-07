@@ -34,7 +34,6 @@ omnirec-types = { path = "../omnirec-types" }
 
 # vtx-engine audio/transcription library
 vtx-engine = "0.1.0"
-vtx-common = "0.1.0"
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }

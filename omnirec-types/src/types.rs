@@ -219,7 +219,7 @@ pub struct TranscriptionStatus {
 /// A single transcription segment for the IPC/frontend protocol.
 ///
 /// Uses `timestamp_secs: f64` for frontend compatibility.
-/// Internally, vtx-common's `TranscriptionSegment` uses `timestamp_offset_ms: u64`.
+/// Internally, vtx-engine's `TranscriptionSegment` uses `timestamp_offset_ms: u64`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TranscriptionSegment {
     /// Timestamp in seconds from the start of recording (frontend-compatible)
@@ -229,8 +229,8 @@ pub struct TranscriptionSegment {
 }
 
 impl TranscriptionSegment {
-    /// Convert from a vtx-common TranscriptionSegment.
-    pub fn from_vtx(seg: &vtx_common::TranscriptionSegment) -> Self {
+    /// Convert from a vtx-engine TranscriptionSegment.
+    pub fn from_vtx(seg: &vtx_engine::TranscriptionSegment) -> Self {
         Self {
             timestamp_secs: seg.timestamp_offset_ms as f64 / 1000.0,
             text: seg.text.clone(),

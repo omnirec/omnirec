@@ -10,16 +10,14 @@ resolver = "2"
 # =============================================================================
 # Local development path override for vtx-engine.
 #
-# vtx-engine is not yet published to crates.io. During development, uncomment
-# this block to use a local sibling checkout at ../vtx-engine.
-# Expected directory layout:
+# Uncomment this block to use a local sibling checkout of vtx-engine instead
+# of the published crates.io version. Expected directory layout:
 #   ~/ws/omnirec/omnirec/   ← this workspace
 #   ~/ws/vtx-engine/        ← vtx-engine sibling workspace
 #
-# IMPORTANT: Comment this block out before committing for production builds
-# (once vtx-engine is published to crates.io, the version-pinned dep in
-# src-tauri/Cargo.toml and src-cli/Cargo.toml will be used automatically).
+# IMPORTANT: Keep this block commented out before committing. CI and release
+# builds must always resolve vtx-engine from crates.io using the pinned version
+# in src-tauri/Cargo.toml and src-cli/Cargo.toml.
 # =============================================================================
-[patch.crates-io]
-vtx-engine = { path = "../../vtx-engine/crates/vtx-engine" }
-vtx-common = { path = "../../vtx-engine/crates/vtx-common" }
+# [patch.crates-io]
+# vtx-engine = { path = "../../vtx-engine/crates/vtx-engine" }

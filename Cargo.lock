@@ -3533,7 +3533,6 @@ dependencies = [
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
- "vtx-common",
  "vtx-engine",
  "wayland-client",
  "wayland-protocols-wlr",
@@ -3558,7 +3557,6 @@ dependencies = [
  "serde_json",
  "shellexpand",
  "tokio",
- "vtx-common",
  "which",
 ]
 
@@ -3573,7 +3571,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
- "vtx-common",
+ "vtx-engine",
  "windows 0.61.3",
 ]
 
@@ -6207,14 +6205,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "vtx-common"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "vtx-engine"
 version = "0.1.0"
 dependencies = [
@@ -6241,7 +6231,6 @@ dependencies = [
  "toml 0.8.2",
  "tracing",
  "uuid",
- "vtx-common",
  "windows 0.58.0",
  "zip 2.4.2",
 ]

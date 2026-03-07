@@ -26,8 +26,7 @@ use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::{broadcast, Mutex, RwLock};
 use tracing::{error, info, warn};
-use vtx_common::EngineEvent;
-use vtx_engine::{AudioEngine, EngineBuilder};
+use vtx_engine::{AudioEngine, EngineBuilder, EngineEvent};
 
 /// Result of a completed recording.
 #[derive(Debug, Clone)]
@@ -144,7 +143,7 @@ impl RecordingManager {
             rt.block_on(async {
                 EngineBuilder::new()
                     .app_name("OmniRec")
-                    .with_profile(vtx_common::TranscriptionProfile::Transcription)
+                    .with_profile(vtx_engine::TranscriptionProfile::Transcription)
                     // VAD thresholds preserved from the previous OmniRec transcription module
                     .vad_voiced_threshold_db(-42.0)
                     .vad_whisper_threshold_db(-52.0)
