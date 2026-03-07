@@ -173,6 +173,7 @@ lint-rust: lint-rust-tauri lint-rust-cli
 # Create empty stub sidecar binaries for the current host triple so tauri-build
 # validation passes during lint/clippy without requiring real pre-built binaries.
 # Only creates stubs if no binary (real or stub) already exists for this triple.
+# On macOS, also stubs src-tauri/lib/libwhisper.dylib (bundled as a resource).
 stub-sidecar:
 	@mkdir -p src-tauri/binaries
 	@TRIPLE=$$(rustc -vV | grep '^host:' | cut -d' ' -f2); \
@@ -187,6 +188,13 @@ stub-sidecar:
 	if [ ! -f "$$FFMPEG_STUB" ]; then \
 		echo "==> Creating FFmpeg stub: $$FFMPEG_STUB"; \
 		touch "$$FFMPEG_STUB"; \
+	fi
+	@if [ "$$(uname -s 2>/dev/null)" = "Darwin" ]; then \
+		mkdir -p src-tauri/lib; \
+		if [ ! -f "src-tauri/lib/libwhisper.dylib" ]; then \
+			echo "==> Creating libwhisper.dylib stub for macOS lint"; \
+			touch "src-tauri/lib/libwhisper.dylib"; \
+		fi; \
 	fi
 
 # Rust linting - main app

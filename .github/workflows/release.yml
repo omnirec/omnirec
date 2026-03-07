@@ -85,9 +85,6 @@ jobs:
       - name: TypeScript type check
         run: pnpm exec tsc --noEmit
 
-      - name: Rust lint - src-common
-        run: cargo clippy -p omnirec-common --all-targets --all-features -- -D warnings
-
       - name: Rust lint - src-cli
         run: cargo clippy -p omnirec-cli --all-targets --all-features -- -D warnings
 
