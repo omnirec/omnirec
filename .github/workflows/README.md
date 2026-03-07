@@ -1,12 +1,12 @@
 # GitHub Actions Workflows
 
-OmniRec uses GitHub Actions for CI/CD. Workflows run automatically on push to `master` and pull requests.
+OmniRec uses GitHub Actions for CI/CD. Workflows run automatically on push to `main` and pull requests.
 
 ## Workflows
 
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
-| `ci.yml` | Push to `master`, PRs | Lint, type-check, and test |
+| `ci.yml` | Push to `main`, PRs | Lint, type-check, and test |
 | `release.yml` | Tag push (`v*`) | Build and publish releases |
 
 ## Releasing

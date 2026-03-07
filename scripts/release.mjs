@@ -169,7 +169,7 @@ const updateTargets = async () => {
   await updateJsonVersion(path.join(repoRoot, "package.json"));
   await updateJsonVersion(path.join(repoRoot, "src-tauri", "tauri.conf.json"));
   await updateCargoVersion(path.join(repoRoot, "src-tauri", "Cargo.toml"));
-  await updateCargoVersion(path.join(repoRoot, "src-common", "Cargo.toml"));
+  await updateCargoVersion(path.join(repoRoot, "omnirec-types", "Cargo.toml"));
   await updateCargoVersion(path.join(repoRoot, "src-cli", "Cargo.toml"));
   await updatePkgbuild(path.join(repoRoot, "packaging", "aur", "PKGBUILD"));
   await updateReadme(path.join(repoRoot, "README.md"));
@@ -196,7 +196,7 @@ const versionedFiles = [
   "package.json",
   "src-tauri/tauri.conf.json",
   "src-tauri/Cargo.toml",
-  "src-common/Cargo.toml",
+  "omnirec-types/Cargo.toml",
   "src-cli/Cargo.toml",
   "packaging/aur/PKGBUILD",
   "README.md",
