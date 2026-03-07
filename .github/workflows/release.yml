@@ -20,6 +20,12 @@ name: Release
 #   AZURE_SIGNING_ACCOUNT  - Artifact Signing account name
 #   AZURE_CERT_PROFILE     - Certificate profile name
 
+# Tauri updater artifact signing (both platforms).
+# Required repository secrets:
+#
+#   TAURI_SIGNING_PRIVATE_KEY          - Minisign private key (base64)
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD - Password for the private key
+
 on:
   push:
     tags:
@@ -88,6 +94,35 @@ jobs:
       - name: Rust lint - src-cli
         run: cargo clippy -p omnirec-cli --all-targets --all-features -- -D warnings
 
+      # tauri-build validates macOS bundle resource paths at build-script time (even
+      # during clippy). The macOS bundle includes src-tauri/lib/libwhisper.dylib.
+      # Build the CLI release first; vtx-engine's build script downloads the
+      # xcframework zip and attempts to extract libwhisper.dylib as a side effect.
+      # However, whisper.cpp v1.8.2 ships the dylib inside a .framework bundle
+      # (named "whisper", not "libwhisper.dylib"), so the build script silently
+      # fails to extract it. Manually extract and thin it here so tauri-build finds
+      # it at src-tauri/lib/libwhisper.dylib.
+      - name: Build CLI release (required for tauri-build resource validation on macOS)
+        if: matrix.platform == 'macos-latest'
+        run: cargo build -p omnirec-cli --release
+
+      - name: Extract and stage libwhisper.dylib for lint (macOS)
+        if: matrix.platform == 'macos-latest'
+        shell: bash
+        env:
+          WHISPER_VERSION: "1.8.2"
+        run: |
+          XCFW_URL="https://github.com/ggml-org/whisper.cpp/releases/download/v${WHISPER_VERSION}/whisper-v${WHISPER_VERSION}-xcframework.zip"
+          XCFW_ZIP="$RUNNER_TEMP/whisper-xcframework.zip"
+          curl -fsSL --retry 3 -o "$XCFW_ZIP" "$XCFW_URL"
+          unzip -j "$XCFW_ZIP" \
+            "build-apple/whisper.xcframework/macos-arm64_x86_64/whisper.framework/Versions/A/whisper" \
+            -d "$RUNNER_TEMP/whisper-xcfw"
+          # Use the universal (fat) binary for lint — either arch is fine for validation
+          mkdir -p src-tauri/lib
+          cp "$RUNNER_TEMP/whisper-xcfw/whisper" src-tauri/lib/libwhisper.dylib
+          ls -la src-tauri/lib/libwhisper.dylib
+
       - name: Rust lint - src-tauri
         run: make lint-rust-tauri
 
@@ -110,10 +145,10 @@ jobs:
         include:
           - platform: macos-latest
             target: aarch64-apple-darwin
-            args: --target aarch64-apple-darwin
+            args: --target aarch64-apple-darwin --bundles dmg,app
           - platform: macos-latest
             target: x86_64-apple-darwin
-            args: --target x86_64-apple-darwin
+            args: --target x86_64-apple-darwin --bundles dmg,app
           # TODO: Re-enable Linux support in a future version
           # - platform: ubuntu-22.04
           #   args: ""
@@ -164,17 +199,6 @@ jobs:
         with:
           cache-on-failure: true
 
-      # Cache the whisper.cpp zip by version so it is never re-downloaded across
-      # runs. The zip lives inside Cargo's OUT_DIR (which varies by hash), so we
-      # pull it out to a stable location and point build.rs at it via
-      # WHISPER_CACHE_DIR. See build.rs setup_whisper().
-      - name: Cache whisper.cpp binary
-        if: matrix.platform == 'macos-latest'
-        uses: actions/cache@v4
-        with:
-          path: ~/.whisper-cache
-          key: whisper-v1.8.2-${{ matrix.target }}
-
       - name: Build and stage CLI sidecar binary
         run: make stage-cli ARGS="${{ matrix.args }}"
 
@@ -182,15 +206,30 @@ jobs:
         if: matrix.platform != 'ubuntu-22.04'
         run: make stage-ffmpeg ARGS="${{ matrix.args }}"
 
-      # macOS: build the Tauri crate (release profile, correct cross-compile target)
-      # to trigger build.rs, which downloads libwhisper.dylib into src-tauri/lib/.
-      # Must use --release so the OUT_DIR matches what the subsequent tauri-action
-      # build uses — avoiding a second download within the same job.
-      - name: Trigger build script to download libwhisper.dylib
+      # macOS: build the Tauri crate for the specific cross-compile target to trigger
+      # vtx-engine's build script, which downloads the xcframework zip into
+      # target/whisper-cache/. However, whisper.cpp v1.8.2 ships the dylib inside a
+      # .framework bundle (named "whisper", not "libwhisper.dylib"), so the build
+      # script silently fails to extract it. Manually extract and thin it to the
+      # correct architecture, then place it at src-tauri/lib/libwhisper.dylib where
+      # tauri.macos.conf.json expects to find it for bundling as a Frameworks resource.
+      - name: Build CLI and extract libwhisper.dylib (macOS)
         if: matrix.platform == 'macos-latest'
+        shell: bash
         env:
-          WHISPER_CACHE_DIR: ~/.whisper-cache
-        run: cargo build -p omnirec --release --target ${{ matrix.target }}
+          WHISPER_VERSION: "1.8.2"
+          # Map Cargo target triple to lipo arch name
+          LIPO_ARCH: ${{ matrix.target == 'aarch64-apple-darwin' && 'arm64' || 'x86_64' }}
+        run: |
+          XCFW_URL="https://github.com/ggml-org/whisper.cpp/releases/download/v${WHISPER_VERSION}/whisper-v${WHISPER_VERSION}-xcframework.zip"
+          XCFW_ZIP="$RUNNER_TEMP/whisper-xcframework.zip"
+          curl -fsSL --retry 3 -o "$XCFW_ZIP" "$XCFW_URL"
+          unzip -j "$XCFW_ZIP" \
+            "build-apple/whisper.xcframework/macos-arm64_x86_64/whisper.framework/Versions/A/whisper" \
+            -d "$RUNNER_TEMP/whisper-xcfw"
+          mkdir -p src-tauri/lib
+          lipo "$RUNNER_TEMP/whisper-xcfw/whisper" -thin "$LIPO_ARCH" -output src-tauri/lib/libwhisper.dylib
+          ls -la src-tauri/lib/libwhisper.dylib
 
       # ── macOS signing setup ────────────────────────────────────────────────
       - name: Verify Apple signing secrets
@@ -276,25 +315,19 @@ jobs:
             --options runtime \
             "$FFMPEG"
 
-          # Sign libwhisper.dylib if it exists.
-          # build.rs copies it to src-tauri/lib/ (profile-agnostic) so it is
-          # available for both debug/clippy and release builds.
+          # Sign libwhisper.dylib
           DYLIB="src-tauri/lib/libwhisper.dylib"
-          if [ -f "$DYLIB" ]; then
-            echo "Signing ${DYLIB}..."
-            codesign --force --sign "$IDENTITY" \
-              --timestamp \
-              "$DYLIB"
-            # Prevent build.rs from overwriting the signed copy during bundling
-            chmod 444 "$DYLIB"
-          fi
+          echo "Signing ${DYLIB}..."
+          codesign --force --sign "$IDENTITY" \
+            --timestamp \
+            "$DYLIB"
+          # Prevent build.rs from overwriting the signed copy during bundling
+          chmod 444 "$DYLIB"
 
           # Verify signatures
           codesign --verify --verbose "$SIDECAR"
           codesign --verify --verbose "$FFMPEG"
-          if [ -f "$DYLIB" ]; then
-            codesign --verify --verbose "$DYLIB"
-          fi
+          codesign --verify --verbose "$DYLIB"
 
       - name: Build Tauri app (macOS)
         if: matrix.platform == 'macos-latest'
@@ -306,6 +339,9 @@ jobs:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           # APPLE_API_KEY and APPLE_API_KEY_PATH set via $GITHUB_ENV above
+          # Tauri Minisign keypair for updater artifact signing (orthogonal to Apple signing)
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "OmniRec ${{ github.ref_name }}"
@@ -313,6 +349,11 @@ jobs:
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }} --config src-tauri/tauri.macos.conf.json
+
+      # Windows: build the CLI first so Tauri can bundle it (stage-cli handles this,
+      # but we need the binary in target/release/ for the signing step below).
+      # stage-cli already ran above and placed the binary in src-tauri/binaries/.
+      # The FFmpeg binary is also already in src-tauri/binaries/ from stage-ffmpeg.
 
       # ── Windows signing setup ──────────────────────────────────────────────
       - name: Verify Azure signing secrets
@@ -396,6 +437,9 @@ jobs:
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          # Tauri Minisign keypair for updater artifact signing (orthogonal to Azure signing)
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "OmniRec ${{ github.ref_name }}"
@@ -419,30 +463,98 @@ jobs:
         run: |
           VERSION="${{ github.ref_name }}"
           VERSION="${VERSION#v}"
+          TAG="${{ github.ref_name }}"
+          REPO="${{ github.repository }}"
+          BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
 
-          cat > latest.json << EOF
-          {
-            "version": "${VERSION}",
-            "notes": "",
-            "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-            "platforms": {
-              "darwin-aarch64": {
-                "url": "https://github.com/${{ github.repository }}/releases/download/v${VERSION}/OmniRec_aarch64.dmg"
-              },
-              "darwin-x86_64": {
-                "url": "https://github.com/${{ github.repository }}/releases/download/v${VERSION}/OmniRec_x64.dmg"
-              },
-              "windows-x86_64": {
-                "url": "https://github.com/${{ github.repository }}/releases/download/v${VERSION}/OmniRec_${VERSION}_x64-setup.exe"
+          # Fetch the GitHub Release body for release notes
+          NOTES=$(gh release view "${TAG}" --repo "${REPO}" --json body -q '.body // ""')
+
+          # Download all .sig files from the release assets into /tmp/sigs.
+          # tauri-action (--bundles dmg,app) produces:
+          #   macOS aarch64: OmniRec_aarch64.app.tar.gz      + .sig  (no version in name)
+          #   macOS x86_64 : OmniRec_x64.app.tar.gz          + .sig  (no version in name)
+          #   Windows MSI  : OmniRec_<ver>_x64_<locale>.msi  + .sig  (version + locale in name)
+          mkdir -p /tmp/sigs
+          gh release download "${TAG}" --repo "${REPO}" --pattern "*.sig" --dir /tmp/sigs
+
+          echo "Downloaded .sig files:"
+          ls -1 /tmp/sigs/
+
+          # macOS: tauri-action omits the version from .app.tar.gz names
+          SIG_AARCH64=$(cat "/tmp/sigs/OmniRec_aarch64.app.tar.gz.sig" 2>/dev/null || echo "")
+          SIG_X64=$(cat     "/tmp/sigs/OmniRec_x64.app.tar.gz.sig"     2>/dev/null || echo "")
+
+          # Windows MSI: discover locale-suffixed name dynamically, derive MSI filename
+          WIN_SIG_FILE=$(ls /tmp/sigs/OmniRec_${VERSION}_x64_*.msi.sig 2>/dev/null | head -1)
+          if [ -n "${WIN_SIG_FILE}" ]; then
+            SIG_WIN=$(cat "${WIN_SIG_FILE}")
+            WIN_MSI_NAME=$(basename "${WIN_SIG_FILE}" .sig)
+          else
+            SIG_WIN=""
+            WIN_MSI_NAME=""
+          fi
+
+          # Validate that all signatures are present
+          if [ -z "${SIG_AARCH64}" ] || [ -z "${SIG_X64}" ] || [ -z "${SIG_WIN}" ]; then
+            echo "ERROR: One or more .sig files are missing or empty."
+            echo "  darwin-aarch64 (OmniRec_aarch64.app.tar.gz.sig):   $([ -n "${SIG_AARCH64}" ] && echo "OK" || echo "MISSING")"
+            echo "  darwin-x86_64  (OmniRec_x64.app.tar.gz.sig):       $([ -n "${SIG_X64}" ]    && echo "OK" || echo "MISSING")"
+            echo "  windows-x86_64 (OmniRec_${VERSION}_x64_*.msi.sig): $([ -n "${SIG_WIN}" ]    && echo "OK" || echo "MISSING")"
+            exit 1
+          fi
+
+          # Write latest.json using jq for correct JSON escaping.
+          # macOS: url points to .app.tar.gz updater archive (version-less name)
+          # Windows: url points to the .msi installer (tauri v2 uses MSI directly)
+          jq -n \
+            --arg version    "${VERSION}" \
+            --arg notes      "${NOTES}" \
+            --arg pub_date   "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg url_aarch64 "${BASE_URL}/OmniRec_aarch64.app.tar.gz" \
+            --arg sig_aarch64 "${SIG_AARCH64}" \
+            --arg url_x64    "${BASE_URL}/OmniRec_x64.app.tar.gz" \
+            --arg sig_x64    "${SIG_X64}" \
+            --arg url_win    "${BASE_URL}/${WIN_MSI_NAME}" \
+            --arg sig_win    "${SIG_WIN}" \
+            '{
+              version: $version,
+              notes: $notes,
+              pub_date: $pub_date,
+              platforms: {
+                "darwin-aarch64": { url: $url_aarch64, signature: $sig_aarch64 },
+                "darwin-x86_64":  { url: $url_x64,    signature: $sig_x64 },
+                "windows-x86_64": { url: $url_win,    signature: $sig_win }
               }
-            }
-          }
-          EOF
+            }' > latest.json
 
+          echo "Generated latest.json:"
           cat latest.json
+
+      - name: Validate latest.json
+        run: |
+          # Verify the file is valid JSON
+          jq empty latest.json || { echo "ERROR: latest.json is not valid JSON"; exit 1; }
+
+          # Verify signature fields are non-empty
+          for platform in "darwin-aarch64" "darwin-x86_64" "windows-x86_64"; do
+            sig=$(jq -r ".platforms[\"${platform}\"].signature // empty" latest.json)
+            if [ -z "${sig}" ]; then
+              echo "ERROR: Signature for ${platform} is empty in latest.json"
+              exit 1
+            fi
+            echo "  ${platform}: signature OK (${#sig} chars)"
+          done
+          echo "latest.json validation passed."
 
       - name: Upload latest.json to release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release upload "${{ github.ref_name }}" latest.json --clobber
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release edit "${{ github.ref_name }}" --draft=false
