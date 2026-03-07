@@ -31,8 +31,17 @@
       "csp": null
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDYxREYxMjhGN0UzRTA4MDgKUldRSUNENStqeExmWVFlSHJ2S1RyNU02TUc3dDZyMlhIb0oxS3A4MEtvTHZxM0R4Y2p4L2k4QXYK",
+      "endpoints": [
+        "https://github.com/omnirec/omnirec/releases/latest/download/latest.json"
+      ]
+    }
+  },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": [
       "msi",
       "nsis",
