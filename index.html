@@ -10,12 +10,25 @@
 
   <body>
     <div class="app-container" data-tauri-drag-region>
-    <button id="close-btn" class="close-btn" type="button" title="Close">&times;</button>
     <div id="status-overlay" class="status-overlay hidden"></div>
     <main class="container" data-tauri-drag-region>
       <header class="app-header" data-tauri-drag-region>
-        <img src="/src/assets/omnirec-logo-transparent-dark.png" alt="OmniRec" class="app-logo" />
-        <span id="app-version" class="app-version"></span>
+        <div class="header-left">
+          <img src="/src/assets/omnirec-logo-transparent-dark.png" alt="OmniRec" class="app-logo" />
+        </div>
+        <div class="header-right">
+          <button id="mode-about-btn" type="button" class="header-btn" title="About">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="16" x2="12" y2="12"></line>
+              <line x1="12" y1="8" x2="12.01" y2="8"></line>
+            </svg>
+          </button>
+          <button id="mode-config-btn" type="button" class="header-btn" title="Settings">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+          <button id="close-btn" class="header-btn close-btn" type="button" title="Close">&times;</button>
+        </div>
       </header>
 
       <!-- Permission notice (shown when screen recording permission is not granted on macOS) -->
@@ -40,19 +53,6 @@
           <button id="mode-window-btn" type="button" class="mode-btn active" role="tab" aria-selected="true">Window</button>
           <button id="mode-display-btn" type="button" class="mode-btn" role="tab" aria-selected="false">Display</button>
           <button id="mode-region-btn" type="button" class="mode-btn" role="tab" aria-selected="false">Region</button>
-          <button id="mode-config-btn" type="button" class="mode-btn mode-btn--config" role="tab" aria-selected="false" title="Settings">
-            <svg class="config-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="3"></circle>
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-            </svg>
-          </button>
-          <button id="mode-about-btn" type="button" class="mode-btn mode-btn--about" role="tab" aria-selected="false" title="About">
-            <svg class="about-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="10"></circle>
-              <line x1="12" y1="16" x2="12" y2="12"></line>
-              <line x1="12" y1="8" x2="12.01" y2="8"></line>
-            </svg>
-          </button>
         </nav>
       </section>
 
