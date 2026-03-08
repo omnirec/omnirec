@@ -523,6 +523,7 @@ impl RecordingManager {
         let engine = self.engine.clone();
         let event_tx = self.event_tx.clone();
         let segments_storage = self.transcription_segments.clone();
+        let session_start = std::time::Instant::now();
 
         // Subscribe to engine events BEFORE starting capture so we don't miss any events.
         let mut engine_rx = engine.subscribe();
@@ -533,9 +534,17 @@ impl RecordingManager {
             return;
         }
 
-        // Begin the manual recording session (audio accumulation starts here).
+        // Switch to VAD/auto mode so speech segments are submitted for transcription
+        // in real time as pauses are detected, rather than accumulating the entire
+        // recording and submitting it as a single chunk on stop.
+        engine.set_ptt_mode(false);
+
+        // Begin the recording session. In non-PTT mode the audio loop runs VAD
+        // segmentation continuously; the manual buffer is still written so the
+        // full session WAV is saved, but stop_recording() will finalize any
+        // in-progress segment rather than re-submitting the whole buffer.
         engine.start_recording();
-        info!("[Transcription] vtx-engine recording started");
+        info!("[Transcription] vtx-engine recording started (VAD streaming mode)");
 
         // Derive transcript path from the video output path.
         let transcript_path = TranscriptWriter::transcript_path(&video_output_path);
@@ -553,25 +562,59 @@ impl RecordingManager {
 
             loop {
                 match engine_rx.recv().await {
-                    Ok(EngineEvent::TranscriptionSegment(seg)) => {
+                    // VAD streaming mode: each speech segment is delivered via
+                    // TranscriptionComplete from the queue worker callback.
+                    Ok(EngineEvent::TranscriptionComplete(result)) => {
+                        let text = result.text.trim().to_string();
+                        if text.is_empty() {
+                            continue;
+                        }
+
+                        // Use timestamp_offset_ms from the result if available,
+                        // otherwise derive from session elapsed time.
+                        let offset_ms = result.timestamp_offset_ms
+                            .unwrap_or_else(|| session_start.elapsed().as_millis() as u64);
+
                         tracing::debug!(
                             "[Transcription] Segment: offset={}ms, text={}",
+                            offset_ms, text
+                        );
+
+                        let ipc_seg = TranscriptionSegment {
+                            timestamp_secs: offset_ms as f64 / 1000.0,
+                            text: text.clone(),
+                        };
+                        if let Ok(mut segs) = segments_storage.lock() {
+                            segs.push(ipc_seg.clone());
+                        }
+
+                        let _ = event_tx.send(ServiceEvent::TranscriptionSegment {
+                            timestamp_secs: ipc_seg.timestamp_secs,
+                            text: text.clone(),
+                        });
+
+                        if let Some(ref mut w) = writer {
+                            w.append_segment(offset_ms, &text);
+                        }
+                    }
+                    // transcribe_audio_file / transcribe_audio_stream path (not used in
+                    // live recording, but handle for completeness).
+                    Ok(EngineEvent::TranscriptionSegment(seg)) => {
+                        tracing::debug!(
+                            "[Transcription] Segment (file/stream): offset={}ms, text={}",
                             seg.timestamp_offset_ms, seg.text
                         );
 
-                        // Convert vtx-common segment → OmniRec IPC segment and store for polling.
                         let ipc_seg = TranscriptionSegment::from_vtx(&seg);
                         if let Ok(mut segs) = segments_storage.lock() {
                             segs.push(ipc_seg.clone());
                         }
 
-                        // Broadcast as a service event for subscribed CLI clients.
                         let _ = event_tx.send(ServiceEvent::TranscriptionSegment {
                             timestamp_secs: ipc_seg.timestamp_secs,
                             text: ipc_seg.text.clone(),
                         });
 
-                        // Append to the transcript file.
                         if let Some(ref mut w) = writer {
                             w.append_segment(seg.timestamp_offset_ms, &seg.text);
                         }
@@ -755,6 +798,9 @@ impl RecordingManager {
 
     /// Clean up internal state and reset to idle.
     async fn cleanup(&self) {
+        // Restore PTT mode so the next recording session starts from a known state.
+        self.engine.set_ptt_mode(true);
+
         // Stop vtx-engine capture. The audio loop exit triggers a CaptureStateChanged event,
         // which causes the event subscriber task to finish.
         if self.engine.is_capturing() {

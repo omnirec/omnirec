@@ -777,6 +777,29 @@ pub fn run() {
         });
     }
 
+    // Spawn task to forward ServiceEvent::StateChanged to all webview windows
+    // as a "recording-state-changed" Tauri event.  The transcript window and
+    // any other frontend listeners depend on this to start/stop polling.
+    {
+        let app_handle = app.handle().clone();
+        let mut service_rx = state::get_recording_manager().subscribe();
+        tauri::async_runtime::spawn(async move {
+            loop {
+                match service_rx.recv().await {
+                    Ok(state::ServiceEvent::StateChanged(new_state)) => {
+                        let _ = tauri::Emitter::emit(
+                            &app_handle,
+                            "recording-state-changed",
+                            new_state,
+                        );
+                    }
+                    Ok(state::ServiceEvent::Shutdown) | Err(_) => break,
+                    Ok(_) => {}
+                }
+            }
+        });
+    }
+
     app.run(|_app_handle, event| {
         match event {
             // On macOS and Windows, prevent the app from exiting when all windows are closed.

@@ -326,6 +326,24 @@ pub struct TranscriptionSegmentsResponse {
     pub total_count: u32,
 }
 
+/// Emit the current recording state to the transcript window so its
+/// `recording-state-changed` listener can start/stop polling regardless
+/// of whether this is a fresh open or a re-show of an existing window.
+fn sync_recording_state_to_transcript(app: &tauri::AppHandle) {
+    use crate::state::get_recording_manager;
+    use tauri::Manager;
+
+    if let Some(window) = app.get_webview_window("transcript") {
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            let state = get_recording_manager().get_state().await;
+            let _ = window.emit("recording-state-changed", state);
+            tracing::debug!("[Transcript] Synced recording state {:?} to transcript window", state);
+            drop(app); // keep AppHandle alive until emit completes
+        });
+    }
+}
+
 /// Open the transcript window
 #[tauri::command]
 pub async fn open_transcript_window(app: tauri::AppHandle) -> Result<(), String> {
@@ -334,6 +352,9 @@ pub async fn open_transcript_window(app: tauri::AppHandle) -> Result<(), String>
     if let Some(window) = app.get_webview_window("transcript") {
         window.show().map_err(|e| e.to_string())?;
         window.set_focus().map_err(|e| e.to_string())?;
+        // Window already exists — push the current recording state so the
+        // listener re-activates polling (DOMContentLoaded won't fire again).
+        sync_recording_state_to_transcript(&app);
         return Ok(());
     }
 
@@ -419,6 +440,15 @@ pub async fn open_transcript_window(app: tauri::AppHandle) -> Result<(), String>
         space_right,
         space_left
     );
+
+    // Give the new window a moment to finish loading, then push the current
+    // recording state so its listener starts polling immediately.
+    let app_clone = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+        sync_recording_state_to_transcript(&app_clone);
+    });
+
     Ok(())
 }
 

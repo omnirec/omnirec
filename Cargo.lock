@@ -6001,9 +6001,9 @@ dependencies = [
 
 [[package]]
 name = "vtx-engine"
-version = "0.1.0"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3bc46ccbde52390801518b104938df0677b1cb3df466a5933b8c2330c7351f7d"
+checksum = "9ace4679073fc028a7133404a18d7fb668880384a6cc738a90f4560946497561"
 dependencies = [
  "aec3",
  "block2 0.5.1",
