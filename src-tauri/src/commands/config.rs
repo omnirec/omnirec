@@ -7,7 +7,7 @@ use crate::config::{
     ThemeMode,
 };
 use crate::AppState;
-use tauri::State;
+use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_dialog::DialogExt;
 
 // =============================================================================
@@ -136,7 +136,11 @@ pub async fn validate_output_directory(directory: String) -> Result<(), String> 
 
 /// Save the theme mode setting.
 #[tauri::command]
-pub async fn save_theme(theme: String, state: State<'_, AppState>) -> Result<(), String> {
+pub async fn save_theme(
+    theme: String,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
     let theme_mode =
         ThemeMode::from_str(&theme).ok_or_else(|| format!("Invalid theme mode: {}", theme))?;
 
@@ -150,5 +154,9 @@ pub async fn save_theme(theme: String, state: State<'_, AppState>) -> Result<(),
         "[save_theme] Saved theme: {}",
         config.appearance.theme.as_str()
     );
+
+    // Notify all windows so they can apply the new theme immediately.
+    let _ = app.emit("theme-changed", theme);
+
     Ok(())
 }

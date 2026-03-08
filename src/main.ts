@@ -160,6 +160,7 @@ let recordingStartTime: number = 0;
 // Theme state
 let currentThemeMode: ThemeMode = "auto";
 let systemThemeMediaQuery: MediaQueryList | null = null;
+let themeChangeListenerRegistered = false;
 
 // Thumbnail refresh state
 let windowThumbnailRefreshInterval: number | null = null;
@@ -1935,6 +1936,19 @@ function initTheme(mode: ThemeMode): void {
 
   systemThemeMediaQuery = window.matchMedia("(prefers-color-scheme: light)");
   systemThemeMediaQuery.addEventListener("change", handleSystemThemeChange);
+
+  // Listen for theme changes from other windows (e.g. config window).
+  // Re-register each time initTheme is called would create duplicate listeners,
+  // so we guard with a module-level flag.
+  if (!themeChangeListenerRegistered) {
+    themeChangeListenerRegistered = true;
+    listen<string>("theme-changed", (event) => {
+      const newMode = event.payload as ThemeMode;
+      currentThemeMode = newMode;
+      applyTheme(getEffectiveTheme(newMode));
+      console.log("[Theme] theme-changed event received, applied:", newMode);
+    });
+  }
 }
 
 // Handle system theme change
