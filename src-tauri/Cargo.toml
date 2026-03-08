@@ -23,7 +23,11 @@ cuda = []
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["macos-private-api", "tray-icon", "image-png"] }
+tauri = { version = "2", features = [
+    "macos-private-api",
+    "tray-icon",
+    "image-png",
+] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
@@ -33,7 +37,7 @@ serde_json = "1"
 omnirec-types = { path = "../omnirec-types" }
 
 # vtx-engine audio/transcription library
-vtx-engine = "0.1.1"
+vtx-engine = "0.1.2"
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
@@ -47,7 +51,11 @@ chrono = "0.4"
 # Logging
 tracing = "0.1"
 tracing-appender = "0.2"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "registry"] }
+tracing-subscriber = { version = "0.3", features = [
+    "env-filter",
+    "fmt",
+    "registry",
+] }
 
 # Log archive download
 zip = "2"
@@ -62,7 +70,10 @@ futures-util = "0.3"
 ffmpeg-sidecar = "2"
 
 # Image processing for thumbnails
-image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+image = { version = "0.25", default-features = false, features = [
+    "jpeg",
+    "png",
+] }
 
 # Base64 encoding for thumbnail data URIs
 base64 = "0.22"
@@ -159,7 +170,14 @@ dispatch = "0.2"
 # objc2 for Objective-C runtime
 objc2 = "0.6"
 objc2-foundation = { version = "0.3", features = ["NSThread", "NSGeometry"] }
-objc2-app-kit = { version = "0.3", features = ["NSWindow", "NSView", "NSColor", "NSScreen", "NSResponder", "NSGraphics"] }
+objc2-app-kit = { version = "0.3", features = [
+    "NSWindow",
+    "NSView",
+    "NSColor",
+    "NSScreen",
+    "NSResponder",
+    "NSGraphics",
+] }
 
 # Block support for callbacks
 block2 = "0.6"
