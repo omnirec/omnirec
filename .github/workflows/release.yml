@@ -146,7 +146,7 @@ jobs:
           - platform: macos-latest
             target: aarch64-apple-darwin
             args: --target aarch64-apple-darwin --bundles dmg,app
-          - platform: macos-latest
+          - platform: macos-13
             target: x86_64-apple-darwin
             args: --target x86_64-apple-darwin --bundles dmg,app
           # TODO: Re-enable Linux support in a future version
@@ -192,7 +192,7 @@ jobs:
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          targets: ${{ matrix.target || '' }}
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -214,7 +214,7 @@ jobs:
       # correct architecture, then place it at src-tauri/lib/libwhisper.dylib where
       # tauri.macos.conf.json expects to find it for bundling as a Frameworks resource.
       - name: Build CLI and extract libwhisper.dylib (macOS)
-        if: matrix.platform == 'macos-latest'
+        if: startsWith(matrix.platform, 'macos-')
         shell: bash
         env:
           WHISPER_VERSION: "1.8.2"
@@ -233,7 +233,7 @@ jobs:
 
       # ── macOS signing setup ────────────────────────────────────────────────
       - name: Verify Apple signing secrets
-        if: matrix.platform == 'macos-latest'
+        if: startsWith(matrix.platform, 'macos-')
         shell: bash
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -256,7 +256,7 @@ jobs:
           fi
 
       - name: Write Apple API key file
-        if: matrix.platform == 'macos-latest'
+        if: startsWith(matrix.platform, 'macos-')
         shell: bash
         run: |
           KEY_PATH="$RUNNER_TEMP/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8"
@@ -268,7 +268,7 @@ jobs:
       # Tauri's bundler only signs frameworks and external binaries, NOT plain
       # resources. Sign them before tauri-action copies them into the .app bundle.
       - name: Pre-sign macOS bundled resources
-        if: matrix.platform == 'macos-latest'
+        if: startsWith(matrix.platform, 'macos-')
         shell: bash
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -330,7 +330,7 @@ jobs:
           codesign --verify --verbose "$DYLIB"
 
       - name: Build Tauri app (macOS)
-        if: matrix.platform == 'macos-latest'
+        if: startsWith(matrix.platform, 'macos-')
         uses: tauri-apps/tauri-action@v0.6.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
