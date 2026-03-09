@@ -44,7 +44,6 @@
     "createUpdaterArtifacts": true,
     "targets": [
       "msi",
-      "nsis",
       "dmg",
       "app",
       "deb",
