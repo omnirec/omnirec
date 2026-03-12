@@ -9,7 +9,7 @@
 //! - Event broadcasting to subscribed clients
 
 use crate::capture::{
-    AudioCaptureBackend, AudioReceiver, CaptureBackend, CaptureRegion, FrameReceiver, StopHandle,
+    AudioReceiver, CaptureBackend, CaptureRegion, FrameReceiver, StopHandle,
 };
 use crate::encoder::{
     encode_frames, encode_frames_with_audio, encode_frames_with_audio_and_transcription,
@@ -26,7 +26,7 @@ use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::{broadcast, Mutex, RwLock};
 use tracing::{error, info, warn};
-use vtx_engine::{AudioEngine, EngineBuilder, EngineEvent};
+use vtx_engine::{AgcConfig, AudioEngine, EngineBuilder, EngineConfig, EngineEvent};
 
 /// Result of a completed recording.
 #[derive(Debug, Clone)]
@@ -132,23 +132,36 @@ impl RecordingManager {
     pub fn new() -> Self {
         let (event_tx, _) = broadcast::channel(100);
 
-        // Build vtx-engine with the OmniRec long-form transcription profile.
+        // Build vtx-engine with the OmniRec long-form configuration.
         // We spawn a temporary single-thread runtime because RecordingManager::new()
         // is called from a synchronous OnceLock initializer.
+        //
+        // AGC is initially constructed with defaults (disabled). The audio config is
+        // applied at recording start and hot-applied via set_agc_config when config changes.
         let engine = {
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
                 .expect("Failed to build tokio runtime for engine init");
             rt.block_on(async {
-                EngineBuilder::new()
+                let engine_config = EngineConfig {
+                    // VAD thresholds tuned for OmniRec long-form recording
+                    vad_voiced_threshold_db: -42.0,
+                    vad_whisper_threshold_db: -52.0,
+                    vad_voiced_onset_ms: 80,
+                    vad_whisper_onset_ms: 120,
+                    // Long-form: large segments, no word-break splitting
+                    segment_max_duration_ms: 20000,
+                    segment_word_break_grace_ms: 2000,
+                    word_break_segmentation_enabled: false,
+                    // No manual gain adjustment
+                    mic_gain_db: 0.0,
+                    // AGC disabled by default; hot-applied on first set_audio_config call
+                    agc: AgcConfig::default(),
+                    ..EngineConfig::default()
+                };
+                EngineBuilder::from_config(engine_config)
                     .app_name("OmniRec")
-                    .with_profile(vtx_engine::TranscriptionProfile::Transcription)
-                    // VAD thresholds preserved from the previous OmniRec transcription module
-                    .vad_voiced_threshold_db(-42.0)
-                    .vad_whisper_threshold_db(-52.0)
-                    .vad_voiced_onset_ms(80)
-                    .vad_whisper_onset_ms(120)
                     .without_visualization()
                     .build()
                     .await
@@ -236,6 +249,19 @@ impl RecordingManager {
         if *state != RecordingState::Idle {
             return Err("Cannot change audio config while recording".to_string());
         }
+
+        // Hot-apply AGC config to the engine immediately (takes effect within one audio chunk).
+        let gate_threshold_db = if config.agc_noise_gate_enabled {
+            -50.0_f32 // vtx-engine default: gate active
+        } else {
+            -100.0_f32 // below noise floor: gate bypassed
+        };
+        self.engine.set_agc_config(AgcConfig {
+            enabled: config.agc_enabled,
+            gate_threshold_db,
+            ..AgcConfig::default()
+        });
+
         let mut cfg = self.audio_config.write().await;
         *cfg = config;
         info!("Audio configuration updated");
@@ -655,21 +681,12 @@ impl RecordingManager {
         &self,
         system_source_id: Option<&str>,
         mic_source_id: Option<&str>,
-        _aec_enabled: bool,
+        aec_enabled: bool,
     ) -> Result<(AudioReceiver, StopHandle), String> {
-        if let Some(source_id) = system_source_id {
-            let backend = crate::capture::get_backend();
-            backend
-                .start_audio_capture(source_id)
-                .map_err(|e| e.to_string())
-        } else if let Some(source_id) = mic_source_id {
-            let backend = crate::capture::get_backend();
-            backend
-                .start_audio_capture(source_id)
-                .map_err(|e| e.to_string())
-        } else {
-            Err("No audio source specified".to_string())
-        }
+        let backend = crate::capture::get_backend();
+        backend
+            .start_audio_capture_dual(system_source_id, mic_source_id, aec_enabled)
+            .map_err(|e| e.to_string())
     }
 
     /// Start broadcasting elapsed time updates.
