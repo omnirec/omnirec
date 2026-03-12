@@ -78,6 +78,20 @@
               </label>
               <p class="config-item__hint">Remove echo when using speakers with microphone</p>
             </div>
+            <div class="config-item config-item--checkbox hidden" id="agc-config-item">
+              <label class="config-item__checkbox-label">
+                <input type="checkbox" id="agc-checkbox" />
+                <span>Automatic Gain Control</span>
+              </label>
+              <p class="config-item__hint">Normalize microphone level for consistent transcription quality</p>
+            </div>
+            <div class="config-item config-item--checkbox hidden" id="agc-noise-gate-config-item">
+              <label class="config-item__checkbox-label">
+                <input type="checkbox" id="agc-noise-gate-checkbox" checked />
+                <span>Noise Gate</span>
+              </label>
+              <p class="config-item__hint">Prevent gain boost during silent pauses between words</p>
+            </div>
             <div class="config-item config-item--checkbox hidden" id="transcription-config-item">
               <label class="config-item__checkbox-label">
                 <input type="checkbox" id="transcription-checkbox" />

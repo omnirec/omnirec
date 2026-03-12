@@ -23,6 +23,10 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 
 This is a Tauri v2 desktop application for high-performance screen/window/region recording. The app prioritizes performance, privacy (no cloud), and ease of use.
 
+OmniRec uses VTX Engine - A voice processing and transcription engine written in Rust.
+- The source code to VTX Engine is available in ~/ws/vtx-engine.
+- Do not make changes to VTX Engine. When changes are necessary document what is needed only.
+
 ## Key Directories
 
 - `src/` - Frontend TypeScript, HTML, CSS

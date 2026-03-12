@@ -34,6 +34,8 @@ pub struct AudioConfigResponse {
     pub source_id: Option<String>,
     pub microphone_id: Option<String>,
     pub echo_cancellation: bool,
+    pub agc_enabled: bool,
+    pub agc_noise_gate_enabled: bool,
 }
 
 #[derive(serde::Serialize)]
@@ -52,6 +54,8 @@ impl From<&AppConfig> for ConfigResponse {
                 source_id: config.audio.source_id.clone(),
                 microphone_id: config.audio.microphone_id.clone(),
                 echo_cancellation: config.audio.echo_cancellation,
+                agc_enabled: config.audio.agc_enabled,
+                agc_noise_gate_enabled: config.audio.agc_noise_gate_enabled,
             },
             appearance: AppearanceConfigResponse {
                 theme: config.appearance.theme.as_str().to_string(),

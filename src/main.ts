@@ -40,6 +40,8 @@ interface AudioConfig {
   source_id: string | null;
   microphone_id: string | null;
   echo_cancellation: boolean;
+  agc_enabled: boolean;
+  agc_noise_gate_enabled: boolean;
 }
 
 interface TranscriptionConfig {

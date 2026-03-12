@@ -2,6 +2,10 @@
 
 use serde::{Deserialize, Serialize};
 
+fn default_agc_noise_gate_enabled() -> bool {
+    true
+}
+
 use crate::security::validation::{
     validate_coordinates, validate_dimensions, validate_monitor_id, validate_source_id,
     validate_window_handle, ValidationError,
@@ -62,6 +66,10 @@ pub enum Request {
         source_id: Option<String>,
         microphone_id: Option<String>,
         echo_cancellation: bool,
+        #[serde(default)]
+        agc_enabled: bool,
+        #[serde(default = "default_agc_noise_gate_enabled")]
+        agc_noise_gate_enabled: bool,
     },
 
     // === Thumbnails ===

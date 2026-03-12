@@ -37,7 +37,7 @@ serde_json = "1"
 omnirec-types = { path = "../omnirec-types" }
 
 # vtx-engine audio/transcription library
-vtx-engine = "0.1.2"
+vtx-engine = "0.2.3"
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }

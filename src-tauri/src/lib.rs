@@ -634,6 +634,8 @@ pub fn run() {
                         source_id: config.audio.source_id.clone(),
                         microphone_id: config.audio.microphone_id.clone(),
                         echo_cancellation: config.audio.echo_cancellation,
+                        agc_enabled: config.audio.agc_enabled,
+                        agc_noise_gate_enabled: config.audio.agc_noise_gate_enabled,
                     }).await;
 
                     // Sync transcription config

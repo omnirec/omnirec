@@ -16,6 +16,8 @@ interface AudioConfig {
   source_id: string | null;
   microphone_id: string | null;
   echo_cancellation: boolean;
+  agc_enabled: boolean;
+  agc_noise_gate_enabled: boolean;
 }
 
 interface TranscriptionConfig {
@@ -64,6 +66,8 @@ interface AppConfig {
     source_id: string | null;
     microphone_id: string | null;
     echo_cancellation: boolean;
+    agc_enabled: boolean;
+    agc_noise_gate_enabled: boolean;
   };
   appearance: {
     theme: ThemeMode;
@@ -80,6 +84,10 @@ let audioSourceSelect: HTMLSelectElement | null;
 let micSourceSelect: HTMLSelectElement | null;
 let aecCheckbox: HTMLInputElement | null;
 let aecConfigItem: HTMLElement | null;
+let agcCheckbox: HTMLInputElement | null;
+let agcConfigItem: HTMLElement | null;
+let agcNoiseGateCheckbox: HTMLInputElement | null;
+let agcNoiseGateConfigItem: HTMLElement | null;
 let refreshAudioBtn: HTMLButtonElement | null;
 let themeSelect: HTMLSelectElement | null;
 let macosSystemAudioCheckbox: HTMLInputElement | null;
@@ -125,6 +133,10 @@ window.addEventListener("DOMContentLoaded", async () => {
   micSourceSelect = document.querySelector("#mic-source-select");
   aecCheckbox = document.querySelector("#aec-checkbox");
   aecConfigItem = document.querySelector("#aec-config-item");
+  agcCheckbox = document.querySelector("#agc-checkbox");
+  agcConfigItem = document.querySelector("#agc-config-item");
+  agcNoiseGateCheckbox = document.querySelector("#agc-noise-gate-checkbox");
+  agcNoiseGateConfigItem = document.querySelector("#agc-noise-gate-config-item");
   refreshAudioBtn = document.querySelector("#refresh-audio-btn");
   themeSelect = document.querySelector("#theme-select");
   macosSystemAudioCheckbox = document.querySelector("#macos-system-audio-checkbox");
@@ -158,6 +170,8 @@ window.addEventListener("DOMContentLoaded", async () => {
   audioSourceSelect?.addEventListener("change", handleAudioConfigChange);
   micSourceSelect?.addEventListener("change", handleAudioConfigChange);
   aecCheckbox?.addEventListener("change", handleAudioConfigChange);
+  agcCheckbox?.addEventListener("change", handleAudioConfigChange);
+  agcNoiseGateCheckbox?.addEventListener("change", handleAudioConfigChange);
   refreshAudioBtn?.addEventListener("click", loadAudioSources);
   themeSelect?.addEventListener("change", handleThemeChange);
   macosSystemAudioCheckbox?.addEventListener("change", handleMacosSystemAudioChange);
@@ -348,7 +362,16 @@ async function loadAudioSources(): Promise<void> {
       aecCheckbox.checked = audioConfig.echo_cancellation;
     }
 
+    if (agcCheckbox) {
+      agcCheckbox.checked = audioConfig.agc_enabled;
+    }
+
+    if (agcNoiseGateCheckbox) {
+      agcNoiseGateCheckbox.checked = audioConfig.agc_noise_gate_enabled;
+    }
+
     updateAecVisibility();
+    updateAgcVisibility();
     updateTranscriptionVisibility();
     await loadTranscriptionConfig();
 
@@ -366,14 +389,25 @@ function updateAecVisibility(): void {
   aecConfigItem.classList.toggle("hidden", !hasMic);
 }
 
+function updateAgcVisibility(): void {
+  if (!micSourceSelect) return;
+  const hasMic = micSourceSelect.value !== "";
+  const agcOn = agcCheckbox?.checked ?? false;
+  agcConfigItem?.classList.toggle("hidden", !hasMic);
+  agcNoiseGateConfigItem?.classList.toggle("hidden", !(hasMic && agcOn));
+}
+
 async function handleAudioConfigChange(): Promise<void> {
   if (!audioSourceSelect || !micSourceSelect || !aecCheckbox) return;
 
   const sourceId = audioSourceSelect.value || null;
   const microphoneId = micSourceSelect.value || null;
   const echoCancellation = aecCheckbox.checked;
+  const agcEnabled = agcCheckbox?.checked ?? false;
+  const agcNoiseGateEnabled = agcNoiseGateCheckbox?.checked ?? true;
 
   updateAecVisibility();
+  updateAgcVisibility();
   updateTranscriptionVisibility();
 
   try {
@@ -382,9 +416,12 @@ async function handleAudioConfigChange(): Promise<void> {
       sourceId,
       microphoneId,
       echoCancellation,
+      agcEnabled,
+      agcNoiseGateEnabled,
     });
     console.log("[Audio] Saved config: system=", sourceId || "(none)",
-      ", mic=", microphoneId || "(none)", ", aec=", echoCancellation);
+      ", mic=", microphoneId || "(none)", ", aec=", echoCancellation,
+      ", agc=", agcEnabled, ", agc_gate=", agcNoiseGateEnabled);
   } catch (error) {
     console.error("[Audio] Failed to save audio config:", error);
   }

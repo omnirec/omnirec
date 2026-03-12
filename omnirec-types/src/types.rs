@@ -175,6 +175,19 @@ pub struct AudioConfig {
     pub microphone_id: Option<String>,
     /// Whether echo cancellation is enabled for microphone input.
     pub echo_cancellation: bool,
+    /// Whether Automatic Gain Control (AGC) is enabled for microphone input.
+    #[serde(default)]
+    pub agc_enabled: bool,
+    /// Whether the AGC noise gate is enabled. When enabled, gate_threshold_db = -50.0 dBFS.
+    /// When disabled, gate_threshold_db = -100.0 dBFS (gate bypassed).
+    #[serde(default = "AudioConfig::default_agc_noise_gate_enabled")]
+    pub agc_noise_gate_enabled: bool,
+}
+
+impl AudioConfig {
+    fn default_agc_noise_gate_enabled() -> bool {
+        true
+    }
 }
 
 impl Default for AudioConfig {
@@ -184,6 +197,8 @@ impl Default for AudioConfig {
             source_id: None,
             microphone_id: None,
             echo_cancellation: true,
+            agc_enabled: false,
+            agc_noise_gate_enabled: true,
         }
     }
 }

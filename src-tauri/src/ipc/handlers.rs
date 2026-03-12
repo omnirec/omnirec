@@ -165,16 +165,20 @@ pub async fn handle_request(request: Request) -> Response {
             source_id,
             microphone_id,
             echo_cancellation,
+            agc_enabled,
+            agc_noise_gate_enabled,
         } => {
             info!(
-                "SetAudioConfig: enabled={}, source={:?}, mic={:?}, aec={}",
-                enabled, source_id, microphone_id, echo_cancellation
+                "SetAudioConfig: enabled={}, source={:?}, mic={:?}, aec={}, agc={}, agc_gate={}",
+                enabled, source_id, microphone_id, echo_cancellation, agc_enabled, agc_noise_gate_enabled
             );
             let config = AudioConfig {
                 enabled,
                 source_id,
                 microphone_id,
                 echo_cancellation,
+                agc_enabled,
+                agc_noise_gate_enabled,
             };
             let manager = get_recording_manager();
             match manager.set_audio_config(config).await {

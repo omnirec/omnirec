@@ -47,8 +47,19 @@ pub async fn save_audio_config(
     source_id: Option<String>,
     microphone_id: Option<String>,
     echo_cancellation: bool,
+    agc_enabled: Option<bool>,
+    agc_noise_gate_enabled: Option<bool>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    // Resolve AGC fields, preserving existing values when not provided.
+    let (resolved_agc_enabled, resolved_agc_noise_gate) = {
+        let config = state.app_config.lock().await;
+        (
+            agc_enabled.unwrap_or(config.audio.agc_enabled),
+            agc_noise_gate_enabled.unwrap_or(config.audio.agc_noise_gate_enabled),
+        )
+    };
+
     // Update local config
     {
         let mut config = state.app_config.lock().await;
@@ -57,12 +68,14 @@ pub async fn save_audio_config(
         config.audio.source_id = source_id.clone();
         config.audio.microphone_id = microphone_id.clone();
         config.audio.echo_cancellation = echo_cancellation;
+        config.audio.agc_enabled = resolved_agc_enabled;
+        config.audio.agc_noise_gate_enabled = resolved_agc_noise_gate;
 
         // Save to disk
         save_config_to_disk(&config)?;
     }
 
-    // Sync to RecordingManager
+    // Sync to RecordingManager (also hot-applies AGC via set_agc_config).
     let manager = get_recording_manager();
     let _ = manager
         .set_audio_config(omnirec_types::AudioConfig {
@@ -70,10 +83,15 @@ pub async fn save_audio_config(
             source_id,
             microphone_id,
             echo_cancellation,
+            agc_enabled: resolved_agc_enabled,
+            agc_noise_gate_enabled: resolved_agc_noise_gate,
         })
         .await;
 
-    tracing::info!("Saved audio config: enabled={}, aec={}", enabled, echo_cancellation);
+    tracing::info!(
+        "Saved audio config: enabled={}, aec={}, agc={}, agc_gate={}",
+        enabled, echo_cancellation, resolved_agc_enabled, resolved_agc_noise_gate
+    );
 
     Ok(())
 }
