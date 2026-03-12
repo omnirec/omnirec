@@ -187,6 +187,13 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     )?;
     let logs = MenuItem::with_id(app, menu_ids::LOGS, menu_labels::LOGS, true, None::<&str>)?;
     let about = MenuItem::with_id(app, menu_ids::ABOUT, menu_labels::ABOUT, true, None::<&str>)?;
+    let check_for_updates = MenuItem::with_id(
+        app,
+        menu_ids::CHECK_FOR_UPDATES,
+        menu_labels::CHECK_FOR_UPDATES,
+        true,
+        None::<&str>,
+    )?;
     let exit = MenuItem::with_id(app, menu_ids::EXIT, menu_labels::EXIT, true, None::<&str>)?;
 
     // Build menu with all items (Always on Top placed after Transcription, before Configuration)
@@ -200,6 +207,7 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             &configuration,
             &logs,
             &about,
+            &check_for_updates,
             &exit,
         ],
     )?;
@@ -308,6 +316,11 @@ pub fn handle_menu_event(app: &tauri::AppHandle, event: &tauri::menu::MenuEvent)
     } else if id == menu_ids::ABOUT {
         tracing::debug!("[Tray] About clicked - opening about window");
         super::open_about_window(app);
+    } else if id == menu_ids::CHECK_FOR_UPDATES {
+        tracing::debug!("[Tray] Check for Updates clicked");
+        super::open_about_window(app);
+        use tauri::Emitter;
+        let _ = app.emit("trigger-update-check", ());
     } else if id == menu_ids::EXIT {
         tracing::debug!("[Tray] Exit clicked, calling app.exit(0)...");
         app.exit(0);

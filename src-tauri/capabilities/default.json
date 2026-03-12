@@ -31,6 +31,8 @@
     "core:event:allow-emit",
     "core:event:allow-emit-to",
     "core:event:allow-listen",
-    "opener:default"
+    "opener:default",
+    "updater:default",
+    "process:allow-restart"
   ]
 }

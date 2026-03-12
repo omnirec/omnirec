@@ -1877,8 +1877,11 @@ async function openAboutWindow(): Promise<void> {
     shadow: true,
     resizable: false,
     maximizable: false,
-    width: 350,
-    height: 400,
+    minimizable: false,
+    skipTaskbar: true,
+    center: true,
+    width: 400,
+    height: 460,
   });
 
   await new Promise<void>((resolve, reject) => {

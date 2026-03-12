@@ -32,6 +32,7 @@ pub mod menu_ids {
     pub const CONFIGURATION: &str = "configuration";
     pub const LOGS: &str = "logs";
     pub const ABOUT: &str = "about";
+    pub const CHECK_FOR_UPDATES: &str = "check_for_updates";
     pub const EXIT: &str = "exit";
 }
 
@@ -44,6 +45,7 @@ pub mod menu_labels {
     pub const CONFIGURATION: &str = "Configuration";
     pub const LOGS: &str = "Logs";
     pub const ABOUT: &str = "About";
+    pub const CHECK_FOR_UPDATES: &str = "Check for Updates";
     pub const EXIT: &str = "Exit";
 }
 
@@ -131,11 +133,15 @@ pub fn open_about_window(app: &tauri::AppHandle) {
 
     match WebviewWindowBuilder::new(app, "about", WebviewUrl::App("src/about.html".into()))
         .title("About OmniRec")
-        .inner_size(350.0, 400.0)
+        .inner_size(400.0, 460.0)
         .resizable(false)
         .maximizable(false)
+        .minimizable(false)
         .decorations(false)
+        .transparent(false)
         .shadow(true)
+        .skip_taskbar(true)
+        .center()
         .build()
     {
         Ok(_) => tracing::debug!("[Tray] About window created"),
