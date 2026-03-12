@@ -504,6 +504,8 @@ pub async fn record(target: RecordTarget, json: bool, quiet: bool, verbose: bool
                 source_id,
                 microphone_id,
                 echo_cancellation: true,
+                agc_enabled: false,
+                agc_noise_gate_enabled: true,
             })
             .await
         {
