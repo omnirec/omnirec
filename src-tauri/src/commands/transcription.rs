@@ -164,14 +164,17 @@ pub async fn list_available_models() -> Result<Vec<ModelInfo>, String> {
     let mgr = ModelManager::new("OmniRec");
     let models: Vec<ModelInfo> = WhisperModel::all()
         .iter()
-        .map(|m| ModelInfo {
-            id: m.display_name().replace('.', "-"),
-            display_name: m.display_name().to_string(),
-            size_bytes: m.size_bytes(),
-            size_display: m.size_display().to_string(),
-            description: m.description().to_string(),
-            english_only: m.is_english_only(),
-            downloaded: mgr.is_available(m.to_vtx_model()),
+        .map(|m| {
+            let id = m.display_name().to_lowercase().replace(' ', "-");
+            ModelInfo {
+                id,
+                display_name: m.display_name().to_string(),
+                size_bytes: m.size_bytes(),
+                size_display: m.size_display().to_string(),
+                description: m.description().to_string(),
+                english_only: m.is_english_only(),
+                downloaded: mgr.is_available(m.to_vtx_model()),
+            }
         })
         .collect();
 

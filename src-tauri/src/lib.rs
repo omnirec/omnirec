@@ -648,13 +648,13 @@ pub fn run() {
             {
                 use tauri::Manager;
                 let app_state = app.state::<AppState>();
-                // Use a blocking read here since we're still in the synchronous setup closure.
-                // We call load_config() directly (same as setup_tray does) to avoid
-                // blocking on the async mutex during synchronous setup.
-                let always_on_top = {
-                    let cfg = config::load_config();
-                    cfg.always_on_top
-                };
+                // Use a blocking read from AppState to avoid redundant config load
+                let always_on_top = app_state
+                    .app_config
+                    .try_lock()
+                    .ok()
+                    .map(|g| g.always_on_top)
+                    .unwrap_or(false);
                 if always_on_top {
                     if let Some(window) = app.get_webview_window("main") {
                         if let Err(e) = window.set_always_on_top(true) {
@@ -664,7 +664,6 @@ pub fn run() {
                         }
                     }
                 }
-                let _ = app_state; // suppress unused warning
             }
 
             // ---- Initialize recording subsystem in-process ----
@@ -692,7 +691,13 @@ pub fn run() {
                 info!("[Setup] Linux capture backends initialized");
             }
 
-            // Initialize RecordingManager singleton
+            // Initialize RecordingManager singleton with the model from config
+            {
+                let app_state = app.state::<AppState>();
+                let config = app_state.app_config.clone();
+                let model = config.blocking_lock().transcription.model.to_vtx_model();
+                state::init_recording_manager(model);
+            }
             let _manager = state::get_recording_manager();
             info!("[Setup] RecordingManager initialized");
 

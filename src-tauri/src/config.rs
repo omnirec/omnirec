@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::fs;
 use std::path::PathBuf;
+use tracing::{debug, warn};
 
 /// Minimum log level for the tracing subscriber.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
@@ -150,27 +151,31 @@ impl Default for AudioConfig {
 /// Models come in two variants:
 /// - English-only (.en suffix): Optimized for English, faster and more accurate for English content
 /// - Multilingual: Support multiple languages but slightly less accurate for English
+///
+/// Sizes from <https://huggingface.co/ggerganov/whisper.cpp>.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum WhisperModel {
-    /// Tiny English-only model (75 MB)
+    /// ~75 MiB — fastest, English-only
     TinyEn,
-    /// Tiny multilingual model (75 MB)
+    /// ~75 MiB — fastest, multilingual
     Tiny,
-    /// Base English-only model (142 MB)
+    /// ~142 MiB — fast, English-only
     BaseEn,
-    /// Base multilingual model (142 MB)
+    /// ~142 MiB — fast, multilingual
     Base,
-    /// Small English-only model (466 MB)
+    /// ~466 MiB — good balance, English-only
     SmallEn,
-    /// Small multilingual model (466 MB)
+    /// ~466 MiB — good balance, multilingual
     Small,
-    /// Medium English-only model (1.5 GB) - default
+    /// ~1.5 GiB — high accuracy, English-only (default)
     #[default]
     MediumEn,
-    /// Medium multilingual model (1.5 GB)
+    /// ~1.5 GiB — high accuracy, multilingual
     Medium,
-    /// Large-v3 multilingual model (2.9 GB) - highest accuracy
+    /// ~1.5 GiB — fast large model, multilingual (distilled from large-v3)
+    LargeV3Turbo,
+    /// ~2.9 GiB — best accuracy, multilingual
     LargeV3,
 }
 
@@ -186,6 +191,7 @@ impl WhisperModel {
             Self::Small => "ggml-small.bin",
             Self::MediumEn => "ggml-medium.en.bin",
             Self::Medium => "ggml-medium.bin",
+            Self::LargeV3Turbo => "ggml-large-v3-turbo.bin",
             Self::LargeV3 => "ggml-large-v3.bin",
         }
     }
@@ -201,37 +207,38 @@ impl WhisperModel {
     /// Get the approximate download size in bytes
     pub fn size_bytes(&self) -> u64 {
         match self {
-            Self::TinyEn | Self::Tiny => 75 * 1024 * 1024, // 75 MB
-            Self::BaseEn | Self::Base => 142 * 1024 * 1024, // 142 MB
-            Self::SmallEn | Self::Small => 466 * 1024 * 1024, // 466 MB
-            Self::MediumEn | Self::Medium => 1536 * 1024 * 1024, // 1.5 GB
-            Self::LargeV3 => 2969 * 1024 * 1024,           // 2.9 GB
+            Self::TinyEn | Self::Tiny => 75 * 1024 * 1024, // 75 MiB
+            Self::BaseEn | Self::Base => 142 * 1024 * 1024, // 142 MiB
+            Self::SmallEn | Self::Small => 466 * 1024 * 1024, // 466 MiB
+            Self::MediumEn | Self::Medium | Self::LargeV3Turbo => 1536 * 1024 * 1024, // 1.5 GiB
+            Self::LargeV3 => 2970 * 1024 * 1024,           // 2.9 GiB
         }
     }
 
-    /// Get a human-readable size string (e.g., "1.5 GB")
+    /// Get a human-readable size string (e.g., "1.5 GiB")
     pub fn size_display(&self) -> &'static str {
         match self {
-            Self::TinyEn | Self::Tiny => "75 MB",
-            Self::BaseEn | Self::Base => "142 MB",
-            Self::SmallEn | Self::Small => "466 MB",
-            Self::MediumEn | Self::Medium => "1.5 GB",
-            Self::LargeV3 => "2.9 GB",
+            Self::TinyEn | Self::Tiny => "75 MiB",
+            Self::BaseEn | Self::Base => "142 MiB",
+            Self::SmallEn | Self::Small => "466 MiB",
+            Self::MediumEn | Self::Medium | Self::LargeV3Turbo => "1.5 GiB",
+            Self::LargeV3 => "2.9 GiB",
         }
     }
 
-    /// Get a human-readable display name
+    /// Get a human-readable display name (matches VTX Engine naming)
     pub fn display_name(&self) -> &'static str {
         match self {
-            Self::TinyEn => "tiny.en",
-            Self::Tiny => "tiny",
-            Self::BaseEn => "base.en",
-            Self::Base => "base",
-            Self::SmallEn => "small.en",
-            Self::Small => "small",
-            Self::MediumEn => "medium.en",
-            Self::Medium => "medium",
-            Self::LargeV3 => "large-v3",
+            Self::TinyEn => "Tiny En",
+            Self::Tiny => "Tiny",
+            Self::BaseEn => "Base En",
+            Self::Base => "Base",
+            Self::SmallEn => "Small En",
+            Self::Small => "Small",
+            Self::MediumEn => "Medium En",
+            Self::Medium => "Medium",
+            Self::LargeV3Turbo => "Large V3 Turbo",
+            Self::LargeV3 => "Large V3",
         }
     }
 
@@ -244,9 +251,10 @@ impl WhisperModel {
             Self::Base => "Fast, multilingual",
             Self::SmallEn => "Balanced, English only",
             Self::Small => "Balanced, multilingual",
-            Self::MediumEn => "Accurate, English only (recommended)",
-            Self::Medium => "Accurate, multilingual",
-            Self::LargeV3 => "Most accurate, multilingual",
+            Self::MediumEn => "High accuracy, English only (recommended)",
+            Self::Medium => "High accuracy, multilingual",
+            Self::LargeV3Turbo => "Fast large model, multilingual",
+            Self::LargeV3 => "Best accuracy, multilingual",
         }
     }
 
@@ -273,7 +281,7 @@ impl WhisperModel {
         std::fs::metadata(self.model_path()).ok().map(|m| m.len())
     }
 
-    /// Get all available models
+    /// Get all available models in ascending order of size
     pub fn all() -> &'static [WhisperModel] {
         &[
             Self::TinyEn,
@@ -284,6 +292,7 @@ impl WhisperModel {
             Self::Small,
             Self::MediumEn,
             Self::Medium,
+            Self::LargeV3Turbo,
             Self::LargeV3,
         ]
     }
@@ -299,22 +308,24 @@ impl WhisperModel {
             Self::Small => vtx_engine::WhisperModel::Small,
             Self::MediumEn => vtx_engine::WhisperModel::MediumEn,
             Self::Medium => vtx_engine::WhisperModel::Medium,
+            Self::LargeV3Turbo => vtx_engine::WhisperModel::LargeV3Turbo,
             Self::LargeV3 => vtx_engine::WhisperModel::LargeV3,
         }
     }
 
     /// Parse from string (display name format)
     pub fn from_str(s: &str) -> Option<Self> {
-        match s {
-            "tiny.en" | "tiny-en" => Some(Self::TinyEn),
+        match s.to_lowercase().as_str() {
+            "tiny.en" | "tiny-en" | "tiny en" => Some(Self::TinyEn),
             "tiny" => Some(Self::Tiny),
-            "base.en" | "base-en" => Some(Self::BaseEn),
+            "base.en" | "base-en" | "base en" => Some(Self::BaseEn),
             "base" => Some(Self::Base),
-            "small.en" | "small-en" => Some(Self::SmallEn),
+            "small.en" | "small-en" | "small en" => Some(Self::SmallEn),
             "small" => Some(Self::Small),
-            "medium.en" | "medium-en" => Some(Self::MediumEn),
+            "medium.en" | "medium-en" | "medium en" => Some(Self::MediumEn),
             "medium" => Some(Self::Medium),
-            "large-v3" => Some(Self::LargeV3),
+            "large-v3-turbo" | "large v3 turbo" => Some(Self::LargeV3Turbo),
+            "large-v3" | "large v3" => Some(Self::LargeV3),
             _ => None,
         }
     }
@@ -417,24 +428,24 @@ pub fn load_config() -> AppConfig {
     let config_path = match get_config_path() {
         Ok(path) => path,
         Err(e) => {
-            eprintln!("[Config] Failed to get config path: {}", e);
+            warn!("[Config] Failed to get config path: {}", e);
             return AppConfig::default();
         }
     };
 
     if !config_path.exists() {
-        eprintln!("[Config] No config file found, using defaults");
+        debug!("[Config] No config file found, using defaults");
         return AppConfig::default();
     }
 
     match fs::read_to_string(&config_path) {
         Ok(contents) => match serde_json::from_str::<AppConfig>(&contents) {
             Ok(config) => {
-                eprintln!("[Config] Loaded config from {:?}", config_path);
+                debug!("[Config] Loaded config from {:?}", config_path);
                 config
             }
             Err(e) => {
-                eprintln!(
+                warn!(
                     "[Config] Failed to parse config file: {}. Using defaults.",
                     e
                 );
@@ -442,7 +453,7 @@ pub fn load_config() -> AppConfig {
             }
         },
         Err(e) => {
-            eprintln!(
+            warn!(
                 "[Config] Failed to read config file: {}. Using defaults.",
                 e
             );
@@ -467,7 +478,7 @@ pub fn save_config(config: &AppConfig) -> Result<(), String> {
 
     fs::write(&config_path, json).map_err(|e| format!("Failed to write config file: {}", e))?;
 
-    eprintln!("[Config] Saved config to {:?}", config_path);
+    debug!("[Config] Saved config to {:?}", config_path);
     Ok(())
 }
 
@@ -688,13 +699,19 @@ mod tests {
     fn test_whisper_model_metadata() {
         let model = WhisperModel::MediumEn;
         assert_eq!(model.filename(), "ggml-medium.en.bin");
-        assert_eq!(model.display_name(), "medium.en");
-        assert_eq!(model.size_display(), "1.5 GB");
+        assert_eq!(model.display_name(), "Medium En");
+        assert_eq!(model.size_display(), "1.5 GiB");
         assert!(model.is_english_only());
 
         let model = WhisperModel::LargeV3;
         assert_eq!(model.filename(), "ggml-large-v3.bin");
-        assert_eq!(model.display_name(), "large-v3");
+        assert_eq!(model.display_name(), "Large V3");
+        assert!(!model.is_english_only());
+
+        let model = WhisperModel::LargeV3Turbo;
+        assert_eq!(model.filename(), "ggml-large-v3-turbo.bin");
+        assert_eq!(model.display_name(), "Large V3 Turbo");
+        assert_eq!(model.size_display(), "1.5 GiB");
         assert!(!model.is_english_only());
     }
 
@@ -709,8 +726,16 @@ mod tests {
             Some(WhisperModel::MediumEn)
         );
         assert_eq!(
+            WhisperModel::from_str("Medium En"),
+            Some(WhisperModel::MediumEn)
+        );
+        assert_eq!(
             WhisperModel::from_str("large-v3"),
             Some(WhisperModel::LargeV3)
+        );
+        assert_eq!(
+            WhisperModel::from_str("large-v3-turbo"),
+            Some(WhisperModel::LargeV3Turbo)
         );
         assert_eq!(WhisperModel::from_str("tiny"), Some(WhisperModel::Tiny));
         assert_eq!(WhisperModel::from_str("invalid"), None);
@@ -719,9 +744,10 @@ mod tests {
     #[test]
     fn test_whisper_model_all() {
         let all = WhisperModel::all();
-        assert_eq!(all.len(), 9);
+        assert_eq!(all.len(), 10);
         assert!(all.contains(&WhisperModel::TinyEn));
         assert!(all.contains(&WhisperModel::LargeV3));
+        assert!(all.contains(&WhisperModel::LargeV3Turbo));
     }
 
     #[test]

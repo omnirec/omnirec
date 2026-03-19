@@ -125,11 +125,11 @@ pub struct RecordingManager {
 }
 
 impl RecordingManager {
-    /// Create a new recording manager.
+    /// Create a new recording manager with the specified Whisper model.
     ///
     /// # Panics
     /// Panics if the vtx-engine fails to initialize (should not happen in normal use).
-    pub fn new() -> Self {
+    pub fn new(model: vtx_engine::WhisperModel) -> Self {
         let (event_tx, _) = broadcast::channel(100);
 
         // Build vtx-engine with the OmniRec long-form configuration.
@@ -145,6 +145,8 @@ impl RecordingManager {
                 .expect("Failed to build tokio runtime for engine init");
             rt.block_on(async {
                 let engine_config = EngineConfig {
+                    // Use the model passed from OmniRec config
+                    model,
                     // VAD thresholds tuned for OmniRec long-form recording
                     vad_voiced_threshold_db: -42.0,
                     vad_whisper_threshold_db: -52.0,
@@ -861,15 +863,30 @@ impl RecordingManager {
 
 impl Default for RecordingManager {
     fn default() -> Self {
-        Self::new()
+        Self::new(vtx_engine::WhisperModel::MediumEn)
     }
 }
 
 // Global singleton for the recording manager
 use std::sync::OnceLock;
 static RECORDING_MANAGER: OnceLock<RecordingManager> = OnceLock::new();
+static INIT_MODEL: OnceLock<vtx_engine::WhisperModel> = OnceLock::new();
+
+/// Initialize the recording manager with the specified Whisper model.
+///
+/// This must be called before `get_recording_manager()`. If not called,
+/// the manager will be initialized with `MediumEn` as the default.
+pub fn init_recording_manager(model: vtx_engine::WhisperModel) {
+    let _ = INIT_MODEL.set(model);
+}
 
 /// Get the global recording manager instance.
+///
+/// The manager is initialized on first call with the model set via
+/// `init_recording_manager()`, or `MediumEn` if not explicitly set.
 pub fn get_recording_manager() -> &'static RecordingManager {
-    RECORDING_MANAGER.get_or_init(RecordingManager::new)
+    RECORDING_MANAGER.get_or_init(|| {
+        let model = INIT_MODEL.get().copied().unwrap_or(vtx_engine::WhisperModel::MediumEn);
+        RecordingManager::new(model)
+    })
 }

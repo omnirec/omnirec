@@ -141,11 +141,11 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     // Track recording state
     let is_recording = Arc::new(AtomicBool::new(false));
 
-    // Load current always-on-top state from config
-    let initial_always_on_top = {
-        use crate::config::load_config;
-        load_config().always_on_top
-    };
+    // Get current always-on-top state from AppState (avoids redundant config load)
+    let initial_always_on_top = app
+        .try_state::<crate::AppState>()
+        .and_then(|s| s.app_config.try_lock().ok().map(|g| g.always_on_top))
+        .unwrap_or(false);
 
     // Create menu items
     // Note: macOS "Record Screen/Window" shows the main window (unlike Linux which starts portal)
