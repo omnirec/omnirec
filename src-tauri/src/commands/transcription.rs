@@ -380,46 +380,6 @@ pub async fn open_transcript_window(app: tauri::AppHandle) -> Result<(), String>
         WebviewUrl::App("src/transcript-view.html".into())
     };
 
-    let gap = 12.0_f64;
-
-    let scale = main_window.scale_factor().map_err(|e| e.to_string())?;
-
-    let main_pos = main_window.outer_position().unwrap_or_default();
-    let main_size = main_window.outer_size().unwrap_or_default();
-
-    let main_left = main_pos.x as f64 / scale;
-    let main_top = main_pos.y as f64 / scale;
-    let main_width = main_size.width as f64 / scale;
-    let main_height = main_size.height as f64 / scale;
-    let main_right = main_left + main_width;
-
-    let transcript_width = 360.0_f64;
-    let transcript_height = main_height;
-
-    let monitor = main_window
-        .current_monitor()
-        .map_err(|e| e.to_string())?
-        .ok_or("Could not determine current monitor")?;
-
-    let monitor_pos = monitor.position();
-    let monitor_size = monitor.size();
-
-    let screen_left = monitor_pos.x as f64 / scale;
-    let screen_right = screen_left + (monitor_size.width as f64 / scale);
-
-    let space_right = screen_right - main_right;
-    let space_left = main_left - screen_left;
-
-    let pos_x = if space_right >= transcript_width + gap {
-        main_right + gap
-    } else if space_left >= transcript_width + gap {
-        main_left - transcript_width - gap
-    } else {
-        main_right + gap
-    };
-
-    let pos_y = main_top;
-
     let transcript_window = WebviewWindowBuilder::new(&app, "transcript", url)
         .title("Transcript")
         .decorations(false)
@@ -427,22 +387,15 @@ pub async fn open_transcript_window(app: tauri::AppHandle) -> Result<(), String>
         .shadow(true)
         .resizable(true)
         .accept_first_mouse(true)
-        .inner_size(transcript_width, transcript_height)
+        .inner_size(450.0_f64, 400.0_f64)
         .min_inner_size(200.0, 200.0)
-        .position(pos_x, pos_y)
         .build()
         .map_err(|e| e.to_string())?;
 
     let _ = transcript_window.set_focus();
     let _ = main_window.set_focus();
 
-    tracing::info!(
-        "Opened transcript window at ({}, {}), space_right={}, space_left={}",
-        pos_x,
-        pos_y,
-        space_right,
-        space_left
-    );
+    tracing::info!("Opened transcript window (450x400)");
 
     // Give the new window a moment to finish loading, then push the current
     // recording state so its listener starts polling immediately.
