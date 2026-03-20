@@ -29,7 +29,7 @@ pub use omnirec_types::{
 pub use error::{CaptureError, EnumerationError};
 
 // Re-export runtime types (service-internal, not for IPC)
-pub use types::{AudioReceiver, AudioSample, CapturedFrame, FrameReceiver, StopHandle};
+pub use types::{CapturedFrame, FrameReceiver, StopHandle};
 
 // Re-export thumbnail utilities (used by platform implementations)
 #[allow(unused_imports)]
@@ -98,19 +98,6 @@ pub trait HighlightProvider: Send + Sync {
 pub trait AudioEnumerator: Send + Sync {
     /// List all available audio sources (inputs and output monitors).
     fn list_audio_sources(&self) -> Result<Vec<AudioSource>, EnumerationError>;
-}
-
-/// Trait for audio capture operations.
-#[allow(dead_code)]
-pub trait AudioCaptureBackend: Send + Sync {
-    /// Start capturing audio from the specified source.
-    ///
-    /// Returns an audio sample receiver and stop handle.
-    /// Audio is captured as 48kHz stereo f32 samples.
-    fn start_audio_capture(
-        &self,
-        source_id: &str,
-    ) -> Result<(AudioReceiver, StopHandle), CaptureError>;
 }
 
 /// Result of a thumbnail capture operation.

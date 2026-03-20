@@ -19,5 +19,5 @@ resolver = "2"
 # builds must always resolve vtx-engine from crates.io using the pinned version
 # in src-tauri/Cargo.toml and src-cli/Cargo.toml.
 # =============================================================================
-# [patch.crates-io]
-# vtx-engine = { path = "../../vtx-engine/crates/vtx-engine" }
+[patch.crates-io]
+vtx-engine = { path = "../../vtx-engine/crates/vtx-engine" }

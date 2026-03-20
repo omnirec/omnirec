@@ -99,9 +99,6 @@ libc = "0.2"
 # Screen capture using Windows.Graphics.Capture API
 windows-capture = "1"
 
-# Acoustic Echo Cancellation
-aec3 = "0.1"
-
 # Windows core types (BOOL, etc.)
 windows-core = "0.61"
 
@@ -114,11 +111,11 @@ windows = { version = "0.61", features = [
     "Win32_System_ProcessStatus",
     "Win32_System_LibraryLoader",
     "Win32_System_Pipes",
+    "Win32_System_IO",
+    "Win32_Storage_FileSystem",
     "Win32_System_Memory",
     "Win32_Graphics_Gdi",
     "Win32_Media_Audio",
-    "Win32_Media_KernelStreaming",
-    "Win32_Media_Multimedia",
     "Win32_System_Com",
     "Win32_System_Com_StructuredStorage",
     "Win32_Devices_Properties",
@@ -132,9 +129,6 @@ windows = { version = "0.61", features = [
 [target.'cfg(target_os = "linux")'.dependencies]
 # Portal client for screencast requests
 ashpd = { version = "0.9", default-features = false, features = ["tokio"] }
-
-# Acoustic Echo Cancellation
-aec3 = "0.1"
 
 # Hyprland IPC for window/monitor enumeration and region selector
 hyprland = "0.4.0-beta.3"

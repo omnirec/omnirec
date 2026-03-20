@@ -18,9 +18,9 @@ pub mod screencopy;
 pub mod thumbnail;
 
 use crate::capture::error::{CaptureError, EnumerationError};
-use crate::capture::types::{AudioReceiver, FrameReceiver, StopHandle};
+use crate::capture::types::{FrameReceiver, StopHandle};
 use crate::capture::{
-    AudioCaptureBackend, AudioEnumerator, AudioSource, CaptureBackend, CaptureRegion,
+    AudioEnumerator, AudioSource, CaptureBackend, CaptureRegion,
     HighlightProvider, MonitorEnumerator, MonitorInfo, ThumbnailCapture, ThumbnailResult,
     WindowEnumerator, WindowInfo,
 };
@@ -568,33 +568,8 @@ impl AudioEnumerator for LinuxBackend {
     }
 }
 
-impl AudioCaptureBackend for LinuxBackend {
-    fn start_audio_capture(
-        &self,
-        source_id: &str,
-    ) -> Result<(AudioReceiver, StopHandle), CaptureError> {
-        audio::start_audio_capture(source_id)
-    }
-}
-
-// Extension methods for Linux-specific audio capture features
+// Extension methods for Linux-specific capture features
 impl LinuxBackend {
-    /// Start audio capture from up to two sources with optional AEC.
-    ///
-    /// - `system_source_id`: System audio (output monitor) source ID, or None
-    /// - `mic_source_id`: Microphone source ID, or None
-    /// - `aec_enabled`: Whether to apply acoustic echo cancellation
-    ///
-    /// Returns an audio sample receiver and stop handle.
-    pub fn start_audio_capture_dual(
-        &self,
-        system_source_id: Option<&str>,
-        mic_source_id: Option<&str>,
-        aec_enabled: bool,
-    ) -> Result<(AudioReceiver, StopHandle), CaptureError> {
-        audio::start_audio_capture_dual(system_source_id, mic_source_id, aec_enabled)
-    }
-
     /// Start portal-based capture with native picker (for GNOME).
     ///
     /// This method invokes the xdg-desktop-portal screencast flow without

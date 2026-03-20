@@ -1,39 +1,12 @@
-<!-- OPENSPEC:START -->
-# OpenSpec Instructions
-
-These instructions are for AI assistants working in this project.
-
-Always open `@/openspec/AGENTS.md` when the request:
-- Mentions planning or proposals (words like proposal, spec, change, plan)
-- Introduces new capabilities, breaking changes, architecture shifts, or big performance/security work
-- Sounds ambiguous and you need the authoritative spec before coding
-
-Use `@/openspec/AGENTS.md` to learn:
-- How to create and apply change proposals
-- Spec format and conventions
-- Project structure and guidelines
-
-Keep this managed block so 'openspec update' can refresh the instructions.
-
-<!-- OPENSPEC:END -->
-
 # OmniRec - AI Assistant Guidelines
 
 ## Project Overview
 
-This is a Tauri v2 desktop application for high-performance screen/window/region recording. The app prioritizes performance, privacy (no cloud), and ease of use.
+This is a Tauri v2 desktop application for high-performance screen/window/region recording with support for voice transcription.
 
 OmniRec uses VTX Engine - A voice processing and transcription engine written in Rust.
 - The source code to VTX Engine is available in ~/ws/vtx-engine.
-- Do not make changes to VTX Engine. When changes are necessary document what is needed only.
-
-## Key Directories
-
-- `src/` - Frontend TypeScript, HTML, CSS
-- `src-tauri/src/` - Rust backend code
-- `src-tauri/Cargo.toml` - Rust dependencies
-- `src-tauri/tauri.conf.json` - Tauri app configuration
-- `openspec/` - Project specifications and proposals
+- Do not make changes to VTX Engine unless explicitly directed. When changes are necessary document what is needed only.
 
 ## Development Commands
 
@@ -51,20 +24,6 @@ pnpm tauri build       # Production build (rarely needed)
 ```
 
 Never run `pnpm tauri dev` - user will run this manually.
-
-## Build Dependencies (Linux)
-
-On Linux, the following system packages are required for building:
-
-```bash
-# Arch Linux
-sudo pacman -S webkit2gtk-4.1 pipewire libpipewire clang qt6-base libappindicator-gtk3
-
-# Ubuntu/Debian
-sudo apt install libwebkit2gtk-4.1-dev libappindicator3-dev libpipewire-0.3-dev libspa-0.2-dev libclang-dev qt6-base-dev
-```
-
-The `libappindicator` library is required for system tray icon support (used in GNOME mode).
 
 ## Linting Requirements
 
@@ -93,6 +52,12 @@ The CI workflow enforces these checks on all platforms. Code that passes locally
 
 - Use conditional compilation (`#[cfg(...)]`) for platform-specific Rust code
 - Abstract platform differences behind common interfaces
+
+## Debugging
+
+### Logs
+
+- Logs are writen to ~/AppData/Local/omnirec/data/logs/
 
 ## Documentation and Notes
 

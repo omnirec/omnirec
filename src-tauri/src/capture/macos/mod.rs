@@ -13,11 +13,10 @@ pub mod thumbnail;
 pub mod window_list;
 
 use crate::capture::error::{CaptureError, EnumerationError};
-use crate::capture::types::{AudioReceiver, CapturedFrame, FrameReceiver, StopHandle};
+use crate::capture::types::{CapturedFrame, FrameReceiver, StopHandle};
 use crate::capture::{
-    AudioCaptureBackend, AudioEnumerator, AudioSource, CaptureBackend, CaptureRegion,
-    HighlightProvider, MonitorEnumerator, MonitorInfo, ThumbnailCapture, ThumbnailResult,
-    WindowEnumerator, WindowInfo,
+    AudioEnumerator, AudioSource, CaptureBackend, CaptureRegion, HighlightProvider,
+    MonitorEnumerator, MonitorInfo, ThumbnailCapture, ThumbnailResult, WindowEnumerator, WindowInfo,
 };
 use std::sync::atomic::Ordering;
 use tokio::sync::mpsc;
@@ -312,39 +311,6 @@ impl ThumbnailCapture for MacOSBackend {
 impl AudioEnumerator for MacOSBackend {
     fn list_audio_sources(&self) -> Result<Vec<AudioSource>, EnumerationError> {
         audio::list_audio_sources()
-    }
-}
-
-impl AudioCaptureBackend for MacOSBackend {
-    fn start_audio_capture(
-        &self,
-        source_id: &str,
-    ) -> Result<(AudioReceiver, StopHandle), CaptureError> {
-        audio::start_audio_capture(source_id)
-    }
-}
-
-// Extension methods for cross-platform API compatibility
-impl MacOSBackend {
-    /// Start audio capture from up to two sources with optional AEC.
-    ///
-    /// Note: Dual-source mixing with AEC is currently only implemented on Linux.
-    /// On macOS, this falls back to capturing only the system audio source.
-    pub fn start_audio_capture_dual(
-        &self,
-        system_source_id: Option<&str>,
-        _mic_source_id: Option<&str>,
-        _aec_enabled: bool,
-    ) -> Result<(AudioReceiver, StopHandle), CaptureError> {
-        // TODO: Implement dual-source mixing with AEC on macOS
-        // For now, just capture the system audio source
-        if let Some(source_id) = system_source_id {
-            audio::start_audio_capture(source_id)
-        } else {
-            Err(CaptureError::AudioError(
-                "No audio source specified".to_string(),
-            ))
-        }
     }
 }
 

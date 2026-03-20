@@ -8,13 +8,8 @@
 //! - Elapsed time tracking
 //! - Event broadcasting to subscribed clients
 
-use crate::capture::{
-    AudioReceiver, CaptureBackend, CaptureRegion, FrameReceiver, StopHandle,
-};
-use crate::encoder::{
-    encode_frames, encode_frames_with_audio, encode_frames_with_audio_and_transcription,
-    AudioEncoderConfig,
-};
+use crate::capture::{CaptureBackend, CaptureRegion, FrameReceiver, StopHandle};
+use crate::encoder::encode_frames;
 use omnirec_types::{
     AudioConfig, OutputFormat, RecordingState, TranscriptionConfig, TranscriptionSegment,
     TranscriptionStatus,
@@ -102,7 +97,6 @@ impl TranscriptWriter {
 pub struct RecordingManager {
     state: RwLock<RecordingState>,
     stop_flag: Mutex<Option<StopHandle>>,
-    audio_stop_flag: Mutex<Option<StopHandle>>,
     recording_start: Mutex<Option<Instant>>,
     encoding_task: Mutex<Option<tokio::task::JoinHandle<Result<PathBuf, String>>>>,
     output_format: RwLock<OutputFormat>,
@@ -165,6 +159,7 @@ impl RecordingManager {
                 EngineBuilder::from_config(engine_config)
                     .app_name("OmniRec")
                     .without_visualization()
+                    .with_raw_audio_streaming()
                     .build()
                     .await
                     .expect("Failed to initialize vtx-engine")
@@ -175,7 +170,6 @@ impl RecordingManager {
         Self {
             state: RwLock::new(RecordingState::Idle),
             stop_flag: Mutex::new(None),
-            audio_stop_flag: Mutex::new(None),
             recording_start: Mutex::new(None),
             encoding_task: Mutex::new(None),
             output_format: RwLock::new(OutputFormat::default()),
@@ -404,6 +398,11 @@ impl RecordingManager {
     }
 
     /// Common encoding startup logic.
+    ///
+    /// When audio is enabled, vtx-engine's `start_capture()` is used as the sole
+    /// audio source. The engine's broadcast channel delivers `RawAudioData` events
+    /// to the encoding task, which writes them to a named pipe for FFmpeg to mux
+    /// in real-time.
     async fn start_encoding(
         &self,
         frame_rx: FrameReceiver,
@@ -420,8 +419,6 @@ impl RecordingManager {
 
         // Get transcription config
         let transcription_cfg = self.get_transcription_config().await;
-        // Transcription is enabled when configured and we have some audio source.
-        // vtx-engine captures its own audio stream independently of FFmpeg.
         let transcription_enabled = transcription_cfg.enabled && audio_enabled;
 
         tracing::debug!(
@@ -439,76 +436,72 @@ impl RecordingManager {
             *flag = Some(stop_flag.clone());
         }
 
-        // Start encoding task (with or without audio)
+        // Start encoding task
         let encoding_handle = if audio_enabled {
             info!(
-                "Starting recording with audio - system: {:?}, mic: {:?}, AEC: {}, transcription: {}",
-                audio_cfg.source_id, audio_cfg.microphone_id, audio_cfg.echo_cancellation, transcription_enabled
+                "Starting recording with audio - system: {:?}, mic: {:?}, transcription: {}",
+                audio_cfg.source_id, audio_cfg.microphone_id, transcription_enabled
             );
 
-            match self
-                .start_audio_capture_dual(
-                    audio_cfg.source_id.as_deref(),
-                    audio_cfg.microphone_id.as_deref(),
-                    audio_cfg.echo_cancellation,
-                )
-                .await
-            {
-                Ok((audio_rx, audio_stop)) => {
-                    {
-                        let mut flag = self.audio_stop_flag.lock().await;
-                        *flag = Some(audio_stop);
-                    }
-
-                    let audio_encoder_config = AudioEncoderConfig::default();
-
-                    if transcription_enabled {
-                        // Generate output path upfront so the transcript can use the same base name
-                        let video_output_path = match crate::encoder::generate_output_path() {
-                            Ok(path) => path,
-                            Err(e) => {
-                                error!("Failed to generate output path: {}", e);
-                                return Err(e);
-                            }
-                        };
-                        tracing::debug!("[Transcription] Video output path: {:?}", video_output_path);
-
-                        // Determine the device ID to pass to vtx-engine.
-                        // Prefer the microphone device; fall back to system audio source.
-                        let mic_device_id = audio_cfg.microphone_id.clone()
-                            .or_else(|| audio_cfg.source_id.clone());
-
-                        // Start vtx-engine capture and recording session.
-                        self.start_engine_recording(mic_device_id, video_output_path.clone()).await;
-
-                        // Use the existing encoder that supports a pre-generated output path.
-                        // No transcription channel needed — vtx-engine handles transcription.
-                        tokio::spawn(encode_frames_with_audio_and_transcription(
-                            frame_rx,
-                            audio_rx,
-                            stop_flag.clone(),
-                            audio_encoder_config,
-                            None, // No transcription channel; vtx-engine captures independently
-                            Some(video_output_path),
-                        ))
-                    } else {
-                        tracing::debug!("[Transcription] Transcription is DISABLED");
-                        tokio::spawn(encode_frames_with_audio(
-                            frame_rx,
-                            audio_rx,
-                            stop_flag.clone(),
-                            audio_encoder_config,
-                        ))
-                    }
-                }
+            // Generate output path upfront so the transcript can use the same base name
+            let video_output_path = match crate::encoder::generate_output_path() {
+                Ok(path) => path,
                 Err(e) => {
-                    warn!("Audio capture failed, recording video only: {}", e);
-                    tokio::spawn(encode_frames(frame_rx, stop_flag.clone()))
+                    error!("Failed to generate output path: {}", e);
+                    return Err(e);
                 }
+            };
+
+            // Determine device IDs for vtx-engine capture.
+            //
+            // vtx-engine's AudioMixer routes samples by loopback flag:
+            //   - source1 (mic/input) → capture_buffer → AEC processing → output
+            //   - source2 (system/loopback) → render_buffer (AEC reference) + mix
+            //
+            // With a single source, AudioMixer sends samples directly to output.
+            // Passing the same loopback device as both sources would cause both
+            // streams to be classified as render, starving the capture buffer and
+            // producing no output audio.
+            let mic_device_id = audio_cfg.microphone_id.clone();
+            let system_device_id = audio_cfg.source_id.clone();
+
+            // Start vtx-engine audio capture. This is the sole audio source for
+            // both recording (via RawAudioData events) and transcription.
+            if let Err(e) = self.engine.start_capture(mic_device_id, system_device_id).await {
+                warn!("vtx-engine audio capture failed, recording video only: {}", e);
+                return self.start_video_only(frame_rx, stop_flag).await;
             }
+
+            // Subscribe to engine events for the encoding task (audio data)
+            let audio_rx = self.engine.subscribe();
+
+            // Start transcription if enabled
+            if transcription_enabled {
+                self.start_engine_recording(video_output_path.clone()).await;
+            }
+
+            // Spawn the encoding task on a blocking thread.
+            // encode_frames performs heavy I/O (writing ~16MB video frames to
+            // FFmpeg's stdin, writing audio to a named pipe, waiting for FFmpeg
+            // to exit) and must not run on the async runtime.
+            tokio::task::spawn_blocking(move || {
+                encode_frames(
+                    frame_rx,
+                    Some(audio_rx),
+                    stop_flag.clone(),
+                    Some(video_output_path),
+                )
+            })
         } else {
             info!("Starting video-only recording");
-            tokio::spawn(encode_frames(frame_rx, stop_flag.clone()))
+            tokio::task::spawn_blocking(move || {
+                encode_frames(
+                    frame_rx,
+                    None,
+                    stop_flag.clone(),
+                    None,
+                )
+            })
         };
 
         {
@@ -532,20 +525,44 @@ impl RecordingManager {
         Ok(())
     }
 
-    /// Start vtx-engine audio capture and manual recording session.
+    /// Start video-only recording (fallback when audio capture fails).
+    async fn start_video_only(
+        &self,
+        frame_rx: FrameReceiver,
+        stop_flag: StopHandle,
+    ) -> Result<(), String> {
+        let encoding_handle = tokio::task::spawn_blocking(move || {
+            encode_frames(
+                frame_rx,
+                None,
+                stop_flag.clone(),
+                None,
+            )
+        });
+
+        {
+            let mut task = self.encoding_task.lock().await;
+            *task = Some(encoding_handle);
+        }
+
+        {
+            let mut start = self.recording_start.lock().await;
+            *start = Some(Instant::now());
+        }
+
+        self.set_state(RecordingState::Recording).await;
+        self.start_elapsed_broadcast().await;
+
+        info!("Recording started (video only, audio capture failed)");
+        Ok(())
+    }
+
+    /// Start vtx-engine transcription recording session.
     ///
-    /// # Platform notes (tasks 6.1–6.3)
-    /// On Windows (WASAPI), macOS (CoreAudio), and Linux (PipeWire), opening a
-    /// second concurrent capture session on the same device alongside FFmpeg's
-    /// encoding pipeline is supported — each session receives its own independent
-    /// audio stream from the OS audio subsystem. vtx-engine's native capture
-    /// backend is therefore used directly here (`start_capture` + `start_recording`)
-    /// rather than feeding OmniRec's resampled pipeline through
-    /// `transcribe_audio_stream`. This avoids the need for OmniRec to resample
-    /// to 16 kHz and route samples into the engine.
+    /// vtx-engine audio capture must already be started before calling this.
+    /// This sets up VAD streaming mode and spawns the transcript writer task.
     async fn start_engine_recording(
         &self,
-        mic_device_id: Option<String>,
         video_output_path: PathBuf,
     ) {
         let engine = self.engine.clone();
@@ -553,31 +570,21 @@ impl RecordingManager {
         let segments_storage = self.transcription_segments.clone();
         let session_start = std::time::Instant::now();
 
-        // Subscribe to engine events BEFORE starting capture so we don't miss any events.
+        // Subscribe to engine events BEFORE starting recording so we don't miss any events.
         let mut engine_rx = engine.subscribe();
 
-        // Start vtx-engine's audio capture on the selected device.
-        if let Err(e) = engine.start_capture(mic_device_id, None).await {
-            error!("[Transcription] Engine start_capture failed: {}", e);
-            return;
-        }
-
         // Switch to VAD/auto mode so speech segments are submitted for transcription
-        // in real time as pauses are detected, rather than accumulating the entire
-        // recording and submitting it as a single chunk on stop.
+        // in real time as pauses are detected.
         engine.set_ptt_mode(false);
 
-        // Begin the recording session. In non-PTT mode the audio loop runs VAD
-        // segmentation continuously; the manual buffer is still written so the
-        // full session WAV is saved, but stop_recording() will finalize any
-        // in-progress segment rather than re-submitting the whole buffer.
+        // Begin the recording session.
         engine.start_recording();
         info!("[Transcription] vtx-engine recording started (VAD streaming mode)");
 
         // Derive transcript path from the video output path.
         let transcript_path = TranscriptWriter::transcript_path(&video_output_path);
 
-        // Spawn the engine event subscriber task (tasks 7.1–7.5).
+        // Spawn the engine event subscriber task.
         let handle = tokio::spawn(async move {
             // Create the transcript file.
             let mut writer = match TranscriptWriter::new(&transcript_path) {
@@ -590,16 +597,12 @@ impl RecordingManager {
 
             loop {
                 match engine_rx.recv().await {
-                    // VAD streaming mode: each speech segment is delivered via
-                    // TranscriptionComplete from the queue worker callback.
                     Ok(EngineEvent::TranscriptionComplete(result)) => {
                         let text = result.text.trim().to_string();
                         if text.is_empty() {
                             continue;
                         }
 
-                        // Use timestamp_offset_ms from the result if available,
-                        // otherwise derive from session elapsed time.
                         let offset_ms = result.timestamp_offset_ms
                             .unwrap_or_else(|| session_start.elapsed().as_millis() as u64);
 
@@ -625,8 +628,6 @@ impl RecordingManager {
                             w.append_segment(offset_ms, &text);
                         }
                     }
-                    // transcribe_audio_file / transcribe_audio_stream path (not used in
-                    // live recording, but handle for completeness).
                     Ok(EngineEvent::TranscriptionSegment(seg)) => {
                         tracing::debug!(
                             "[Transcription] Segment (file/stream): offset={}ms, text={}",
@@ -649,17 +650,16 @@ impl RecordingManager {
                     }
                     Ok(EngineEvent::RecordingStopped { duration_ms }) => {
                         info!("[Transcription] Engine recording stopped ({}ms)", duration_ms);
-                        // Do NOT break here — wait for TranscriptionSegment events which may
-                        // arrive after RecordingStopped (transcription is async).
                     }
                     Ok(EngineEvent::CaptureStateChanged { capturing: false, .. }) => {
-                        // Capture has fully stopped. All pending transcription segments have
-                        // been emitted before this event.
                         tracing::debug!("[Transcription] Capture stopped, exiting event loop");
                         break;
                     }
+                    Ok(EngineEvent::RawAudioData(_)) | Ok(EngineEvent::AudioData(_)) => {
+                        // Audio data events are handled by the encoding task, not here.
+                    }
                     Ok(_) => {
-                        // Other events (RecordingStarted, SpeechStarted, etc.) — no action needed.
+                        // Other events (RecordingStarted, SpeechStarted, etc.)
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                         warn!("[Transcription] Event receiver lagged: dropped {} events", n);
@@ -676,19 +676,6 @@ impl RecordingManager {
 
         let mut task = self.engine_task.lock().await;
         *task = Some(handle);
-    }
-
-    /// Start audio capture from up to two sources with optional AEC.
-    async fn start_audio_capture_dual(
-        &self,
-        system_source_id: Option<&str>,
-        mic_source_id: Option<&str>,
-        aec_enabled: bool,
-    ) -> Result<(AudioReceiver, StopHandle), String> {
-        let backend = crate::capture::get_backend();
-        backend
-            .start_audio_capture_dual(system_source_id, mic_source_id, aec_enabled)
-            .map_err(|e| e.to_string())
     }
 
     /// Start broadcasting elapsed time updates.
@@ -735,15 +722,9 @@ impl RecordingManager {
             }
         }
 
-        // Signal stop flags (video and FFmpeg audio)
+        // Signal video stop flag
         {
             let flag = self.stop_flag.lock().await;
-            if let Some(ref stop_flag) = *flag {
-                stop_flag.store(true, Ordering::Relaxed);
-            }
-        }
-        {
-            let flag = self.audio_stop_flag.lock().await;
             if let Some(ref stop_flag) = *flag {
                 stop_flag.store(true, Ordering::Relaxed);
             }
@@ -756,7 +737,8 @@ impl RecordingManager {
             info!("[Transcription] Engine stop_recording() called");
         }
 
-        // Wait for video/audio encoding to complete
+        // Wait for encoding to complete.
+        // The encoding task closes the audio pipe and finalizes FFmpeg.
         let source_path = {
             let mut task = self.encoding_task.lock().await;
             if let Some(handle) = task.take() {
@@ -838,10 +820,6 @@ impl RecordingManager {
 
         {
             let mut flag = self.stop_flag.lock().await;
-            *flag = None;
-        }
-        {
-            let mut flag = self.audio_stop_flag.lock().await;
             *flag = None;
         }
         {

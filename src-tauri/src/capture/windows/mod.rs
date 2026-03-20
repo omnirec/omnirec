@@ -9,9 +9,9 @@ pub mod thumbnail;
 mod window_list;
 
 use crate::capture::error::{CaptureError, EnumerationError};
-use crate::capture::types::{AudioReceiver, FrameReceiver, StopHandle};
+use crate::capture::types::{FrameReceiver, StopHandle};
 use crate::capture::{
-    AudioCaptureBackend, AudioEnumerator, AudioSource, CaptureBackend, CaptureRegion,
+    AudioEnumerator, AudioSource, CaptureBackend, CaptureRegion,
     HighlightProvider, MonitorEnumerator, MonitorInfo, ThumbnailCapture, ThumbnailResult,
     WindowEnumerator, WindowInfo,
 };
@@ -111,44 +111,6 @@ impl ThumbnailCapture for WindowsBackend {
 impl AudioEnumerator for WindowsBackend {
     fn list_audio_sources(&self) -> Result<Vec<AudioSource>, EnumerationError> {
         audio::list_audio_sources()
-    }
-}
-
-impl AudioCaptureBackend for WindowsBackend {
-    fn start_audio_capture(
-        &self,
-        source_id: &str,
-    ) -> Result<(AudioReceiver, StopHandle), CaptureError> {
-        audio::start_audio_capture(source_id)
-    }
-}
-
-// Extension methods for cross-platform API compatibility
-impl WindowsBackend {
-    /// Start audio capture from up to two sources with optional AEC.
-    ///
-    /// Supports:
-    /// - System audio only (loopback capture)
-    /// - Microphone only (direct capture)
-    /// - Both sources with mixing and optional acoustic echo cancellation (AEC)
-    pub fn start_audio_capture_dual(
-        &self,
-        system_source_id: Option<&str>,
-        mic_source_id: Option<&str>,
-        aec_enabled: bool,
-    ) -> Result<(AudioReceiver, StopHandle), CaptureError> {
-        // If only one source is specified, use the simpler single-source capture
-        match (system_source_id, mic_source_id) {
-            (Some(sys_id), None) => audio::start_audio_capture(sys_id),
-            (None, Some(mic_id)) => audio::start_audio_capture(mic_id),
-            (Some(_), Some(_)) => {
-                // Both sources - use dual capture with mixing
-                audio::start_audio_capture_dual(system_source_id, mic_source_id, aec_enabled)
-            }
-            (None, None) => Err(CaptureError::AudioError(
-                "No audio source specified".to_string(),
-            )),
-        }
     }
 }
 

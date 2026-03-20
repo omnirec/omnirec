@@ -3310,7 +3310,6 @@ dependencies = [
 name = "omnirec"
 version = "0.1.24"
 dependencies = [
- "aec3",
  "ashpd",
  "base64 0.22.1",
  "block2 0.6.2",
@@ -6123,8 +6122,6 @@ dependencies = [
 [[package]]
 name = "vtx-engine"
 version = "0.2.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4b90556182c4a360b52ccc69f50def1e83c16d40c5e544a34edfcaf6be932a24"
 dependencies = [
  "aec3",
  "block2 0.5.1",
