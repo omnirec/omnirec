@@ -229,7 +229,6 @@ impl VideoEncoder {
 
         command
             .args(["-pix_fmt", "yuv420p"]) // Compatible pixel format
-            .args(["-movflags", "+faststart"]) // Web-optimized MP4
             .args(["-y"]) // Overwrite output
             .arg(self.output_path.to_string_lossy().to_string());
 
@@ -512,7 +511,6 @@ pub fn mux_audio_video(
         // Use shortest stream duration (in case of timing mismatch)
         .args(["-shortest"])
         // Output settings
-        .args(["-movflags", "+faststart"])
         .args(["-y"])
         .arg(output_path.to_string_lossy().to_string());
 
