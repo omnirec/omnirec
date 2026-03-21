@@ -124,7 +124,10 @@ impl StreamOutput for FrameOutputHandler {
         if !LOGGED.swap(true, Ordering::Relaxed) {
             tracing::debug!(
                 "[macOS] Frame info: {}x{}, bytes_per_row={}, expected={}",
-                width, height, bytes_per_row, expected_bytes_per_row
+                width,
+                height,
+                bytes_per_row,
+                expected_bytes_per_row
             );
         }
 
@@ -152,6 +155,7 @@ impl StreamOutput for FrameOutputHandler {
             width,
             height,
             data,
+            captured_at: std::time::SystemTime::now(),
         };
 
         // Unlock the buffer
@@ -172,7 +176,9 @@ pub fn start_display_capture(
 ) -> Result<(FrameReceiver, StopHandle), String> {
     tracing::debug!(
         "[macOS] Starting display capture for display {} ({}x{})",
-        display_id, width, height
+        display_id,
+        width,
+        height
     );
 
     // Get shareable content (this requires screen recording permission)

@@ -357,6 +357,7 @@ fn crop_frame(
         width,
         height,
         data: cropped_data,
+        captured_at: frame.captured_at,
     })
 }
 
@@ -388,6 +389,7 @@ mod tests {
             width: 10,
             height: 10,
             data: vec![0u8; 400],
+            captured_at: std::time::SystemTime::now(),
         };
 
         // Crop to 5x5 at (2,2)
@@ -406,6 +408,7 @@ mod tests {
             width: 10,
             height: 10,
             data: vec![0u8; 400],
+            captured_at: std::time::SystemTime::now(),
         };
 
         // Try to crop beyond bounds

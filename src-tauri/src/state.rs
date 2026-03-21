@@ -472,6 +472,13 @@ impl RecordingManager {
                 return self.start_video_only(frame_rx, stop_flag).await;
             }
 
+            // Capture the wall-clock time when audio capture started.
+            // vtx-engine's `sample_offset` in RawAudioData events counts
+            // from zero at this moment.  The encoder uses this to place
+            // audio on the same absolute timeline as video frames (which
+            // carry their own SystemTime timestamps from the capture callback).
+            let audio_capture_start = std::time::SystemTime::now();
+
             // Subscribe to engine events for the encoding task (audio data)
             let audio_rx = self.engine.subscribe();
 
@@ -490,6 +497,7 @@ impl RecordingManager {
                     Some(audio_rx),
                     stop_flag.clone(),
                     Some(video_output_path),
+                    Some(audio_capture_start),
                 )
             })
         } else {
@@ -499,6 +507,7 @@ impl RecordingManager {
                     frame_rx,
                     None,
                     stop_flag.clone(),
+                    None,
                     None,
                 )
             })
@@ -536,6 +545,7 @@ impl RecordingManager {
                 frame_rx,
                 None,
                 stop_flag.clone(),
+                None,
                 None,
             )
         });

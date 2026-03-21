@@ -19,6 +19,7 @@ use std::path::PathBuf;
 use std::process::{ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::{Duration, Instant, SystemTime};
 use tokio::sync::{broadcast, mpsc};
 use vtx_engine::EngineEvent;
 
@@ -116,8 +117,10 @@ pub struct VideoEncoder {
     video_stdin: Option<ChildStdin>,
     child: Option<std::process::Child>,
     output_path: PathBuf,
-    width: u32,
-    height: u32,
+    /// Encoder width (even-aligned).
+    pub width: u32,
+    /// Encoder height (even-aligned).
+    pub height: u32,
 }
 
 impl VideoEncoder {
@@ -305,6 +308,15 @@ impl VideoEncoder {
         Ok(())
     }
 
+    /// Take ownership of the FFmpeg stdin handle.
+    ///
+    /// Returns `None` if stdin was already taken or the encoder wasn't started.
+    /// Used to hand stdin to a dedicated writer thread so the pacing loop
+    /// is never blocked by FFmpeg's stdin backpressure.
+    pub fn take_stdin(&mut self) -> Option<ChildStdin> {
+        self.video_stdin.take()
+    }
+
     /// Get the output path.
     pub fn output_path(&self) -> &PathBuf {
         &self.output_path
@@ -393,34 +405,43 @@ fn get_default_output_dir() -> Result<PathBuf, String> {
 }
 
 /// Target frame rate for output video
-const TARGET_FPS: u32 = 30;
-/// Frame interval in milliseconds
-const FRAME_INTERVAL_MS: u64 = 1000 / TARGET_FPS as u64;
+const TARGET_FPS: u64 = 30;
+/// Compute the exact time a given frame number should be written.
+/// Uses multiplication (not accumulated addition) so there is zero
+/// truncation drift regardless of recording length.
+#[inline]
+fn frame_time(start: Instant, frame_number: u64) -> Instant {
+    start + Duration::from_nanos(frame_number * 1_000_000_000 / TARGET_FPS)
+}
+/// Helper: compute the signed difference between two `SystemTime` values
+/// in seconds.  Returns `a - b` as a float (positive if a is after b).
+fn systemtime_diff_secs(a: SystemTime, b: SystemTime) -> f64 {
+    match a.duration_since(b) {
+        Ok(d) => d.as_secs_f64(),
+        Err(e) => -(e.duration().as_secs_f64()),
+    }
+}
 
 /// Unified encoding function that receives video frames and optionally muxes
 /// audio from vtx-engine's `RawAudioData` events in real-time.
 ///
-/// This is a **blocking** function that runs on a dedicated thread (via
-/// `tokio::task::spawn_blocking`). All I/O -- writing video frames to FFmpeg's
-/// stdin, writing audio to the named pipe, and waiting for FFmpeg to exit --
-/// happens on this thread, keeping the tokio async runtime free for event
-/// processing, transcription, and UI updates.
+/// # A/V Synchronization
 ///
-/// When `audio_rx` is `Some`, a named pipe is created for audio and FFmpeg is
-/// started with dual inputs. Audio samples from `RawAudioData` events are
-/// converted to s16le PCM and written to the pipe. When `audio_rx` is `None`,
-/// the encoder produces a video-only MP4.
-///
-/// # Arguments
-/// * `frame_rx` - Channel to receive video frames from capture
-/// * `audio_rx` - Optional vtx-engine broadcast receiver for `RawAudioData` events
-/// * `stop_flag` - Flag to signal recording should stop
-/// * `output_path` - Optional pre-generated output path (generated if None)
+/// Both audio and video are paced to wall-clock time.  Audio uses
+/// `sample_offset` positioning with a `SystemTime`-based T=0 alignment.
+/// Video uses a dedicated stdin writer thread so the pacing loop is never
+/// blocked by FFmpeg's stdin backpressure (which occurs during H.264 codec
+/// initialization and whenever the encoder falls behind).  The pacing loop
+/// sends one frame per 33ms slot to a channel; the writer thread drains
+/// the channel to FFmpeg's stdin.  Because both streams advance at
+/// wall-clock rate, `frames_written / FPS ≈ samples_written / sample_rate`
+/// and A/V sync is maintained.
 pub fn encode_frames(
     mut frame_rx: mpsc::Receiver<CapturedFrame>,
     mut audio_rx: Option<broadcast::Receiver<EngineEvent>>,
     stop_flag: Arc<AtomicBool>,
     output_path: Option<PathBuf>,
+    audio_capture_start: Option<SystemTime>,
 ) -> Result<PathBuf, String> {
     let has_audio = audio_rx.is_some();
     tracing::debug!(
@@ -434,20 +455,15 @@ pub fn encode_frames(
         "No frames received".to_string()
     })?;
 
-    // Record the exact moment we received the first video frame.
-    // This is our reference point for A/V sync.
-    let video_start_time = std::time::Instant::now();
-
+    let frame_width = first_frame.width;
+    let frame_height = first_frame.height;
     tracing::debug!(
         "[Encoder] Got first frame: {}x{}",
-        first_frame.width,
-        first_frame.height
+        frame_width,
+        frame_height
     );
 
     // Set up audio pipe if audio is enabled.
-    // The pipe must be created BEFORE FFmpeg is spawned because FFmpeg needs
-    // the pipe path as a command-line argument. The pipe is opened for writing
-    // AFTER FFmpeg starts (FFmpeg blocks waiting for the writer).
     let mut audio_pipe = if has_audio {
         Some(AudioPipe::create()?)
     } else {
@@ -455,61 +471,105 @@ pub fn encode_frames(
     };
 
     // Create and start the video encoder
-    let mut encoder =
-        VideoEncoder::new_with_options(first_frame.width, first_frame.height, output_path)?;
+    let mut encoder = VideoEncoder::new_with_options(frame_width, frame_height, output_path)?;
     let pipe_path = audio_pipe.as_ref().map(|p| p.path().to_string());
     encoder.start(pipe_path.as_deref())?;
 
     tracing::debug!("[Encoder] Video output path: {:?}", encoder.output_path());
 
     // Write the first video frame BEFORE opening the audio pipe.
-    // FFmpeg processes inputs sequentially: it reads from stdin (input 0) first,
-    // then opens the named pipe (input 1). If we try to open the pipe before
-    // sending any video data, we deadlock -- pipe.open() blocks waiting for
-    // FFmpeg to connect, while FFmpeg blocks waiting for video data on stdin.
+    // FFmpeg reads stdin (input 0) first, then opens the pipe (input 1).
     encoder.write_frame(&first_frame)?;
 
+    // Take stdin out of the encoder so a dedicated writer thread can own it.
+    // This decouples the pacing loop from FFmpeg's stdin backpressure.
+    let video_stdin = encoder
+        .take_stdin()
+        .ok_or("Failed to take FFmpeg stdin for writer thread")?;
+
     // Open the audio pipe for writing (unblocks FFmpeg).
-    // This must happen AFTER FFmpeg starts AND after the first video frame is
-    // written, so FFmpeg has moved past stdin initialization and is ready to
-    // open the audio pipe input. This blocks until FFmpeg connects.
     if let Some(ref mut pipe) = audio_pipe {
         tracing::debug!("[Encoder] Opening audio pipe for writing: {}", pipe.path());
         pipe.open()?;
         tracing::debug!("[Encoder] Audio pipe opened");
     }
 
+    // ── Timing reference ──
+    //
+    // Capture the wall-clock and monotonic references NOW, after all setup
+    // (FFmpeg spawn, first frame write, pipe open) is done.  The pacing loop
+    // starts from this instant.  Capturing earlier (e.g. at first-frame
+    // receipt) would make the pacing loop think it's behind by the setup
+    // duration, causing it to send extra frames and making video PTS
+    // gradually drift ahead of audio PTS.
+    let video_start_instant = Instant::now();
+    let video_t0_system = SystemTime::now();
+
     tracing::debug!("[Encoder] Encoder initialized, entering main loop...");
 
-    // Spawn a dedicated audio writer thread when audio is enabled.
-    // Audio and video MUST be written from separate threads to prevent a
-    // deadlock: FFmpeg's MP4 muxer synchronizes both inputs, so if video
-    // gets ahead of audio, FFmpeg stops reading from stdin until audio
-    // catches up. If audio can't be written because we're stuck writing
-    // video on the same thread, we deadlock.
+    // ── Stdin writer thread ──
+    //
+    // Drains raw video frame data from a channel and writes it to FFmpeg's
+    // stdin.  This thread may block during FFmpeg's codec initialization
+    // (~4-7 seconds at high resolutions) -- that's fine, frames just queue
+    // up in the channel.  The pacing loop on the main thread is never
+    // blocked, so it keeps sending one frame per 33ms slot.
+    //
+    // After codec init, FFmpeg processes frames as fast as they arrive,
+    // draining the backlog and then keeping pace with real-time.
+    let (video_data_tx, video_data_rx) = std::sync::mpsc::sync_channel::<Vec<u8>>(300); // ~10s buffer at 30fps
+    let stdin_thread = {
+        let mut stdin = video_stdin;
+        std::thread::spawn(move || {
+            while let Ok(data) = video_data_rx.recv() {
+                if stdin.write_all(&data).is_err() {
+                    tracing::debug!("[StdinWriter] Write error, exiting");
+                    break;
+                }
+            }
+            tracing::debug!("[StdinWriter] Channel closed, exiting");
+            drop(stdin); // Closes FFmpeg's stdin → signals EOF
+        })
+    };
+
+    // ── Audio writer thread ──
+    //
+    // Writes freely based on sample_offset positioning.  Does NOT gate on
+    // video frame count -- if audio stopped writing, FFmpeg would starve
+    // on its audio input and stop reading video, deadlocking the pipeline.
     let audio_thread = if let Some(mut rx) = audio_rx.take() {
         let mut pipe = audio_pipe
             .take()
             .expect("audio_pipe must exist when audio_rx is Some");
         let audio_stop = stop_flag.clone();
-        let audio_video_start = video_start_time;
+        let audio_t0 = audio_capture_start.unwrap_or(video_t0_system);
+        let video_t0 = video_t0_system;
         Some(std::thread::spawn(move || -> Result<u64, String> {
-            let mut samples_written = 0u64;
-            let mut first_sample_offset: Option<u64> = None;
-            let mut expected_next_offset: u64 = 0;
+            let mut samples_written: u64 = 0;
+            let mut sample_rate: u32 = 48000;
+            let mut first_chunk = true;
+            let mut initial_skip_samples: u64 = 0;
+            let mut last_diag = Instant::now();
+
+            let t0_offset_secs = systemtime_diff_secs(video_t0, audio_t0);
+
+            tracing::info!(
+                "[AudioWriter] Timeline: audio_t0 is {:.1}ms {} video_t0",
+                t0_offset_secs.abs() * 1000.0,
+                if t0_offset_secs >= 0.0 {
+                    "before"
+                } else {
+                    "after"
+                },
+            );
 
             loop {
                 if audio_stop.load(Ordering::Relaxed) {
-                    // Drain any remaining events before exiting
                     loop {
                         match rx.try_recv() {
                             Ok(EngineEvent::RawAudioData(data)) => {
-                                let pcm_data = f32_mono_to_s16le(&data.samples);
-                                if let Err(e) = pipe.write_all(&pcm_data) {
-                                    tracing::debug!(
-                                        "[AudioWriter] Pipe write error during drain: {}",
-                                        e
-                                    );
+                                let pcm = f32_mono_to_s16le(&data.samples);
+                                if pipe.write_all(&pcm).is_err() {
                                     break;
                                 }
                                 samples_written += data.samples.len() as u64;
@@ -522,69 +582,102 @@ pub fn encode_frames(
                     break;
                 }
 
-                match rx.try_recv() {
-                    Ok(EngineEvent::RawAudioData(data)) => {
-                        // First audio: pad silence for the gap between video start and audio start
-                        if first_sample_offset.is_none() {
-                            first_sample_offset = Some(data.sample_offset);
-                            expected_next_offset = data.sample_offset;
-
-                            let delay = std::time::Instant::now().duration_since(audio_video_start);
-                            let delay_ms = delay.as_millis() as u64;
-                            tracing::debug!(
-                                "[AudioWriter] First audio at offset={}, delay from video: {}ms",
-                                data.sample_offset,
-                                delay_ms
-                            );
-
-                            // Write silence for the startup gap
-                            if delay_ms > 0 {
-                                let silence_samples = (delay_ms * data.sample_rate as u64) / 1000;
-                                pipe.write_silence(silence_samples as usize)?;
-                            }
-                        }
-
-                        // Gap detection: fill missing samples with silence
-                        if data.sample_offset > expected_next_offset {
-                            let gap = data.sample_offset - expected_next_offset;
-                            if gap > 0 {
-                                tracing::debug!(
-                                    "[AudioWriter] Audio gap detected: {} samples",
-                                    gap
-                                );
-                                pipe.write_silence(gap as usize)?;
-                            }
-                        }
-
-                        // Convert f32 mono to s16le and write to pipe
-                        let pcm_data = f32_mono_to_s16le(&data.samples);
-                        pipe.write_all(&pcm_data)?;
-
-                        samples_written += data.samples.len() as u64;
-                        expected_next_offset = data.sample_offset + data.samples.len() as u64;
-                    }
-                    Ok(_) => {
-                        // Ignore other engine events
-                    }
+                let data = match rx.try_recv() {
+                    Ok(EngineEvent::RawAudioData(d)) => d,
+                    Ok(_) => continue,
                     Err(broadcast::error::TryRecvError::Empty) => {
-                        // No audio events yet, sleep briefly
-                        std::thread::sleep(std::time::Duration::from_millis(1));
+                        std::thread::sleep(Duration::from_millis(1));
+                        continue;
                     }
                     Err(broadcast::error::TryRecvError::Lagged(n)) => {
-                        tracing::warn!("[AudioWriter] Audio event receiver lagged: {} events", n);
+                        tracing::warn!("[AudioWriter] Lagged: {} events skipped", n);
+                        continue;
                     }
                     Err(broadcast::error::TryRecvError::Closed) => {
-                        tracing::debug!("[AudioWriter] Audio broadcast channel closed");
+                        tracing::debug!("[AudioWriter] Broadcast channel closed");
                         break;
                     }
+                };
+
+                if first_chunk {
+                    first_chunk = false;
+                    sample_rate = data.sample_rate;
+
+                    initial_skip_samples = if t0_offset_secs > 0.0 {
+                        (t0_offset_secs * sample_rate as f64).round() as u64
+                    } else {
+                        0
+                    };
+
+                    if t0_offset_secs < 0.0 {
+                        let pad = (-t0_offset_secs * sample_rate as f64).round() as u64;
+                        if pad > 0 {
+                            tracing::info!(
+                                "[AudioWriter] Padding {:.1}ms silence ({} samples)",
+                                -t0_offset_secs * 1000.0,
+                                pad,
+                            );
+                            pipe.write_silence(pad as usize)?;
+                            samples_written += pad;
+                        }
+                    }
+
+                    tracing::info!(
+                        "[AudioWriter] First chunk: offset={}, rate={}, \
+                         skip={} ({:.0}ms)",
+                        data.sample_offset,
+                        data.sample_rate,
+                        initial_skip_samples,
+                        initial_skip_samples as f64 / sample_rate as f64 * 1000.0,
+                    );
+                }
+
+                let target_pos = data.sample_offset.saturating_sub(initial_skip_samples);
+                let chunk_len = data.samples.len() as u64;
+
+                if target_pos + chunk_len <= samples_written {
+                    continue;
+                }
+
+                if target_pos > samples_written {
+                    let gap = target_pos - samples_written;
+                    pipe.write_silence(gap as usize)?;
+                    samples_written += gap;
+                }
+
+                let skip_front = if samples_written > target_pos {
+                    (samples_written - target_pos) as usize
+                } else {
+                    0
+                };
+                let usable = &data.samples[skip_front.min(data.samples.len())..];
+                if !usable.is_empty() {
+                    let pcm = f32_mono_to_s16le(usable);
+                    pipe.write_all(&pcm)?;
+                    samples_written += usable.len() as u64;
+                }
+
+                let now_instant = Instant::now();
+                if now_instant.duration_since(last_diag).as_secs() >= 5 {
+                    let audio_pts = samples_written as f64 / sample_rate as f64;
+                    let wall = systemtime_diff_secs(SystemTime::now(), video_t0);
+                    tracing::info!(
+                        "[AudioWriter] DIAG: wall={:.1}s audio_pts={:.1}s \
+                         drift={:.1}ms written={}",
+                        wall,
+                        audio_pts,
+                        (audio_pts - wall) * 1000.0,
+                        samples_written,
+                    );
+                    last_diag = now_instant;
                 }
             }
 
-            // Drop pipe to signal EOF to FFmpeg's audio input
             drop(pipe);
             tracing::debug!(
-                "[AudioWriter] Thread exiting, wrote {} samples",
-                samples_written
+                "[AudioWriter] Exiting: wrote {} samples ({:.1}s)",
+                samples_written,
+                samples_written as f64 / sample_rate as f64,
             );
             Ok(samples_written)
         }))
@@ -592,24 +685,37 @@ pub fn encode_frames(
         None
     };
 
-    let mut frames_written = 1u64;
+    // ── Video pacing loop ──
+    //
+    // Sends exactly one frame per 33ms slot to the stdin writer channel.
+    // Because channel sends are non-blocking (bounded channel with ~10s
+    // capacity), this loop runs at wall-clock pace regardless of FFmpeg's
+    // processing speed.  During codec init, frames queue in the channel.
+    // After init, FFmpeg drains the backlog and then keeps pace.
+    //
+    // If the channel fills up (FFmpeg is severely behind), the send blocks
+    // until FFmpeg catches up.  This is acceptable: it means the encoder
+    // can't keep up with the source material, and back-pressure naturally
+    // throttles the pacing loop.
+
+    let enc_width = encoder.width;
+    let enc_height = encoder.height;
+    let mut frames_written = 1u64; // first frame already sent
     let mut last_frame = first_frame;
-    let mut next_frame_time =
-        video_start_time + std::time::Duration::from_millis(FRAME_INTERVAL_MS);
+    let mut next_frame_time = frame_time(video_start_instant, frames_written);
 
     let mut consecutive_empty_polls = 0u32;
-    const MAX_EMPTY_POLLS: u32 = 100; // ~1 second at 10ms per poll
+    const MAX_EMPTY_POLLS: u32 = 100;
 
     loop {
-        let now = std::time::Instant::now();
+        let now = Instant::now();
 
-        // Check stop flag
         if stop_flag.load(Ordering::Relaxed) {
             tracing::debug!("[Encoder] Stop flag set, exiting loop");
             break;
         }
 
-        // Process video frames (non-blocking)
+        // Receive latest video frame (non-blocking)
         match frame_rx.try_recv() {
             Ok(frame) => {
                 last_frame = frame;
@@ -634,39 +740,69 @@ pub fn encode_frames(
             }
         }
 
-        // Write video frame at the target FPS rate.
-        // Write at most one frame per iteration to keep the loop responsive
-        // to the stop flag. If we fall behind, skip ahead rather than
-        // trying to catch up with a burst of writes.
+        // Send one frame per ~33.3ms slot (exact 30fps via frame_time()).
         if next_frame_time <= now {
-            encoder.write_frame(&last_frame)?;
-            frames_written += 1;
-            next_frame_time += std::time::Duration::from_millis(FRAME_INTERVAL_MS);
+            // Prepare frame data (handle cropping if frame is larger than encoder)
+            let frame_data = if last_frame.width == enc_width && last_frame.height == enc_height {
+                last_frame.data.clone()
+            } else if last_frame.width >= enc_width && last_frame.height >= enc_height {
+                // Crop to encoder dimensions
+                let src_row_bytes = (last_frame.width * 4) as usize;
+                let dst_row_bytes = (enc_width * 4) as usize;
+                let mut cropped = Vec::with_capacity(dst_row_bytes * enc_height as usize);
+                for y in 0..enc_height as usize {
+                    let src_start = y * src_row_bytes;
+                    let src_end = src_start + dst_row_bytes;
+                    if src_end <= last_frame.data.len() {
+                        cropped.extend_from_slice(&last_frame.data[src_start..src_end]);
+                    }
+                }
+                cropped
+            } else {
+                // Frame too small -- skip this slot
+                frames_written += 1;
+                next_frame_time = frame_time(video_start_instant, frames_written);
+                continue;
+            };
 
-            // If we're behind by more than one frame, skip ahead to real-time
-            // rather than writing a burst of frames. A brief stutter in the
-            // output is preferable to falling further behind.
+            // Send to the stdin writer channel (blocks if full = backpressure).
+            if video_data_tx.send(frame_data).is_err() {
+                tracing::debug!("[Encoder] Stdin writer channel closed");
+                break;
+            }
+            frames_written += 1;
+            // Compute next frame time from frame count, not by adding an interval.
+            // This eliminates truncation drift: frame N is always at exactly
+            // N * 1_000_000_000 / 30 nanoseconds from start.
+            next_frame_time = frame_time(video_start_instant, frames_written);
+
+            // If still behind (e.g. after a channel-full stall), skip
+            // ahead to the frame slot closest to `now`.
             if next_frame_time <= now {
-                let skipped =
-                    (now.duration_since(next_frame_time).as_millis() as u64) / FRAME_INTERVAL_MS;
-                if skipped > 0 {
-                    next_frame_time +=
-                        std::time::Duration::from_millis(skipped * FRAME_INTERVAL_MS);
-                    tracing::debug!("[Encoder] Skipped {} frames to catch up", skipped);
+                let elapsed_ns = now.duration_since(video_start_instant).as_nanos() as u64;
+                let target_frame = elapsed_ns * TARGET_FPS / 1_000_000_000;
+                if target_frame > frames_written {
+                    let skip = target_frame - frames_written;
+                    frames_written = target_frame;
+                    next_frame_time = frame_time(video_start_instant, frames_written);
+                    tracing::debug!("[Encoder] Pacing fell behind, skipped {} slots", skip);
                 }
             }
         }
 
-        // Sleep until next frame time (with some margin for processing)
-        let sleep_duration = next_frame_time.saturating_duration_since(std::time::Instant::now());
-        if !sleep_duration.is_zero() {
-            std::thread::sleep(sleep_duration.min(std::time::Duration::from_millis(10)));
+        // Sleep until next frame time
+        let sleep_dur = next_frame_time.saturating_duration_since(Instant::now());
+        if !sleep_dur.is_zero() {
+            std::thread::sleep(sleep_dur.min(Duration::from_millis(10)));
         }
     }
 
+    // Close the video data channel → stdin writer thread exits → stdin closes
+    // → FFmpeg sees EOF on video input.
+    drop(video_data_tx);
+    let _ = stdin_thread.join();
+
     // Wait for the audio writer thread to finish and close the pipe.
-    // The pipe must be closed BEFORE finishing the encoder so FFmpeg sees
-    // EOF on the audio input and can finalize the output file.
     let audio_samples_written = if let Some(thread) = audio_thread {
         match thread.join() {
             Ok(Ok(samples)) => samples,
@@ -680,20 +816,21 @@ pub fn encode_frames(
             }
         }
     } else {
-        // No audio thread — drop the pipe if it exists (shouldn't, but defensive)
         drop(audio_pipe);
         0
     };
 
-    let elapsed = video_start_time.elapsed().as_secs_f64();
+    let elapsed = video_start_instant.elapsed().as_secs_f64();
+    let video_pts = frames_written as f64 / TARGET_FPS as f64;
     tracing::debug!(
-        "[Encoder] Recording complete: {:.1}s, {} video frames, {} audio samples",
+        "[Encoder] Recording complete: {:.1}s wall, {:.1}s video PTS, \
+         {} frames, {} audio samples",
         elapsed,
+        video_pts,
         frames_written,
-        audio_samples_written
+        audio_samples_written,
     );
 
-    // Finalize the encoder (waits for FFmpeg to write the MP4 trailer).
     encoder.finish()
 }
 

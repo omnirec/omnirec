@@ -95,12 +95,16 @@ fn start_pipewire_capture_internal(
     } else if enable_auto_crop {
         tracing::debug!(
             "[PipeWire] Starting capture thread for node {} ({}x{}) with auto-crop enabled",
-            node_id, width, height
+            node_id,
+            width,
+            height
         );
     } else {
         tracing::debug!(
             "[PipeWire] Starting capture thread for node {} ({}x{})",
-            node_id, width, height
+            node_id,
+            width,
+            height
         );
     }
 
@@ -229,7 +233,9 @@ fn run_pipewire_capture(
                     // Normal startup goes: Unconnected -> Connecting -> Paused -> Streaming
                     // User-initiated pause goes: Streaming -> Paused
                     if matches!(old, pw::stream::StreamState::Streaming) {
-                        tracing::debug!("[PipeWire] Stream paused after streaming - stopping capture");
+                        tracing::debug!(
+                            "[PipeWire] Stream paused after streaming - stopping capture"
+                        );
                         stop_flag_for_state.store(true, Ordering::SeqCst);
                         if let Some(mainloop) = mainloop_weak.upgrade() {
                             mainloop.quit();
@@ -297,7 +303,9 @@ fn run_pipewire_capture(
                 // Only log once when stop flag is first detected
                 static LOGGED_STOP: AtomicBool = AtomicBool::new(false);
                 if !LOGGED_STOP.swap(true, Ordering::Relaxed) {
-                    tracing::debug!("[PipeWire] process: stop flag is set, skipping remaining frames");
+                    tracing::debug!(
+                        "[PipeWire] process: stop flag is set, skipping remaining frames"
+                    );
                 }
                 return;
             }
@@ -307,7 +315,10 @@ fn run_pipewire_capture(
                     user_data.frames_received += 1;
                     // Log periodically instead of every frame
                     if user_data.frames_received == 1 || user_data.frames_received % 100 == 0 {
-                        tracing::debug!("[PipeWire] Processing frame #{}", user_data.frames_received);
+                        tracing::debug!(
+                            "[PipeWire] Processing frame #{}",
+                            user_data.frames_received
+                        );
                     }
                     process_buffer(&mut buffer, user_data);
                 }
@@ -461,7 +472,9 @@ fn process_buffer(buffer: &mut pw::buffer::Buffer, user_data: &mut StreamData) {
         tracing::debug!("  type: {:?}", data_type);
         tracing::debug!(
             "  stride={}, size={}, offset={}",
-            stride, chunk_size, offset
+            stride,
+            chunk_size,
+            offset
         );
         tracing::debug!(
             "  fd={:?}, maxsize={}",
@@ -580,7 +593,10 @@ fn extract_frame_data(
         tracing::debug!("[PipeWire] Frame extraction setup:");
         tracing::debug!(
             "  dimensions: {}x{}, stride={}, row_bytes={}",
-            width, height, stride, row_bytes
+            width,
+            height,
+            stride,
+            row_bytes
         );
         if stride == row_bytes {
             tracing::debug!("  using direct copy (stride matches)");
@@ -639,7 +655,8 @@ fn crop_frame_data(
     if crop.x < 0 || crop.y < 0 {
         tracing::debug!(
             "[PipeWire] Invalid crop region: negative coordinates ({}, {})",
-            crop.x, crop.y
+            crop.x,
+            crop.y
         );
         return None;
     }
@@ -666,7 +683,10 @@ fn crop_frame_data(
     {
         tracing::debug!(
             "[PipeWire] Warning: crop region clamped from {}x{} to {}x{}",
-            crop.width, crop.height, actual_crop_width, actual_crop_height
+            crop.width,
+            crop.height,
+            actual_crop_width,
+            actual_crop_height
         );
     }
 
@@ -820,7 +840,10 @@ fn detect_content_bounds(frame_data: &[u8], width: u32, height: u32) -> Option<C
         if width_ratio < 0.95 || height_ratio < 0.95 {
             tracing::debug!(
                 "[PipeWire] Auto-crop detected content bounds: {}x{} at ({}, {})",
-                content_width, content_height, min_x, min_y
+                content_width,
+                content_height,
+                min_x,
+                min_y
             );
             return Some(CropRegion {
                 x: min_x,
@@ -869,6 +892,7 @@ fn send_frame(user_data: &mut StreamData, width: u32, height: u32, frame_data: V
         width: final_width,
         height: final_height,
         data: final_data,
+        captured_at: std::time::SystemTime::now(),
     };
 
     // Non-blocking send - drop frame if channel is full

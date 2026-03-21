@@ -80,6 +80,7 @@ impl GraphicsCaptureApiHandler for CaptureHandler {
             width,
             height,
             data,
+            captured_at: std::time::SystemTime::now(),
         };
 
         // Try to send frame, don't block if channel is full (drop frame instead)

@@ -99,6 +99,7 @@ impl GraphicsCaptureApiHandler for SingleFrameHandler {
             width,
             height,
             data,
+            captured_at: std::time::SystemTime::now(),
         };
 
         // Send the frame (ignore errors - receiver may have timed out)

@@ -81,12 +81,16 @@ impl GraphicsCaptureApiHandler for RegionCaptureHandler {
             tracing::debug!("[Windows] First frame received:");
             tracing::debug!(
                 "[Windows]   Frame dimensions: {}x{}",
-                full_width, full_height
+                full_width,
+                full_height
             );
             tracing::debug!("[Windows]   Buffer stride: {} bytes/row", buffer_stride);
             tracing::debug!(
                 "[Windows]   Region (physical): x={}, y={}, {}x{}",
-                region_x, region_y, region_width, region_height
+                region_x,
+                region_y,
+                region_width,
+                region_height
             );
         }
 
@@ -116,6 +120,7 @@ impl GraphicsCaptureApiHandler for RegionCaptureHandler {
             width: region_width,
             height: region_height,
             data: cropped_data,
+            captured_at: std::time::SystemTime::now(),
         };
 
         // Try to send frame
@@ -235,7 +240,11 @@ pub fn start_region_capture(
     tracing::debug!("[Windows] === REGION CAPTURE DEBUG ===");
     tracing::debug!(
         "[Windows] Input region (physical coords): monitor_id={}, x={}, y={}, {}x{}",
-        region.monitor_id, region.x, region.y, region.width, region.height
+        region.monitor_id,
+        region.x,
+        region.y,
+        region.width,
+        region.height
     );
     tracing::debug!(
         "[Windows] Target monitor: pos=({}, {}), size={}x{}, scale={}",
@@ -249,7 +258,12 @@ pub fn start_region_capture(
     for m in &monitors {
         tracing::debug!(
             "[Windows]   {} at ({}, {}) {}x{} scale={}",
-            m.id, m.x, m.y, m.width, m.height, m.scale_factor
+            m.id,
+            m.x,
+            m.y,
+            m.width,
+            m.height,
+            m.scale_factor
         );
     }
     tracing::debug!("[Windows] =============================");
