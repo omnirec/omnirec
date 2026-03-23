@@ -380,17 +380,21 @@ pub async fn open_transcript_window(app: tauri::AppHandle) -> Result<(), String>
         WebviewUrl::App("src/transcript-view.html".into())
     };
 
-    let transcript_window = WebviewWindowBuilder::new(&app, "transcript", url)
+    let builder = WebviewWindowBuilder::new(&app, "transcript", url)
         .title("Transcript")
         .decorations(false)
-        .transparent(false)
         .shadow(true)
         .resizable(true)
         .accept_first_mouse(true)
         .inner_size(450.0_f64, 400.0_f64)
-        .min_inner_size(200.0, 200.0)
-        .build()
-        .map_err(|e| e.to_string())?;
+        .min_inner_size(200.0, 200.0);
+    #[cfg(target_os = "macos")]
+    let builder = builder.transparent(true).hidden_title(true);
+    #[cfg(not(target_os = "macos"))]
+    let builder = builder.transparent(false);
+
+    let transcript_window = builder.build().map_err(|e| e.to_string())?;
+    crate::configure_macos_window(&transcript_window);
 
     let _ = transcript_window.set_focus();
     let _ = main_window.set_focus();

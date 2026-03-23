@@ -3,6 +3,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { applyPlatformWindowClass } from "./lib/window";
 
 // Application URLs
 const OMNIREC_WEBSITE_URL = "https://omnirec.app";
@@ -81,6 +82,8 @@ async function runUpdateCheck(userInitiated: boolean) {
 
 // Initialize on DOM load
 window.addEventListener("DOMContentLoaded", async () => {
+  await applyPlatformWindowClass();
+
   // Disable default context menu
   document.addEventListener("contextmenu", (e) => {
     e.preventDefault();

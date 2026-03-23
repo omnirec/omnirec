@@ -119,6 +119,10 @@ html, body {
   box-shadow: none;
 }
 
+body.platform-macos .transcript-container {
+  border-radius: 10px;
+}
+
 /* Header with drag region */
 .transcript-header {
   display: flex;

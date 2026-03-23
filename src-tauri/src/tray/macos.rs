@@ -270,12 +270,14 @@ fn show_main_window(app: &tauri::AppHandle) {
             .resizable(false)
             .maximizable(false)
             .decorations(false)
-            .transparent(false)
+            .transparent(true)
+            .hidden_title(true)
             .shadow(true)
             .accept_first_mouse(true)
             .build()
         {
             Ok(window) => {
+                crate::configure_macos_window(&window);
                 tracing::debug!("[Tray] Window recreated successfully");
                 let _ = window.set_focus();
             }

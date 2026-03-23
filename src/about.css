@@ -72,6 +72,10 @@ img {
   box-shadow: none;
 }
 
+body.platform-macos .about-container {
+  border-radius: 10px;
+}
+
 /* ── Header drag region ───────────────────────────────────────────────────── */
 
 .about-header {

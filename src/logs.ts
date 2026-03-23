@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { applyPlatformWindowClass } from "./lib/window";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -217,6 +218,8 @@ async function seedHistory() {
 // ─── Entry point ──────────────────────────────────────────────────────────────
 
 document.addEventListener("DOMContentLoaded", async () => {
+  await applyPlatformWindowClass();
+
   // Apply theme (same pattern as about.ts / transcript-view.ts)
   try {
     const theme = await invoke<string>("get_current_theme");

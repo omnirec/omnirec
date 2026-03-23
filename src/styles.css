@@ -177,6 +177,10 @@ body {
   box-sizing: border-box;
 }
 
+body.platform-macos .app-container {
+  border-radius: 10px;
+}
+
 /* Window dragging is handled by data-tauri-drag-region attribute in HTML */
 
 /* ===== Header Icon Buttons (About, Settings, Close) ===== */

@@ -129,6 +129,10 @@ img {
   box-shadow: none;
 }
 
+body.platform-macos .config-container {
+  border-radius: 10px;
+}
+
 .close-btn {
   position: fixed;
   top: 6px;

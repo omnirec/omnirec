@@ -105,6 +105,10 @@ body {
   overflow: hidden;
 }
 
+body.platform-macos .logs-container {
+  border-radius: 10px;
+}
+
 /* Custom close button */
 .close-btn {
   position: fixed;

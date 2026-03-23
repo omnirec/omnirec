@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { listen } from "@tauri-apps/api/event";
+import { applyPlatformWindowClass } from "./lib/window";
 
 // Types
 interface TranscriptionSegment {
@@ -120,6 +121,8 @@ function clearTranscript(): void {
 
 // Initialize
 window.addEventListener("DOMContentLoaded", async () => {
+  await applyPlatformWindowClass();
+
   // Disable default context menu
   document.addEventListener("contextmenu", (e) => {
     e.preventDefault();

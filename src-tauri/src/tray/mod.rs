@@ -103,16 +103,23 @@ pub fn open_config_window(app: &tauri::AppHandle) {
         return;
     }
 
-    match WebviewWindowBuilder::new(app, "config", WebviewUrl::App("src/config.html".into()))
+    let builder = WebviewWindowBuilder::new(app, "config", WebviewUrl::App("src/config.html".into()))
         .title("OmniRec Settings")
         .inner_size(450.0, 550.0)
         .resizable(false)
         .maximizable(false)
         .decorations(false)
-        .shadow(true)
-        .build()
-    {
-        Ok(_) => tracing::debug!("[Tray] Config window created"),
+        .shadow(true);
+    #[cfg(target_os = "macos")]
+    let builder = builder.transparent(true).hidden_title(true);
+    #[cfg(not(target_os = "macos"))]
+    let builder = builder.transparent(false);
+
+    match builder.build() {
+        Ok(window) => {
+            crate::configure_macos_window(&window);
+            tracing::debug!("[Tray] Config window created");
+        }
         Err(e) => tracing::error!("[Tray] Failed to create config window: {:?}", e),
     }
 }
@@ -131,20 +138,26 @@ pub fn open_about_window(app: &tauri::AppHandle) {
         return;
     }
 
-    match WebviewWindowBuilder::new(app, "about", WebviewUrl::App("src/about.html".into()))
+    let builder = WebviewWindowBuilder::new(app, "about", WebviewUrl::App("src/about.html".into()))
         .title("About OmniRec")
         .inner_size(400.0, 460.0)
         .resizable(false)
         .maximizable(false)
         .minimizable(false)
         .decorations(false)
-        .transparent(false)
         .shadow(true)
         .skip_taskbar(true)
-        .center()
-        .build()
-    {
-        Ok(_) => tracing::debug!("[Tray] About window created"),
+        .center();
+    #[cfg(target_os = "macos")]
+    let builder = builder.transparent(true).hidden_title(true);
+    #[cfg(not(target_os = "macos"))]
+    let builder = builder.transparent(false);
+
+    match builder.build() {
+        Ok(window) => {
+            crate::configure_macos_window(&window);
+            tracing::debug!("[Tray] About window created");
+        }
         Err(e) => tracing::error!("[Tray] Failed to create about window: {:?}", e),
     }
 }
@@ -159,17 +172,24 @@ pub fn open_log_viewer_window(app: &tauri::AppHandle) {
         return;
     }
 
-    match WebviewWindowBuilder::new(app, "logs", WebviewUrl::App("logs.html".into()))
+    let builder = WebviewWindowBuilder::new(app, "logs", WebviewUrl::App("logs.html".into()))
         .title("OmniRec Logs")
         .inner_size(900.0, 600.0)
         .min_inner_size(600.0, 400.0)
         .resizable(true)
         .decorations(false)
         .shadow(true)
-        .center()
-        .build()
-    {
-        Ok(_) => tracing::debug!("[Tray] Logs window created"),
+        .center();
+    #[cfg(target_os = "macos")]
+    let builder = builder.transparent(true).hidden_title(true);
+    #[cfg(not(target_os = "macos"))]
+    let builder = builder.transparent(false);
+
+    match builder.build() {
+        Ok(window) => {
+            crate::configure_macos_window(&window);
+            tracing::debug!("[Tray] Logs window created");
+        }
         Err(e) => tracing::error!("[Tray] Failed to create logs window: {:?}", e),
     }
 }

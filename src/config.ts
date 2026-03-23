@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { listen } from "@tauri-apps/api/event";
+import { applyPlatformWindowClass, getPlatform } from "./lib/window";
 
 // Types matching Rust structs
 type ThemeMode = "auto" | "light" | "dark";
@@ -120,6 +121,8 @@ let systemThemeMediaQuery: MediaQueryList | null = null;
 
 // Initialize on DOM load
 window.addEventListener("DOMContentLoaded", async () => {
+  currentPlatform = (await applyPlatformWindowClass()) ?? currentPlatform;
+
   // Disable default context menu
   document.addEventListener("contextmenu", (e) => {
     e.preventDefault();
@@ -292,7 +295,7 @@ async function loadAudioSources(): Promise<void> {
   if (!audioSourceSelect || !micSourceSelect) return;
 
   try {
-    currentPlatform = await invoke<"macos" | "linux" | "windows">("get_platform");
+    currentPlatform = await getPlatform();
     macosSystemAudioAvailable = await invoke<boolean>("is_system_audio_available");
 
     const sources = await invoke<AudioSource[]>("get_audio_sources");

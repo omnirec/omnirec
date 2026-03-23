@@ -1,4 +1,21 @@
 {
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "OmniRec",
+        "width": 469,
+        "height": 610,
+        "resizable": false,
+        "maximizable": false,
+        "decorations": false,
+        "transparent": true,
+        "hiddenTitle": true,
+        "shadow": true,
+        "acceptFirstMouse": true
+      }
+    ]
+  },
   "bundle": {
     "resources": {
       "lib/libwhisper.dylib": "Frameworks/libwhisper.dylib"

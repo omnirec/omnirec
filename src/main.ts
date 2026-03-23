@@ -3,6 +3,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { WebviewWindow, getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { listen } from "@tauri-apps/api/event";
+import { applyPlatformWindowClass, getCustomChromeWindowOptions } from "./lib/window";
 
 // Types matching Rust structs
 interface WindowInfo {
@@ -216,6 +217,8 @@ async function closeRegionSelector(): Promise<void> {
 
 // Initialize on DOM load
 window.addEventListener("DOMContentLoaded", () => {
+  void applyPlatformWindowClass();
+
   // Disable default context menu
   document.addEventListener("contextmenu", (e) => {
     e.preventDefault();
@@ -1825,17 +1828,18 @@ async function openConfigWindow(): Promise<void> {
   const url = isDev
     ? "http://localhost:1420/src/config.html"
     : "src/config.html";
+  const platformOptions = await getCustomChromeWindowOptions();
 
   const configWindow = new WebviewWindow("config", {
     url,
     title: "OmniRec Settings",
     decorations: false,
-    transparent: false,
     shadow: true,
     resizable: false,
     maximizable: false,
     width: 450,
     height: 550,
+    ...platformOptions,
   });
 
   await new Promise<void>((resolve, reject) => {
@@ -1868,12 +1872,12 @@ async function openAboutWindow(): Promise<void> {
   const url = isDev
     ? "http://localhost:1420/src/about.html"
     : "src/about.html";
+  const platformOptions = await getCustomChromeWindowOptions();
 
   const aboutWindow = new WebviewWindow("about", {
     url,
     title: "About OmniRec",
     decorations: false,
-    transparent: false,
     shadow: true,
     resizable: false,
     maximizable: false,
@@ -1882,6 +1886,7 @@ async function openAboutWindow(): Promise<void> {
     center: true,
     width: 400,
     height: 460,
+    ...platformOptions,
   });
 
   await new Promise<void>((resolve, reject) => {

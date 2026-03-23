@@ -305,17 +305,17 @@ impl AppState {
 // macOS Window Setup
 // =============================================================================
 
-/// Configure macOS window to have rounded corners.
+/// Configure custom macOS window chrome.
 #[cfg(target_os = "macos")]
 #[allow(deprecated)]
-fn setup_macos_window(app: &tauri::App) {
-    use tauri::Manager;
+pub(crate) fn configure_macos_window(window: &tauri::WebviewWindow) {
+    use cocoa::appkit::{NSColor, NSWindow};
+    use cocoa::base::nil;
 
-    if let Some(window) = app.get_webview_window("main") {
-        use cocoa::appkit::{NSColor, NSWindow};
-        use cocoa::base::nil;
+    let _ = window.set_title_bar_style(tauri::TitleBarStyle::Overlay);
 
-        let ns_window = window.ns_window().unwrap() as cocoa::base::id;
+    if let Ok(ns_window) = window.ns_window() {
+        let ns_window = ns_window as cocoa::base::id;
         unsafe {
             ns_window.setBackgroundColor_(NSColor::clearColor(nil));
         }
@@ -323,9 +323,19 @@ fn setup_macos_window(app: &tauri::App) {
 }
 
 #[cfg(not(target_os = "macos"))]
-fn setup_macos_window(_app: &tauri::App) {
-    // No-op on other platforms
+pub(crate) fn configure_macos_window(_window: &tauri::WebviewWindow) {}
+
+#[cfg(target_os = "macos")]
+fn setup_macos_window(app: &tauri::App) {
+    use tauri::Manager;
+
+    if let Some(window) = app.get_webview_window("main") {
+        configure_macos_window(&window);
+    }
 }
+
+#[cfg(not(target_os = "macos"))]
+fn setup_macos_window(_app: &tauri::App) {}
 
 // =============================================================================
 // Logging Tauri Commands
