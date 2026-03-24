@@ -397,6 +397,38 @@ impl RecordingManager {
         Ok(())
     }
 
+    fn resolve_system_audio_device_id(&self, source_id: Option<&str>) -> Option<String> {
+        match source_id {
+            None => None,
+            Some("system") => {
+                #[cfg(target_os = "macos")]
+                {
+                    if let Some(device) = self.engine.get_default_system_device() {
+                        tracing::debug!(
+                            "[Recording] Resolved macOS system audio placeholder to {:?}",
+                            device.id
+                        );
+                        Some(device.id)
+                    } else {
+                        warn!(
+                            "[Recording] macOS system audio selected but vtx-engine reported no system audio devices"
+                        );
+                        None
+                    }
+                }
+
+                #[cfg(not(target_os = "macos"))]
+                {
+                    warn!(
+                        "[Recording] Ignoring unexpected 'system' audio placeholder on non-macOS platform"
+                    );
+                    None
+                }
+            }
+            Some(id) => Some(id.to_string()),
+        }
+    }
+
     /// Common encoding startup logic.
     ///
     /// When audio is enabled, vtx-engine's `start_capture()` is used as the sole
@@ -413,8 +445,18 @@ impl RecordingManager {
 
         // Get audio config
         let audio_cfg = self.get_audio_config().await;
-        let has_system_audio = audio_cfg.enabled && audio_cfg.source_id.is_some();
-        let has_microphone = audio_cfg.enabled && audio_cfg.microphone_id.is_some();
+        let system_device_id = if audio_cfg.enabled {
+            self.resolve_system_audio_device_id(audio_cfg.source_id.as_deref())
+        } else {
+            None
+        };
+        let mic_device_id = if audio_cfg.enabled {
+            audio_cfg.microphone_id.clone()
+        } else {
+            None
+        };
+        let has_system_audio = system_device_id.is_some();
+        let has_microphone = mic_device_id.is_some();
         let audio_enabled = has_system_audio || has_microphone;
 
         // Get transcription config
@@ -422,12 +464,20 @@ impl RecordingManager {
         let transcription_enabled = transcription_cfg.enabled && audio_enabled;
 
         tracing::debug!(
-            "[Recording] Audio config: enabled={}, source_id={:?}, mic_id={:?}, has_system_audio={}, has_mic={}, audio_enabled={}",
-            audio_cfg.enabled, audio_cfg.source_id, audio_cfg.microphone_id, has_system_audio, has_microphone, audio_enabled
+            "[Recording] Audio config: enabled={}, source_id={:?}, mic_id={:?}, resolved_system_id={:?}, resolved_mic_id={:?}, has_system_audio={}, has_mic={}, audio_enabled={}",
+            audio_cfg.enabled,
+            audio_cfg.source_id,
+            audio_cfg.microphone_id,
+            system_device_id,
+            mic_device_id,
+            has_system_audio,
+            has_microphone,
+            audio_enabled
         );
         tracing::debug!(
             "[Recording] Transcription config: enabled={}, transcription_enabled={}",
-            transcription_cfg.enabled, transcription_enabled
+            transcription_cfg.enabled,
+            transcription_enabled
         );
 
         // Store video stop flag
@@ -438,11 +488,6 @@ impl RecordingManager {
 
         // Start encoding task
         let encoding_handle = if audio_enabled {
-            info!(
-                "Starting recording with audio - system: {:?}, mic: {:?}, transcription: {}",
-                audio_cfg.source_id, audio_cfg.microphone_id, transcription_enabled
-            );
-
             // Generate output path upfront so the transcript can use the same base name
             let video_output_path = match crate::encoder::generate_output_path() {
                 Ok(path) => path,
@@ -462,13 +507,27 @@ impl RecordingManager {
             // Passing the same loopback device as both sources would cause both
             // streams to be classified as render, starving the capture buffer and
             // producing no output audio.
-            let mic_device_id = audio_cfg.microphone_id.clone();
-            let system_device_id = audio_cfg.source_id.clone();
+            //
+            // Note: on macOS the frontend persists a placeholder value ("system")
+            // for the single global ScreenCaptureKit system-audio source. Resolve
+            // it to the real vtx-engine loopback device ID before starting capture.
+
+            info!(
+                "Starting recording with audio - system: {:?}, mic: {:?}, transcription: {}",
+                system_device_id, mic_device_id, transcription_enabled
+            );
 
             // Start vtx-engine audio capture. This is the sole audio source for
             // both recording (via RawAudioData events) and transcription.
-            if let Err(e) = self.engine.start_capture(mic_device_id, system_device_id).await {
-                warn!("vtx-engine audio capture failed, recording video only: {}", e);
+            if let Err(e) = self
+                .engine
+                .start_capture(mic_device_id, system_device_id)
+                .await
+            {
+                warn!(
+                    "vtx-engine audio capture failed, recording video only: {}",
+                    e
+                );
                 return self.start_video_only(frame_rx, stop_flag).await;
             }
 
@@ -503,13 +562,7 @@ impl RecordingManager {
         } else {
             info!("Starting video-only recording");
             tokio::task::spawn_blocking(move || {
-                encode_frames(
-                    frame_rx,
-                    None,
-                    stop_flag.clone(),
-                    None,
-                    None,
-                )
+                encode_frames(frame_rx, None, stop_flag.clone(), None, None)
             })
         };
 
@@ -541,13 +594,7 @@ impl RecordingManager {
         stop_flag: StopHandle,
     ) -> Result<(), String> {
         let encoding_handle = tokio::task::spawn_blocking(move || {
-            encode_frames(
-                frame_rx,
-                None,
-                stop_flag.clone(),
-                None,
-                None,
-            )
+            encode_frames(frame_rx, None, stop_flag.clone(), None, None)
         });
 
         {
@@ -571,10 +618,7 @@ impl RecordingManager {
     ///
     /// vtx-engine audio capture must already be started before calling this.
     /// This sets up VAD streaming mode and spawns the transcript writer task.
-    async fn start_engine_recording(
-        &self,
-        video_output_path: PathBuf,
-    ) {
+    async fn start_engine_recording(&self, video_output_path: PathBuf) {
         let engine = self.engine.clone();
         let event_tx = self.event_tx.clone();
         let segments_storage = self.transcription_segments.clone();
@@ -600,7 +644,10 @@ impl RecordingManager {
             let mut writer = match TranscriptWriter::new(&transcript_path) {
                 Ok(w) => Some(w),
                 Err(e) => {
-                    error!("[Transcription] Failed to create transcript file {:?}: {}", transcript_path, e);
+                    error!(
+                        "[Transcription] Failed to create transcript file {:?}: {}",
+                        transcript_path, e
+                    );
                     None
                 }
             };
@@ -613,12 +660,14 @@ impl RecordingManager {
                             continue;
                         }
 
-                        let offset_ms = result.timestamp_offset_ms
+                        let offset_ms = result
+                            .timestamp_offset_ms
                             .unwrap_or_else(|| session_start.elapsed().as_millis() as u64);
 
                         tracing::debug!(
                             "[Transcription] Segment: offset={}ms, text={}",
-                            offset_ms, text
+                            offset_ms,
+                            text
                         );
 
                         let ipc_seg = TranscriptionSegment {
@@ -641,7 +690,8 @@ impl RecordingManager {
                     Ok(EngineEvent::TranscriptionSegment(seg)) => {
                         tracing::debug!(
                             "[Transcription] Segment (file/stream): offset={}ms, text={}",
-                            seg.timestamp_offset_ms, seg.text
+                            seg.timestamp_offset_ms,
+                            seg.text
                         );
 
                         let ipc_seg = TranscriptionSegment::from_vtx(&seg);
@@ -659,9 +709,14 @@ impl RecordingManager {
                         }
                     }
                     Ok(EngineEvent::RecordingStopped { duration_ms }) => {
-                        info!("[Transcription] Engine recording stopped ({}ms)", duration_ms);
+                        info!(
+                            "[Transcription] Engine recording stopped ({}ms)",
+                            duration_ms
+                        );
                     }
-                    Ok(EngineEvent::CaptureStateChanged { capturing: false, .. }) => {
+                    Ok(EngineEvent::CaptureStateChanged {
+                        capturing: false, ..
+                    }) => {
                         tracing::debug!("[Transcription] Capture stopped, exiting event loop");
                         break;
                     }
@@ -672,7 +727,10 @@ impl RecordingManager {
                         // Other events (RecordingStarted, SpeechStarted, etc.)
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                        warn!("[Transcription] Event receiver lagged: dropped {} events", n);
+                        warn!(
+                            "[Transcription] Event receiver lagged: dropped {} events",
+                            n
+                        );
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                         tracing::debug!("[Transcription] Engine broadcast channel closed");
@@ -874,7 +932,10 @@ pub fn init_recording_manager(model: vtx_engine::WhisperModel) {
 /// `init_recording_manager()`, or `MediumEn` if not explicitly set.
 pub fn get_recording_manager() -> &'static RecordingManager {
     RECORDING_MANAGER.get_or_init(|| {
-        let model = INIT_MODEL.get().copied().unwrap_or(vtx_engine::WhisperModel::MediumEn);
+        let model = INIT_MODEL
+            .get()
+            .copied()
+            .unwrap_or(vtx_engine::WhisperModel::MediumEn);
         RecordingManager::new(model)
     })
 }
