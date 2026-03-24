@@ -136,13 +136,25 @@ stage-ffmpeg:
 	fi
 
 # Build the complete installer package (CLI sidecar + FFmpeg + Tauri app).
+# On macOS, local builds keep the app signing identity and pre-sign
+# libwhisper.dylib so the bundled library matches the app signature.
 # Supports optional ARGS for cross-compilation (e.g. make package ARGS="--target aarch64-apple-darwin")
 package: stage-cli stage-ffmpeg
 	@echo "==> Building Tauri installer package..."
 	@TMP_CONFIG=$$(mktemp); \
 	trap 'rm -f "$$TMP_CONFIG"' EXIT; \
-	python3 -c 'import json, sys; from pathlib import Path; base = json.loads(Path("src-tauri/tauri.conf.json").read_text()); macos = Path("src-tauri/tauri.macos.conf.json"); overlay = json.loads(macos.read_text()) if macos.exists() else {}; app_windows = base.setdefault("app", {}).setdefault("windows", [{}]); bundle = base.setdefault("bundle", {}); resources = bundle.setdefault("resources", {}); bundle["createUpdaterArtifacts"] = False; bundle.setdefault("macOS", {}).pop("signingIdentity", None); app_windows[0].update(overlay.get("app", {}).get("windows", [{}])[0]); resources.update(overlay.get("bundle", {}).get("resources", {})); Path(sys.argv[1]).write_text(json.dumps(base))' "$$TMP_CONFIG"; \
-	echo "==> Local packages are built without code signing or updater artifact signing."; \
+	python3 scripts/write-local-tauri-config.py "$$TMP_CONFIG"; \
+	if [ "$$(uname -s)" = "Darwin" ]; then \
+		SIGNING_IDENTITY=$$(python3 -c 'import json, sys; from pathlib import Path; cfg = json.loads(Path(sys.argv[1]).read_text()); print(cfg.get("bundle", {}).get("macOS", {}).get("signingIdentity", ""))' "$$TMP_CONFIG"); \
+		if [ -n "$$SIGNING_IDENTITY" ]; then \
+			echo "==> Local macOS packages will be signed with $$SIGNING_IDENTITY"; \
+		else \
+			echo "==> Local macOS packages are built without code signing."; \
+		fi; \
+	else \
+		echo "==> Local packages are built without code signing."; \
+	fi; \
+	echo "==> Updater artifact signing is disabled for local packages."; \
 	pnpm tauri build --config "$$TMP_CONFIG" $(ARGS)
 
 # Build omnirec CLI (debug)
