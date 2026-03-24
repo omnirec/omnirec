@@ -163,6 +163,13 @@ impl VideoEncoder {
         // Detect available H.264 encoder
         let encoder = detect_h264_encoder();
 
+        tracing::info!(
+            "[Encoder] Starting FFmpeg with dimensions {}x{}, encoder: {}",
+            self.width,
+            self.height,
+            encoder
+        );
+
         // Build the FFmpeg command using std::process for better stdin control
         let mut command = new_ffmpeg_command();
         command
@@ -220,18 +227,9 @@ impl VideoEncoder {
                 .args(["-c:a", "aac"])
                 .args(["-b:a", "192k"])
                 .args(["-map", "0:v"]) // Video from input 0 (stdin)
-                .args(["-map", "1:a"]) // Audio from input 1 (pipe)
-                .args(["-shortest"]); // Match durations
+                .args(["-map", "1:a"]); // Audio from input 1 (pipe)
+                                        // Note: -shortest removed - video duration should determine output length
         }
-
-        // Use fragmented MP4 so the file is written progressively to disk.
-        // Without this, FFmpeg buffers the entire file in memory and writes
-        // the moov atom at the end -- the file doesn't appear on disk until
-        // FFmpeg exits, and a crash/kill loses all data.
-        //
-        // frag_keyframe: start a new fragment at each keyframe
-        // empty_moov:    write an empty moov at start (no buffering needed)
-        command.args(["-movflags", "frag_keyframe+empty_moov"]);
 
         command
             .args(["-y"]) // Overwrite output
@@ -242,6 +240,9 @@ impl VideoEncoder {
         inner_command.stdin(Stdio::piped());
         inner_command.stdout(Stdio::null());
         inner_command.stderr(Stdio::piped());
+
+        // Log the FFmpeg command for debugging
+        tracing::info!("[Encoder] FFmpeg command: {:?}", inner_command);
 
         let mut child = inner_command
             .spawn()
@@ -255,9 +256,9 @@ impl VideoEncoder {
                 use std::io::{BufRead, BufReader};
                 let reader = BufReader::new(stderr);
                 for line in reader.lines().map_while(Result::ok) {
-                    tracing::debug!("[FFmpeg] {}", line);
+                    tracing::info!("[FFmpeg] {}", line);
                 }
-                tracing::debug!("[FFmpeg] stderr reader thread exiting");
+                tracing::info!("[FFmpeg] stderr reader thread exiting");
             });
         }
 
@@ -323,36 +324,43 @@ impl VideoEncoder {
     }
 
     /// Finalize the encoding and close the output file.
+    ///
+    /// Standard MP4 is written (not fragmented), so the moov atom will be
+    /// written at the end when FFmpeg exits with correct duration.
     pub fn finish(mut self) -> Result<PathBuf, String> {
+        tracing::info!("[Encoder] Closing FFmpeg stdin and waiting for process to finish...");
+
         // Close stdin to signal end of input
         drop(self.video_stdin.take());
 
         // Wait for FFmpeg to finish
         if let Some(mut child) = self.child.take() {
-            // Read stderr for error messages
-            let stderr_output = if let Some(mut stderr) = child.stderr.take() {
-                use std::io::Read;
-                let mut output = String::new();
-                let _ = stderr.read_to_string(&mut output);
-                output
-            } else {
-                String::new()
-            };
-
             let status = child
                 .wait()
                 .map_err(|e| format!("FFmpeg process error: {}", e))?;
 
+            tracing::info!("[Encoder] FFmpeg exited with status: {:?}", status.code());
+
             if !status.success() {
-                let error_msg = if stderr_output.is_empty() {
-                    format!("FFmpeg encoding failed with exit code: {:?}", status.code())
-                } else {
-                    format!(
-                        "FFmpeg failed: {}",
-                        stderr_output.lines().last().unwrap_or(&stderr_output)
-                    )
-                };
-                return Err(error_msg);
+                return Err(format!(
+                    "FFmpeg encoding failed with exit code: {:?}",
+                    status.code()
+                ));
+            }
+        }
+
+        // Check file size
+        match std::fs::metadata(&self.output_path) {
+            Ok(metadata) => {
+                let size_mb = metadata.len() as f64 / (1024.0 * 1024.0);
+                tracing::info!(
+                    "[Encoder] Output file size: {:.2} MB ({:.2} KB)",
+                    size_mb,
+                    metadata.len() as f64 / 1024.0
+                );
+            }
+            Err(e) => {
+                tracing::warn!("[Encoder] Could not get file metadata: {}", e);
             }
         }
 
@@ -457,10 +465,12 @@ pub fn encode_frames(
 
     let frame_width = first_frame.width;
     let frame_height = first_frame.height;
-    tracing::debug!(
-        "[Encoder] Got first frame: {}x{}",
+    let frame_data_size = first_frame.data.len();
+    tracing::info!(
+        "[Encoder] Got first frame: {}x{}, data size: {} bytes",
         frame_width,
-        frame_height
+        frame_height,
+        frame_data_size
     );
 
     // Set up audio pipe if audio is enabled.
@@ -521,13 +531,18 @@ pub fn encode_frames(
     let stdin_thread = {
         let mut stdin = video_stdin;
         std::thread::spawn(move || {
+            let mut frames_written = 0u64;
             while let Ok(data) = video_data_rx.recv() {
+                frames_written += 1;
                 if stdin.write_all(&data).is_err() {
                     tracing::debug!("[StdinWriter] Write error, exiting");
                     break;
                 }
             }
-            tracing::debug!("[StdinWriter] Channel closed, exiting");
+            tracing::info!(
+                "[StdinWriter] Channel closed, wrote {} frames total",
+                frames_written
+            );
             drop(stdin); // Closes FFmpeg's stdin → signals EOF
         })
     };
@@ -797,10 +812,54 @@ pub fn encode_frames(
         }
     }
 
+    // Drain remaining frames from the capture channel
+    tracing::info!("[Encoder] Draining remaining frames from capture channel...");
+    let mut drain_count = 0u64;
+    loop {
+        match frame_rx.try_recv() {
+            Ok(frame) => {
+                // Prepare frame data (handle cropping if frame is larger than encoder)
+                let frame_data = if frame.width == enc_width && frame.height == enc_height {
+                    frame.data.clone()
+                } else if frame.width >= enc_width && frame.height >= enc_height {
+                    let src_row_bytes = (frame.width * 4) as usize;
+                    let dst_row_bytes = (enc_width * 4) as usize;
+                    let mut cropped = Vec::with_capacity(dst_row_bytes * enc_height as usize);
+                    for y in 0..enc_height as usize {
+                        let src_start = y * src_row_bytes;
+                        let src_end = src_start + dst_row_bytes;
+                        if src_end <= frame.data.len() {
+                            cropped.extend_from_slice(&frame.data[src_start..src_end]);
+                        }
+                    }
+                    cropped
+                } else {
+                    continue;
+                };
+
+                if video_data_tx.send(frame_data).is_ok() {
+                    frames_written += 1;
+                    drain_count += 1;
+                } else {
+                    break;
+                }
+            }
+            Err(mpsc::error::TryRecvError::Empty) => break,
+            Err(mpsc::error::TryRecvError::Disconnected) => break,
+        }
+    }
+    if drain_count > 0 {
+        tracing::info!("[Encoder] Drained {} additional frames", drain_count);
+    }
+
     // Close the video data channel → stdin writer thread exits → stdin closes
     // → FFmpeg sees EOF on video input.
+    tracing::info!("[Encoder] Closing video channel, waiting for stdin writer...");
     drop(video_data_tx);
-    let _ = stdin_thread.join();
+    match stdin_thread.join() {
+        Ok(_) => tracing::info!("[Encoder] Stdin writer thread finished successfully"),
+        Err(e) => tracing::warn!("[Encoder] Stdin writer thread panicked: {:?}", e),
+    }
 
     // Wait for the audio writer thread to finish and close the pipe.
     let audio_samples_written = if let Some(thread) = audio_thread {
@@ -822,7 +881,7 @@ pub fn encode_frames(
 
     let elapsed = video_start_instant.elapsed().as_secs_f64();
     let video_pts = frames_written as f64 / TARGET_FPS as f64;
-    tracing::debug!(
+    tracing::info!(
         "[Encoder] Recording complete: {:.1}s wall, {:.1}s video PTS, \
          {} frames, {} audio samples",
         elapsed,
