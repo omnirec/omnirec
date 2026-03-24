@@ -3308,7 +3308,7 @@ dependencies = [
 
 [[package]]
 name = "omnirec"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "ashpd",
  "base64 0.22.1",
@@ -3361,7 +3361,7 @@ dependencies = [
 
 [[package]]
 name = "omnirec-cli"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "clap",
  "directories",
@@ -3378,7 +3378,7 @@ dependencies = [
 
 [[package]]
 name = "omnirec-types"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "directories",
  "libc",
