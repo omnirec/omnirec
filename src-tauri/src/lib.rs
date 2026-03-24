@@ -857,6 +857,8 @@ pub fn run() {
             commands::is_cosmic,
             commands::is_cinnamon,
             commands::get_desktop_environment,
+            commands::open_config_window,
+            commands::open_about_window,
             commands::configure_region_selector_window,
             commands::get_region_selector_position,
             commands::move_region_selector,

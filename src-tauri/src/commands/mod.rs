@@ -9,6 +9,7 @@ mod config;
 mod platform;
 mod recording;
 mod transcription;
+mod windows;
 
 pub use audio::*;
 pub use capture::*;
@@ -16,3 +17,4 @@ pub use config::*;
 pub use platform::*;
 pub use recording::*;
 pub use transcription::*;
+pub use windows::*;

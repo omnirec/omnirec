@@ -139,7 +139,11 @@ stage-ffmpeg:
 # Supports optional ARGS for cross-compilation (e.g. make package ARGS="--target aarch64-apple-darwin")
 package: stage-cli stage-ffmpeg
 	@echo "==> Building Tauri installer package..."
-	pnpm tauri build $(ARGS)
+	@TMP_CONFIG=$$(mktemp); \
+	trap 'rm -f "$$TMP_CONFIG"' EXIT; \
+	python3 -c 'import json, sys; from pathlib import Path; base = json.loads(Path("src-tauri/tauri.conf.json").read_text()); macos = Path("src-tauri/tauri.macos.conf.json"); overlay = json.loads(macos.read_text()) if macos.exists() else {}; app_windows = base.setdefault("app", {}).setdefault("windows", [{}]); bundle = base.setdefault("bundle", {}); resources = bundle.setdefault("resources", {}); bundle["createUpdaterArtifacts"] = False; bundle.setdefault("macOS", {}).pop("signingIdentity", None); app_windows[0].update(overlay.get("app", {}).get("windows", [{}])[0]); resources.update(overlay.get("bundle", {}).get("resources", {})); Path(sys.argv[1]).write_text(json.dumps(base))' "$$TMP_CONFIG"; \
+	echo "==> Local packages are built without code signing or updater artifact signing."; \
+	pnpm tauri build --config "$$TMP_CONFIG" $(ARGS)
 
 # Build omnirec CLI (debug)
 cli-debug:
@@ -306,6 +310,7 @@ help:
 	@echo ""
 	@echo "Package Targets:"
 	@echo "  package          Build complete installer with CLI + FFmpeg sidecars (uses pnpm tauri build)"
+	@echo "                   Local packages skip code signing and updater artifact signing"
 	@echo "                   Supports ARGS for cross-compilation:"
 	@echo "                   make package ARGS=\"--target aarch64-apple-darwin\""
 	@echo "  stage-cli        Build CLI binary and stage into src-tauri/binaries/"

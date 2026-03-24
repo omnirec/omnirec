@@ -3,7 +3,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { WebviewWindow, getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { listen } from "@tauri-apps/api/event";
-import { applyPlatformWindowClass, getCustomChromeWindowOptions } from "./lib/window";
+import { applyPlatformWindowClass } from "./lib/window";
 
 // Types matching Rust structs
 interface WindowInfo {
@@ -1812,93 +1812,12 @@ async function handleTranscriptionQuickToggleChange(): Promise<void> {
 
 // Open the configuration window (single instance)
 async function openConfigWindow(): Promise<void> {
-  // Check if config window already exists
-  const existing = await WebviewWindow.getByLabel("config");
-  if (existing) {
-    try {
-      await existing.show();
-      await existing.setFocus();
-      return;
-    } catch {
-      // Window may have been destroyed, create a new one
-    }
-  }
-
-  const isDev = window.location.hostname === "localhost";
-  const url = isDev
-    ? "http://localhost:1420/src/config.html"
-    : "src/config.html";
-  const platformOptions = await getCustomChromeWindowOptions();
-
-  const configWindow = new WebviewWindow("config", {
-    url,
-    title: "OmniRec Settings",
-    decorations: false,
-    shadow: true,
-    resizable: false,
-    maximizable: false,
-    width: 450,
-    height: 550,
-    ...platformOptions,
-  });
-
-  await new Promise<void>((resolve, reject) => {
-    configWindow.once("tauri://created", () => {
-      console.log("[Window] Config window created");
-      resolve();
-    });
-    configWindow.once("tauri://error", (e) => {
-      console.error("[Window] Failed to create config window:", e);
-      reject(new Error(`Failed to create config window: ${e}`));
-    });
-  });
+  await invoke("open_config_window");
 }
 
 // Open the about window (single instance)
 async function openAboutWindow(): Promise<void> {
-  // Check if about window already exists
-  const existing = await WebviewWindow.getByLabel("about");
-  if (existing) {
-    try {
-      await existing.show();
-      await existing.setFocus();
-      return;
-    } catch {
-      // Window may have been destroyed, create a new one
-    }
-  }
-
-  const isDev = window.location.hostname === "localhost";
-  const url = isDev
-    ? "http://localhost:1420/src/about.html"
-    : "src/about.html";
-  const platformOptions = await getCustomChromeWindowOptions();
-
-  const aboutWindow = new WebviewWindow("about", {
-    url,
-    title: "About OmniRec",
-    decorations: false,
-    shadow: true,
-    resizable: false,
-    maximizable: false,
-    minimizable: false,
-    skipTaskbar: true,
-    center: true,
-    width: 400,
-    height: 460,
-    ...platformOptions,
-  });
-
-  await new Promise<void>((resolve, reject) => {
-    aboutWindow.once("tauri://created", () => {
-      console.log("[Window] About window created");
-      resolve();
-    });
-    aboutWindow.once("tauri://error", (e) => {
-      console.error("[Window] Failed to create about window:", e);
-      reject(new Error(`Failed to create about window: ${e}`));
-    });
-  });
+  await invoke("open_about_window");
 }
 
 // Close config and about windows (called when main window hides)
