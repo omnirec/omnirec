@@ -162,9 +162,16 @@ body.platform-macos .config-container {
 .config-header {
   display: flex;
   align-items: center;
+  gap: 8px;
   padding: 10px 16px;
   padding-right: 40px;
   user-select: none;
+  flex-shrink: 0;
+}
+
+.config-icon {
+  width: 20px;
+  height: 20px;
   flex-shrink: 0;
 }
 

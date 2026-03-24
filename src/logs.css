@@ -144,10 +144,16 @@ body.platform-macos .logs-container {
   height: 40px;
   display: flex;
   align-items: center;
+  gap: 8px;
   padding: 0 44px 0 12px;
   flex-shrink: 0;
   border-bottom: 1px solid var(--border-color);
-  gap: 0;
+}
+
+.logs-icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
 }
 
 /* Title: left-aligned */
