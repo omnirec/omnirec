@@ -95,6 +95,14 @@ Download the latest `.rpm` package from the [Releases](https://github.com/omnire
 
 OmniRec is designed to work with zero configuration, but it is necessary to grant it permission to record your screen. This process varies by OS and desktop environment:
 
+By default, recordings are saved to:
+
+| Platform | Default recording directory |
+|----------|-----------------------------|
+| macOS | `~/Documents/Recordings` |
+| Linux | `~/Videos` |
+| Windows | Your system Videos folder |
+
 ### macOS
 
 On first launch, grant Screen Recording permission in System Settings > Privacy & Security.

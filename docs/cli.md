@@ -148,7 +148,7 @@ All `record` subcommands accept these options:
 
 | Option | Short | Default | Description |
 |--------|-------|---------|-------------|
-| `--output <path>` | `-o` | Auto-generated | Output file path |
+| `--output <path>` | `-o` | Auto-generated in the platform default recording directory | Output file path |
 | `--format <fmt>` | `-f` | `mp4` | Output format: `mp4`, `webm`, `mkv`, `mov`, `gif`, `apng`, `webp` |
 | `--duration <secs>` | `-d` | None | Auto-stop after specified seconds |
 | `--audio <id>` | | Default | System audio source ID, or `none` to disable |
@@ -266,7 +266,7 @@ omnirec status --json
 {"state": "idle"}
 
 // omnirec stop --json
-{"status": "stopped", "file_path": "/home/user/Videos/recording-2025-01-03.mp4"}
+{"status": "stopped", "file_path": "/Users/alex/Documents/Recordings/recording-2025-01-03.mp4"}
 ```
 
 ## Platform-Specific Behavior
@@ -274,6 +274,11 @@ omnirec status --json
 ### Windows & macOS
 
 All recording modes (`window`, `display`, `region`) work as expected with direct source selection.
+
+Default recording locations:
+
+- **macOS** - `~/Documents/Recordings`
+- **Windows** - Your system Videos folder
 
 ### Linux - Hyprland
 

@@ -486,26 +486,47 @@ pub fn save_config(config: &AppConfig) -> Result<(), String> {
 pub fn get_default_output_dir() -> Result<PathBuf, String> {
     let user_dirs = UserDirs::new().ok_or("Could not determine user directories")?;
 
-    // Try Videos directory first, fall back to home directory
-    let output_dir = user_dirs
-        .video_dir()
-        .map(|p| p.to_path_buf())
-        .unwrap_or_else(|| {
-            let home = user_dirs.home_dir().to_path_buf();
-            let videos = home.join("Videos");
-            // Try to create Videos directory if it doesn't exist
-            if !videos.exists() && fs::create_dir_all(&videos).is_ok() {
-                return videos;
-            }
-            // Fall back to home directory if Videos exists or creation failed
-            if videos.exists() {
-                videos
-            } else {
-                home
-            }
-        });
+    #[cfg(target_os = "macos")]
+    {
+        let home = user_dirs.home_dir().to_path_buf();
+        let recordings = home.join("Documents").join("Recordings");
 
-    Ok(output_dir)
+        if recordings.exists() || fs::create_dir_all(&recordings).is_ok() {
+            return Ok(recordings);
+        }
+
+        let documents = user_dirs
+            .document_dir()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| home.join("Documents"));
+
+        if documents.exists() || fs::create_dir_all(&documents).is_ok() {
+            Ok(documents)
+        } else {
+            Ok(home)
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let output_dir = user_dirs
+            .video_dir()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| {
+                let home = user_dirs.home_dir().to_path_buf();
+                let videos = home.join("Videos");
+                if !videos.exists() && fs::create_dir_all(&videos).is_ok() {
+                    return videos;
+                }
+                if videos.exists() {
+                    videos
+                } else {
+                    home
+                }
+            });
+
+        Ok(output_dir)
+    }
 }
 
 /// Validate that a directory exists and is writable.
